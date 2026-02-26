@@ -677,6 +677,9 @@ def oscmd(cmd, ignoreError = False, cwd=None):
     if sys.platform == "win32":
         exe_path = LocateBinary(exe)
         if exe_path is None:
+            if ignoreError:
+                print("WARNING: Cannot find "+exe+" on search path, skipping")
+                return
             exit("Cannot find "+exe+" on search path")
 
         if cwd is not None:

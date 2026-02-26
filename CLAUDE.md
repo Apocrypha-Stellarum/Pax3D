@@ -8,11 +8,19 @@ Welcome, Claude! This is **Pax3D**, a fork of the Panda3D game engine customised
 
 ## Project Status
 
-**Phase: Fresh Start (Feb 2026)**
+**Phase: Infrastructure Complete, Ready for Engine Work (Feb 2026)**
 
-The repo was forked from `panda3d/panda3d` in August 2025 and synced to upstream master (commit `2d2bdc9a`, Feb 16 2026). All three branches (`master`, `main`, `dev`) are currently identical to upstream. No Pax3D-specific changes have been pushed yet.
+The repo was forked from `panda3d/panda3d` in August 2025 and synced to upstream master (Feb 16 2026). First Pax3D-specific changes committed Feb 26 2026. The engine builds from source, produces a wheel, and can run Pax Abyssi via a separate venv.
 
-Previous local experiments (DirectX 9 removal, ~6 months ago) were never committed to this repo and are considered abandoned. We are starting fresh.
+Previous local experiments (DirectX 9 removal, ~6 months ago) were never committed and are considered abandoned. We started fresh.
+
+### Changes from Upstream
+
+| File | Change | Why |
+|------|--------|-----|
+| `makepanda/makepandacore.py:677-681` | `oscmd()` respects `ignoreError` for binary-not-found | `mt.exe` not on PATH caused hard crash on optional manifest step |
+| `docs/` | Pax3D planning documentation (5 files) | Build guide, roadmap, lighting plan, shader catalogue, venv switching guide |
+| `CLAUDE.md` | This file | Project guide for AI developers |
 
 ---
 
@@ -32,10 +40,25 @@ Pax Abyssi needs a sun that lights planets with a directional light. This should
 | Goal | Why |
 |------|-----|
 | **Modern lighting pipeline** | Directional/point/area lights that work naturally with PBR materials |
-| **Built-in bloom & HDR** | Currently hacked via simplepbr — should be engine-native |
+| **Built-in bloom & HDR** | simplepbr provides basic PBR but no bloom, SSAO, or volumetrics |
 | **Remove DirectX 9** | Dead weight. Focus on OpenGL 4.x+ (and eventually Vulkan) |
 | **Improve large-scale rendering** | Better support for astronomical distances (near/far plane, precision) |
 | **Shader modernisation** | Move from the fixed-function/Cg legacy toward pure GLSL |
+
+### Relationship with simplepbr
+
+The game currently uses `panda3d-simplepbr` (a separate pip package by Moguri) for PBR rendering. simplepbr is a **forward renderer** that sits on top of Panda3D — it uses FilterManager to move `base.cam` to an offscreen buffer and applies post-process shaders. It provides metal-rough PBR, shadow maps, filmic tonemapping, and IBL. It does NOT provide bloom, SSAO, SSR, or volumetric effects.
+
+Our options for Pax3D are:
+1. **Extend simplepbr** — add bloom/HDR as additional post-process passes (quickest wins)
+2. **Replace simplepbr** — build our own PBR pipeline into the engine (most control, most work)
+3. **Hybrid** — fix lighting at engine level, keep simplepbr for PBR shading, add bloom alongside it
+
+Option 3 is the current plan. Fix the engine where it's broken, augment simplepbr where it's limited.
+
+### Audio
+
+Pax Abyssi uses Panda3D's **default OpenAL audio backend** (not FMOD). FMOD was tried previously but had integration issues. The build excludes FMOD (`--no-fmod`).
 
 ---
 
@@ -99,35 +122,30 @@ Pax Abyssi needs a sun that lights planets with a directional light. This should
 
 ---
 
-## Build System
+## Building Pax3D
 
-Panda3D has two build systems. We will use **makepanda** (the legacy one) initially as it's what produces pip-installable wheels:
+> **Full details in [docs/BUILDING_PAX3D.md](docs/BUILDING_PAX3D.md)** — covers thirdparty setup, all pitfalls, and troubleshooting.
 
-### Building a Wheel (Windows)
+### Quick Build Command
 
 ```bash
-cd C:\python\pax3d
+cd C:/python/pax3d
 
-# Full build with OpenGL, no DirectX 9 (our target configuration)
-python makepanda/makepanda.py --everything --no-dx9 --threads=8 --wheel
+C:/Python313/python.exe makepanda/makepanda.py \
+    --everything --no-dx9 --no-fmod --no-ffmpeg --no-fftw --no-opencv \
+    --windows-sdk 10 --threads 8 --wheel
 
-# The wheel lands in the pax3d root directory
 # Install into the Pax3D venv:
-C:\python\pax3d-env\Scripts\pip.exe install --force-reinstall panda3d-*.whl
+source C:/python/pax3d-env/Scripts/activate
+pip install --force-reinstall panda3d-*.whl
 ```
 
-### Build Requirements (Windows)
-- **Visual Studio 2019 or 2022** with C++ Desktop workload
-- **Windows SDK** (for platform headers)
-- **Python 3.13** (matching the game's Python)
-- Third-party libs are bundled or auto-downloaded by makepanda
+### Critical Build Pitfalls
 
-### CMake Alternative
-```bash
-mkdir build && cd build
-cmake .. -DBUILD_TESTS=ON
-cmake --build . --config Release
-```
+1. **ALWAYS pass `--windows-sdk 10`.** SDK 8.1 is installed but broken (empty — no `windows.h`). Without this flag, the build fails immediately.
+2. **Thirdparty libraries are NOT included in the repo.** You must download them separately from `rdb/panda3d-thirdparty` GitHub Actions artifacts. See the build doc.
+3. **Use system Python, not `makepanda.bat`.** The batch file looks for a bundled Python 3.8 that doesn't exist. Always invoke via `C:/Python313/python.exe makepanda/makepanda.py`.
+4. **Delete `built_x64/` after failed builds.** The dependency cache can get corrupted. Clean rebuild fixes it.
 
 ---
 
@@ -188,27 +206,48 @@ Follow Panda3D's existing conventions (see `doc/CODING_STYLE.md`):
 
 ## Planned Work (Roadmap)
 
-### Phase 1: DirectX 9 Removal
-- [ ] Remove `panda/src/dxgsg9/` (~35 files, ~604 KB)
-- [ ] Remove `panda/metalibs/pandadx9/`
-- [ ] Clean build system references (makepanda + CMake)
-- [ ] Verify clean build with `--no-dx9` flag (should already work)
+> **Full details in [docs/RENDERING_ROADMAP.md](docs/RENDERING_ROADMAP.md)**
 
-### Phase 2: Lighting Pipeline Improvements
-- [ ] Audit `DirectionalLight` → understand shadow mapping lens setup
-- [ ] Investigate simplepbr integration points (where engine ends and simplepbr begins)
-- [ ] Design improved directional light workflow for astronomical-scale scenes
-- [ ] Prototype bloom as engine-native post-process
+### Phase 1: Bulletproof Directional Lighting (**PRIORITY**)
+The game's #1 rendering pain point. See [docs/DIRECTIONAL_LIGHTING_PLAN.md](docs/DIRECTIONAL_LIGHTING_PLAN.md).
+- [ ] Resolve the Formula B vs Formula C contradiction (winding-dependent lighting)
+- [ ] Add `set_direction_world()` or equivalent API to DirectionalLight
+- [ ] Make `lookAt()` safe for DirectionalLights under PBR
+- [ ] Shadow mapping at astronomical scales
 
-### Phase 3: Shader Modernisation
-- [ ] Audit Cg shader dependencies — can they be removed?
+### Phase 2: Post-Processing (Bloom + HDR)
+Using shader code salvaged from tobspr's RenderPipeline. See [docs/TOBSPR_SHADER_CATALOGUE.md](docs/TOBSPR_SHADER_CATALOGUE.md).
+- [ ] Port Kawase dual-filter bloom (5 shaders, ~270 lines GLSL)
+- [ ] Port tonemapping library (6 operators + EV100 exposure model)
+- [ ] Port color spaces utility library
+
+### Phase 3: Shader Infrastructure
+- [ ] Port tobspr's PBR BRDF library (Cook-Torrance + Disney diffuse, 354 lines)
+- [ ] Audit and reduce Cg shader dependencies
 - [ ] Improve GLSL auto-shader generation (`shaderGenerator.cxx`)
-- [ ] Better PBR defaults in the material system
 
-### Phase 4: Large-Scale Rendering
+### Phase 4: Atmospheric & Environmental
+- [ ] Atmospheric scattering for planets seen from space (Bruneton or Hosek-Wilkie model)
+- [ ] Analytical height fog
+
+### Phase 5: Large-Scale Rendering + Cleanup
 - [ ] Logarithmic depth buffer support
-- [ ] Improved near/far plane management for space scenes
-- [ ] Double-precision vertex positions (or camera-relative rendering)
+- [ ] Camera-relative rendering for floating-point precision at distance
+- [ ] Remove DirectX 9 backend (`panda/src/dxgsg9/`, `panda/metalibs/pandadx9/`)
+
+---
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| **[docs/BUILDING_PAX3D.md](docs/BUILDING_PAX3D.md)** | How to build from source — thirdparty setup, exact commands, every pitfall |
+| **[docs/SWITCHING_ENGINES.md](docs/SWITCHING_ENGINES.md)** | How to switch Pax Abyssi between stock Panda3D and Pax3D |
+| **[docs/RENDERING_ROADMAP.md](docs/RENDERING_ROADMAP.md)** | 5-phase rendering improvement plan with dependencies and risk assessment |
+| **[docs/DIRECTIONAL_LIGHTING_PLAN.md](docs/DIRECTIONAL_LIGHTING_PLAN.md)** | Deep technical analysis of the directional light problem and engine-level fixes |
+| **[docs/TOBSPR_SHADER_CATALOGUE.md](docs/TOBSPR_SHADER_CATALOGUE.md)** | Extraction catalogue of 15 salvageable shaders from tobspr's RenderPipeline |
+| `doc/CODING_STYLE.md` | Panda3D's C++ coding conventions (upstream) |
+| `doc/INSTALL` | Upstream build instructions (partially outdated — use our build doc instead) |
 
 ---
 

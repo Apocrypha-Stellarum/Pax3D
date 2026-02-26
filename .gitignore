@@ -65,6 +65,10 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Pax3D build extras
+build.log
+mt.exe
+
 # Test tool cache directories
 .tox/
 .cache/
