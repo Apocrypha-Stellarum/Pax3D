@@ -106,12 +106,28 @@ C:/Python313/python.exe makepanda/makepanda.py \
 
 ### Build Output
 
-The wheel file lands in the repo root:
+The build output lands in `built_x64/`. The `--wheel` flag should produce a wheel in the repo root, but if it doesn't (which can happen), see the manual wheel step below.
+
+### Manual Wheel Generation (if `--wheel` doesn't produce one)
+
+If the build succeeds but no `.whl` file appears, run `makewheel.py` separately:
+
+```bash
+# IMPORTANT: dumpbin.exe must be in PATH for makewheel to work
+# Add the VS MSVC tools directory (adjust version number as needed):
+export PATH="$PATH:/c/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.38.33130/bin/Hostx64/x64"
+
+# Generate the wheel
+cd C:/python/pax3d
+C:/Python313/python.exe makepanda/makewheel.py --outputdir built_x64
+```
+
+The `--outputdir built_x64` flag tells makewheel where the compiled build output lives. Without it, makewheel won't find the DLLs.
+
+The resulting wheel lands in the repo root:
 ```
 C:\python\pax3d\panda3d-1.11.0-cp313-cp313-win_amd64.whl
 ```
-
-The full build output is in `built_x64/`.
 
 ---
 
