@@ -132,6 +132,8 @@ class Pipeline:
                  enable_shadows=False, use_normal_maps=False,
                  use_emission_maps=True, use_occlusion_maps=False,
                  enable_fog=False, exposure=0.0, shadow_bias=0.005,
+                 shadow_bias_world=None, shadow_filter_size=1,
+                 shadow_caster_mask=None,
                  enable_hardware_skinning=True, calculate_normalmap_blue=True,
                  enable_bloom=False, bloom_strength=1.0, bloom_intensity=1.0,
                  bloom_levels=5, tonemap_operator='aces',
@@ -158,7 +160,23 @@ class Pipeline:
         self.use_occlusion_maps = use_occlusion_maps
         self.enable_fog = enable_fog
         self.exposure = exposure
+        # BEWARE the bias trap: shadow_bias is consumed in NORMALIZED
+        # light-space depth, so its world-space size is bias * extent
+        # depth. The 0.005 default is 0.3 units deep in the 60-unit test
+        # frustum but 12.5 at an open-world set_shadow_extent depth of
+        # 2500 (or 20 IEU at the space game's 4000) — enough to silently
+        # erase every shadow shorter than a building, with no artifact
+        # hinting why. Prefer shadow_bias_world (world units; wins when
+        # set; rescaled automatically when the extent depth changes).
         self.shadow_bias = shadow_bias
+        self.shadow_bias_world = shadow_bias_world
+        if shadow_filter_size not in (1, 3):
+            print(f'[Pax3DRender] Unsupported shadow_filter_size '
+                  f'{shadow_filter_size!r}, falling back to 1')
+            shadow_filter_size = 1
+        self.shadow_filter_size = shadow_filter_size
+        self.shadow_caster_mask = self._normalize_caster_mask(
+            shadow_caster_mask)
         self.enable_hardware_skinning = enable_hardware_skinning
         self.calculate_normalmap_blue = calculate_normalmap_blue
 
@@ -303,6 +321,7 @@ class Pipeline:
             'CALC_NORMAL_Z': self.calculate_normalmap_blue,
             'SUN_FROM_LIGHTSOURCE': self.sun_light_mode == 'directional',
             'LOG_DEPTH': self.enable_log_depth,
+            'SHADOW_FILTER_SIZE': self.shadow_filter_size,
         }
 
     def _recompile_pbr(self):
@@ -325,7 +344,7 @@ class Pipeline:
         if self.enable_hardware_skinning:
             attr = attr.set_flag(p3d.ShaderAttrib.F_hardware_skinning, True)
         self.render_node.set_attrib(attr)
-        self.render_node.set_shader_input('global_shadow_bias', self.shadow_bias)
+        self._push_shadow_bias()
         self._set_env_map_uniforms()
 
     def _set_env_map_uniforms(self):
@@ -872,6 +891,7 @@ class Pipeline:
         dlight.set_color(p3d.LColor(c[0], c[1], c[2], 1))
         self.sun_light_np = self.render_node.attach_new_node(dlight)
         self.render_node.set_light(self.sun_light_np)
+        self._apply_shadow_caster_mask()
         if self.enable_shadows:
             self._configure_sun_shadows(True)
 
@@ -910,12 +930,108 @@ class Pipeline:
             self._shadow_depth = depth
         if center is not None:
             self._shadow_center = p3d.Vec3(*center)
+        # The bias uniform is normalized against the extent DEPTH — keep
+        # a world-unit bias physically constant across extent changes.
+        self._push_shadow_bias()
         if self.sun_light_np is None:
             return
         self.sun_light_np.set_pos(self._shadow_center)
         lens = self.sun_light_np.node().get_lens()
         lens.set_film_size(2 * radius, 2 * radius)
         lens.set_near_far(-self._shadow_depth / 2, self._shadow_depth / 2)
+
+    def _push_shadow_bias(self):
+        """Push the shadow depth-bias and texel-size shader inputs.
+
+        `global_shadow_bias` is consumed in NORMALIZED light-space depth:
+        world-space offset = bias * extent depth. When shadow_bias_world
+        is set it wins, divided by the CURRENT extent depth here so the
+        offset stays a fixed world size no matter how the frustum is
+        driven (this is what prevents the classic trap where the 0.005
+        default quietly becomes metres of offset at open-world or
+        planetary extents and erases every low caster's shadow).
+        """
+        if self.shadow_bias_world is not None:
+            bias = self.shadow_bias_world / max(self._shadow_depth, 1e-6)
+        else:
+            bias = self.shadow_bias
+        self.render_node.set_shader_input('global_shadow_bias', bias)
+        self.render_node.set_shader_input(
+            'u_shadow_texel', 1.0 / max(self.shadow_map_size, 1))
+
+    def set_shadow_bias(self, value, world_units=False):
+        """Set the shadow depth bias at runtime (uniform-only, no rebuild).
+
+        world_units=True: `value` is in world units and stays physically
+        constant when set_shadow_extent changes the frustum depth — this
+        is almost always what you want (e.g. 0.2 for metre-scale scenes,
+        ~0.5 IEU for ship scale). world_units=False restores the legacy
+        normalized interpretation (world offset = value * extent depth;
+        see _push_shadow_bias for why that scaling is a trap).
+        """
+        if world_units:
+            self.shadow_bias_world = float(value)
+        else:
+            self.shadow_bias = float(value)
+            self.shadow_bias_world = None
+        self._push_shadow_bias()
+
+    def set_shadow_filter_size(self, size):
+        """Switch shadow filtering at runtime: 1 = single hardware-PCF
+        tap (default, byte-identical to the original pipeline), 3 = 3x3
+        multi-tap PCF (9 hardware taps averaged — visibly softer, more
+        stable edges for open-world/character scenes). Recompiles the
+        PBR shader."""
+        if size not in (1, 3):
+            print(f'[Pax3DRender] Unsupported shadow filter size {size!r}, '
+                  f'ignoring')
+            return
+        if size == self.shadow_filter_size:
+            return
+        self.shadow_filter_size = size
+        self._recompile_pbr()
+
+    @staticmethod
+    def _normalize_caster_mask(mask):
+        """None | int bit index | BitMask32 -> BitMask32 or None."""
+        if mask is None:
+            return None
+        if isinstance(mask, int):
+            return p3d.BitMask32.bit(mask)
+        return p3d.BitMask32(mask)
+
+    def _apply_shadow_caster_mask(self):
+        if self.sun_light_np is not None and self.shadow_caster_mask is not None:
+            self.sun_light_np.node().set_camera_mask(self.shadow_caster_mask)
+
+    def set_shadow_caster_mask(self, mask):
+        """Restrict the sun's shadow camera to a dedicated camera-mask bit
+        (BitMask32 or an int bit index) so scene nodes can opt out of
+        shadow casting. Assigning a mask changes nothing by itself —
+        every node is visible on every bit by default; it only enables
+        exclude_from_shadows(). Pick a bit no other camera uses (the
+        openworld build uses bit 1; check your game's camera masks)."""
+        self.shadow_caster_mask = self._normalize_caster_mask(mask)
+        self._apply_shadow_caster_mask()
+
+    def exclude_from_shadows(self, nodepath):
+        """Stop `nodepath` (and its subtree) casting sun shadows, while
+        every other camera still renders it. The blessed API for clouds,
+        sky geometry, FX quads — anything whose depth-map footprint would
+        blanket the scene. Requires shadow_caster_mask to be configured
+        (init kwarg or set_shadow_caster_mask)."""
+        if self.shadow_caster_mask is None:
+            raise ValueError(
+                'exclude_from_shadows needs a shadow_caster_mask: pass '
+                'shadow_caster_mask=<free bit index> to init() or call '
+                'set_shadow_caster_mask() first')
+        nodepath.hide(self.shadow_caster_mask)
+
+    def include_in_shadows(self, nodepath):
+        """Undo exclude_from_shadows()."""
+        if self.shadow_caster_mask is None:
+            raise ValueError('shadow_caster_mask is not configured')
+        nodepath.show(self.shadow_caster_mask)
 
     def set_sun_light_mode(self, mode):
         """Switch between 'uniforms' (legacy) and 'directional' (real

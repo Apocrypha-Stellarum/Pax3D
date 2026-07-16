@@ -98,7 +98,14 @@ uniform samplerCube filtered_env_map;
 uniform float max_reflection_lod;
 
 #ifdef ENABLE_SHADOWS
+// Depth bias in NORMALIZED light-space depth (world offset = bias *
+// shadow-extent depth); the pipeline rescales world-unit biases before
+// upload. u_shadow_texel = 1/shadow_map_size, for the multi-tap filter.
 uniform float global_shadow_bias;
+uniform float u_shadow_texel;
+#endif
+#ifndef SHADOW_FILTER_SIZE
+    #define SHADOW_FILTER_SIZE 1
 #endif
 
 const vec3 F0 = vec3(0.04);
@@ -176,12 +183,30 @@ float diffuse_function() {
 float shadow_caster_contrib(sampler2DShadow shadowmap, vec4 shadowpos) {
     vec3 light_space_coords = shadowpos.xyz / shadowpos.w;
     light_space_coords.z -= global_shadow_bias;
+#if SHADOW_FILTER_SIZE == 3
+    // 3x3 multi-tap PCF: 9 hardware-filtered taps, one texel apart.
+    float shadow = 0.0;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            vec3 tap = light_space_coords
+                     + vec3(float(dx) * u_shadow_texel,
+                            float(dy) * u_shadow_texel, 0.0);
+#ifdef USE_330
+            shadow += texture(shadowmap, tap);
+#else
+            shadow += shadow2D(shadowmap, tap).r;
+#endif
+        }
+    }
+    return shadow / 9.0;
+#else
 #ifdef USE_330
     float shadow = texture(shadowmap, light_space_coords);
 #else
     float shadow = shadow2D(shadowmap, light_space_coords).r;
 #endif
     return shadow;
+#endif
 }
 #endif
 
