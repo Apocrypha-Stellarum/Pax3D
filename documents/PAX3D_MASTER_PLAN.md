@@ -101,6 +101,17 @@ Every observed failure from the March effort, its actual cause, and where this p
 > tints; note the per-mip tint list reads inverted vs its comment labels),
 > auto-exposure stretch (R3.4), and the game-side bloom-on decision after
 > the R1/R2 flag flips.
+>
+> Session D also closed the R2.4 mechanism: `set_shadow_extent` gained a
+> world-space `center` (light-node positioning, lighting-neutral — three
+> new paxtest checks in test_shadows prove outside-extent-is-lit,
+> recenter-shadows, and lighting-unchanged), and the game now recenters
+> the shadow frustum on the camera every sun update
+> (`sun_position_manager.py`) with a new
+> `planetary_shuttle_rendering.sun_light_mode` settings key passed through
+> `plan_initialization_manager.py`. What's left of R1/R2 needs the user:
+> flip `use_pax3d_render` → parity eyeball → flip `sun_light_mode` to
+> 'directional' → validate shadows in-game.
 
 ### 1.3 The lesson
 
@@ -266,10 +277,15 @@ Small, surgical, upstream-syncable — from `DIRECTIONAL_LIGHTING_PLAN.md`:
 - Strip translation in `DirectionalLight::xform()` so `setPos()`/`lookAt()` cannot corrupt it.
 - Debug warning when a DirectionalLight has a non-zero position.
 
-**R2.4 — Shadows at planet scale.**
-Enable shadow mapping with dynamic ortho-lens sizing driven by the current planet's diameter
-(the game-side `update_shadow_for_planet()` sketch from the old roadmap). Validate terminator
-and ship self-shadowing at the four cardinals.
+**R2.4 — Shadows at planet scale.** **Mechanism DONE (Session D).**
+`set_shadow_extent(radius, depth, center)` now takes a world-space center
+(implemented by positioning the light node — lighting-neutral, proven by
+paxtest `recenter_keeps_lighting`), and the game recenters the frustum on
+the CAMERA every sun update (`sun_position_manager`, settings keys
+`shadow_extent_radius`/`shadow_extent_depth`, defaults 500/4000) — shadow
+resolution follows the player instead of planet-sized extents. Remaining:
+in-game validation of terminator + ship self-shadowing at the four
+cardinals once the user flips directional mode.
 
 **Gate:** in-game — ships show sun specular that moves correctly as the camera orbits; lit
 hemispheres correct at all four cardinals (debug overlay reads OK); shadows toggle cleanly;
