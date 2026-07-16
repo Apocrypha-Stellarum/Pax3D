@@ -146,11 +146,12 @@ the GPU and Panda's C++, not in our orchestration layer.
 
 | Item | Class | Status |
 |---|---|---|
-| Doubles engine build (`STDFLOAT_DOUBLE`) | Build flag | Shelved for CPU cost; resume via game repo `handover_doubles_spike.md` |
-| R2.3 DirectionalLight conveniences (`set_direction_world`, strip translation in `xform()`, non-zero-pos warning) | New C++ API | Queued, low urgency — the pipeline owns sun orientation |
-| DX9 removal (`dxgsg9/`, `pandadx9/`) + dead-path deletion | Deletion (R6) | Queued |
-| Vulkan-port evaluation (hand-port from read-only upstream reference) | Port | Only when it can run the paxtest suite. Watch log 2026-07-17: ACTIVE — upstream merged `shaderpipeline` (SPIR-V) into the `vulkan` branch 2026-07-02/03, with unit tests; nowhere near paxtest-ready |
-| Upstream cherry-pick candidates (hand-pick at a build window if ever hit) | Cherry-pick | `70775c34` glgsg null-_current_properties guard; `fac1fd77` Texture copy-ctor drops clear-color fields; `29620e79` makepanda MSVC 14.5 (2026) support if the toolchain updates. Checked 2026-07-17: 93 commits since divergence, NOTHING rendering-critical (no light/shadow/skinning fixes; ShaderGenerator fixes don't apply — we bypass it). Upstream moved to C++17 (May 2026), so diffs drift fast |
+| **WINDOW 1 (open): final catch-up merge build** — Route A ratified 2026-07-17: one-time merge of upstream master (93 commits: C++17, robustness fixes) BEFORE the door closes; merge committed clean (`eb685fd003`, zero conflicts, oscmd fix intact), paxtest green on old wheels | Merge + rebuild | **Awaiting B-computer build** — instructions: `documents/BUILD_WINDOW_1_CATCHUP.md`. Rollback: `wheels_float/` wheel + `pre-catchup-merge` tag |
+| Doubles engine build (`STDFLOAT_DOUBLE`) | Build flag | **Bundled into Window 1 as optional Build 2** (B computer removes the CPU-cost objection); validated AFTER the float wheel, separately. Procedure: game repo `handover_doubles_spike.md` |
+| R2.3 DirectionalLight conveniences (`set_direction_world`, strip translation in `xform()`, non-zero-pos warning) | New C++ API | Queued, low urgency — the pipeline owns sun orientation. Deliberately NOT in Window 1 (zero new own-C++ that window) |
+| DX9 removal (`dxgsg9/`, `pandadx9/`) + dead-path deletion | Deletion (R6) | Queued (not Window 1) |
+| Vulkan-port evaluation (hand-port from read-only upstream reference) | Port | Only when it can run the paxtest suite. Watch log 2026-07-17: ACTIVE — upstream merged `shaderpipeline` (SPIR-V) into the `vulkan` branch 2026-07-02/03; nowhere near paxtest-ready. The catch-up merge moved our base next to it — a future port got much cheaper |
+| ~~Upstream cherry-pick candidates~~ | Cherry-pick | **Absorbed by the Window 1 catch-up merge** (all 93 commits incl. `70775c34`, `fac1fd77`, `29620e79` are now in-tree) |
 | Python→C++ promotions | Promotion | **None yet** — nothing Python has profiled hot |
 
 ---
@@ -163,7 +164,7 @@ the GPU and Panda's C++, not in our orchestration layer.
 | `pax3d_render/shaders/` | GLSL sources (PBR, bloom, tonemap, TAA, shadow) | Active |
 | `tools/paxtest/` | Offscreen test harness: gamma, lighting, bloom, rebuild, shadows | Active — extend when adding features |
 | `pax3d_simplepbr/` | March-2026 simplepbr fork | **Retired** — reference only, merged into pax3d_render |
-| `panda/src/` | Engine C++ (~65 modules; `glstuff/` is the GL backend, `pgraphnodes/` has the light classes) | Unmodified upstream 1.11.0-dev |
+| `panda/src/` | Engine C++ (~65 modules; `glstuff/` is the GL backend, `pgraphnodes/` has the light classes) | Unmodified upstream 1.11.0-dev at its **July-2026 state** (final catch-up merge `eb685fd003`, C++17) |
 | `makepanda/` | Build system | One committed fix (`oscmd` ignoreError) |
 | `documents/` | Planning docs, findings, guides — see `documents/README.md` | Mixed current/historical |
 | `doc/` | Upstream Panda3D docs (CODING_STYLE, INSTALL) | Upstream |
@@ -229,6 +230,13 @@ they exist so we know our code from inherited code, not to ease merges.
 
 Upstream (`panda3d/panda3d`) remains a read-only *reference*: cherry-pick a
 specific fix by hand if one ever matters. There is no sync cadence.
+
+One-time exception, user-ratified (Route A, 2026-07-17): a **final
+catch-up merge** of upstream master (`eb685fd003` — C++17 migration + 93
+commits of fixes) was taken before the door closed, moving our divergence
+point from 2026-02-26 to July 2026. It awaits its build window
+(`documents/BUILD_WINDOW_1_CATCHUP.md`). No further syncs — the policy
+above is otherwise unchanged.
 
 | | |
 |---|---|

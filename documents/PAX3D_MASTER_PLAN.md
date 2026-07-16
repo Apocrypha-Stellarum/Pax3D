@@ -480,6 +480,11 @@ features become tractable:
   are hand cherry-picked if one ever matters. No cadence, no merge, no compatibility goal.
   Engine changes may now freely change defaults, rename, and delete inherited paths
   (`// PAX3D:` tags stay, for auditability not mergeability). See CLAUDE.md.
+  *Same-day revision (Route A, user-ratified): ONE final catch-up merge of upstream master
+  was taken before the door closed (`eb685fd003` — C++17 + 93 commits of fixes; conflict-free
+  since our C++ tree had zero changes), resetting the divergence point to July 2026 and
+  putting our base next to the vulkan/shaderpipeline branch for any future hand-port. Build +
+  validation: `BUILD_WINDOW_1_CATCHUP.md` (B computer). The no-future-syncs policy stands.*
 - Watch upstream's Vulkan branch as a *porting source*; evaluate only when it can run the
   paxtest suite (hand-port, scheduled build window — see §2.2).
 

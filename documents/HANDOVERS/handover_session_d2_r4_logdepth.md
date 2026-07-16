@@ -116,5 +116,8 @@ positioning layer:
   after.~~ **CANCELLED 2026-07-17: upstream severed by user decision —
   Pax3D is sovereign, no sync ever; upstream is a read-only reference
   for hand cherry-picks (see CLAUDE.md "Upstream Relationship —
-  SEVERED").** Doubles-build spike: resume when CPU allows (a scheduled
-  build window — unaffected by the policy change).
+  SEVERED").** *Same-day revision: user ratified ONE final catch-up
+  merge (Route A) before closing the door — performed as `eb685fd003`,
+  awaiting its build window (`BUILD_WINDOW_1_CATCHUP.md`). Still no
+  syncs after.* Doubles-build spike: resume when CPU allows — now
+  bundled into that same window as optional Build 2.
