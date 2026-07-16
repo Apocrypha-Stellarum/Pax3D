@@ -176,8 +176,12 @@ This maps node-forward exactly onto `travel`, so shader lighting
 construction. This resolves the 2025-2026 "Formula B vs C" saga — the full
 history is in `DIRECTIONAL_LIGHTING_PLAN.md` (historical).
 
-Also inherited wisdom: never `set_pos()` a directional light; keep it
-parented to render.
+Node position: the pipeline DOES position the sun node — that is how
+`set_shadow_extent(center=...)` places the shadow frustum (Session D). A
+DirectionalLight lights by orientation only, so position is
+lighting-neutral (proven by paxtest `recenter_keeps_lighting`: lit values
+identical after `set_pos`). Keep the node parented to render; only
+`set_shadow_extent` writes its position, only `update_sun` writes its HPR.
 
 ---
 
@@ -187,10 +191,12 @@ Only in `'directional'` mode. Machinery is simplepbr's, inherited intact:
 
 1. `dlight.set_shadow_caster(True, size, size)` creates the shadow buffer
    (`shadow_map_size`, default 2048).
-2. The ortho lens is sized by `set_shadow_extent(radius, depth)`: film
-   `2r×2r`, near/far `±depth/2`, centered on the world origin along the
-   node's forward. **The caller must size this** — e.g. the game should
-   drive it from the current planet/station cluster (R2 leftover).
+2. The ortho lens is sized and placed by `set_shadow_extent(radius,
+   depth, center)`: film `2r×2r`, near/far `±depth/2`, centered on
+   `center` in world space (default world origin; centering = positioning
+   the light node, lighting-neutral — see §4). **The caller must size AND
+   place this** — e.g. the game should drive it from the current
+   planet/station cluster each frame (uniform-cost, per-frame safe).
 3. The `_update` task assigns the shadow depth shader
    (`shadow.vert/.frag`) to every shadow-casting light camera via
    camera initial-state override.
@@ -203,9 +209,10 @@ Runtime toggles: `set_enable_shadows(bool)` (recompiles the PBR shader +
 configures the caster) — proven by `paxtest test_shadows` (lit 0.79 →
 shadowed 0.09 → restored → re-shadowed).
 
-Geometry outside the shadow frustum samples as LIT — undersized extents
-produce shadow-free zones, not artifacts. At planetary scales this needs
-the dynamic-extent work (R2.4) before shipping in-game.
+Geometry outside the shadow frustum samples as LIT — undersized or
+mis-centered extents produce shadow-free zones, not artifacts (proven by
+paxtest `extent_miss_is_lit`). At planetary scales the game must drive
+radius AND center from scene context (R2.4).
 
 ---
 

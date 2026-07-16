@@ -77,6 +77,47 @@ def main():
     h.report.check('shadow_toggle_returns', reshadowed < 0.5 * unshadowed,
                    f'reshadowed={reshadowed:.3f} (runtime recompile path)')
 
+    # --- Off-origin cluster (R2.4 dynamic extent) ----------------------
+    # An extent frustum centered on the world origin misses a cluster at
+    # (40,0,0): outside-extent geometry must sample LIT (not artifacts).
+    # Recentring via set_shadow_extent(center=...) restores the shadow,
+    # and positioning the light node must NOT change the lighting itself
+    # (a DirectionalLight lights by orientation only).
+    cluster = p3d.Vec3(40, 0, 0)
+    ground.set_pos(cluster)
+    occluder.set_pos(cluster + p3d.Vec3(0, 0, 4))
+    base.camera.set_pos(cluster)  # keep the same relative view
+
+    scale = h.win_h / 6.0  # world units -> pixels (film_h=6)
+    lit_px = h.win_w // 2 - int(round(1.2 * scale))   # outside the shadow
+    lit_py = int(h.win_h * (0.5 - 1.6 / 6.0))         # column, sunlit slope
+
+    def snap(tag):
+        h.step(4)
+        img = h.capture()
+        h.save_capture(img, tag)
+        return img
+
+    img = snap('off_origin_missed')
+    miss_pole = common.avg_lum(img, px, py, half=4)
+    lit_before = common.avg_lum(img, lit_px, lit_py, half=3)
+    h.report.check('extent_miss_is_lit', miss_pole > 0.4,
+                   f'pole lum={miss_pole:.3f} outside origin-centered '
+                   f'extent (outside frustum must be lit, not artifacts)')
+
+    pipeline.set_shadow_extent(12, 60, center=cluster)
+    img = snap('off_origin_centered')
+    centered_pole = common.avg_lum(img, px, py, half=4)
+    lit_after = common.avg_lum(img, lit_px, lit_py, half=3)
+    h.report.check('extent_recenter_shadows',
+                   centered_pole < 0.5 * max(miss_pole, 1e-4),
+                   f'pole lum={centered_pole:.3f} after centering the '
+                   f'extent on the cluster')
+    h.report.check('recenter_keeps_lighting',
+                   abs(lit_after - lit_before) < 0.02,
+                   f'lit-point lum {lit_before:.3f} -> {lit_after:.3f} '
+                   f'(light-node set_pos must not change lighting)')
+
     h.report.finish()
 
 

@@ -182,6 +182,7 @@ class Pipeline:
         self._last_sun_color = p3d.Vec3(1.2, 1.15, 1.0)
         self._shadow_extent = 800.0
         self._shadow_depth = 4000.0
+        self._shadow_center = p3d.Vec3(0, 0, 0)
 
         self._is_webgl = 'WebGL' in self.window.type.name
 
@@ -819,16 +820,28 @@ class Pipeline:
         else:
             dlight.set_shadow_caster(False)
 
-    def set_shadow_extent(self, radius, depth=None):
-        """Size the sun's shadow frustum: the ortho lens covers a
-        (2*radius x 2*radius) area, depth units deep, centered on the
-        world origin. Call with the radius of the region that should
-        receive shadows (e.g. current planet/station cluster size)."""
+    def set_shadow_extent(self, radius, depth=None, center=None):
+        """Size and place the sun's shadow frustum: the ortho lens covers
+        a (2*radius x 2*radius) area, depth units deep, centered on
+        `center` in world space (default: keeps the current center,
+        initially the world origin). Call with the radius and center of
+        the region that should receive shadows (e.g. the current
+        planet/station cluster).
+
+        Centering works by positioning the light NODE: a DirectionalLight
+        lights by orientation only, so this is lighting-neutral (proven by
+        paxtest test_shadows `recenter_keeps_lighting`) while the shadow
+        camera, which follows the node transform, moves with it.
+        update_sun() only touches HPR, so the center survives sun
+        movement. Uniform-cost — safe to call per-frame."""
         self._shadow_extent = radius
         if depth is not None:
             self._shadow_depth = depth
+        if center is not None:
+            self._shadow_center = p3d.Vec3(*center)
         if self.sun_light_np is None:
             return
+        self.sun_light_np.set_pos(self._shadow_center)
         lens = self.sun_light_np.node().get_lens()
         lens.set_film_size(2 * radius, 2 * radius)
         lens.set_near_far(-self._shadow_depth / 2, self._shadow_depth / 2)
