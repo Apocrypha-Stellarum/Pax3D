@@ -372,13 +372,28 @@ Notes:
   uniformly in the correct surface's favor and mimic a working depth
   buffer (observed in the harness).
 
-### R4.2 hooks (camera-relative / precision)
+### R4.2 — Camera-relative rendering (the chosen path, 2026-07-17)
 
 `test_scale`'s `precision_off_origin` checks (0.24% pixel drift at 1.2e6
-IEU, 22% at 1.2e7, rotated camera required) are the acceptance tests.
-Candidate mechanisms: camera-relative rendering in the pipeline vs the
-game-side doubles-build spike (STDFLOAT_DOUBLE engine) being explored in
-the game repo — decision pending that spike's verdict.
+IEU, 22% at 1.2e7, rotated camera required) document the engine baseline.
+The doubles engine build is shelved (compile cost); camera-relative
+placement is the path, and it is GAME-side work — the pipeline needs
+nothing new:
+
+- **The contract:** node positions handed to Panda must be
+  `sim_pos - anchor` computed in PYTHON DOUBLES, anchor near the camera.
+  Never store sim-scale coordinates in node transforms expecting a parent
+  at -anchor to cancel them: float32 storage quantizes locals BEFORE
+  composition (~1 IEU spacing at 1.2e7) — machine-proven by
+  `trap_parent_cancel_quantizes` in test_scale (8.5% pixel displacement
+  for a ship 1.5 IEU from its anchor).
+- **The pipeline is already rebase-safe:** camera_world_position, the
+  log-depth coefficient, and the shadow-extent center are all recomputed
+  per frame; the sun is direction-only. Rebasing the scene between frames
+  requires no pipeline calls.
+- Game integration goes through the nested-space architecture (deep-space
+  mode already anchors the ship at origin — generalize that), owned in
+  the game repo.
 
 ### R5 hooks (atmosphere / env ambient)
 

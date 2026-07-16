@@ -375,11 +375,24 @@ definition of done for log depth (zfight) and camera-relative rendering
   applied to the ortho shadow pass (linear depth is already uniform
   there). Remaining: sky-object shaders adopt the formula when the sky
   camera retires; game flips the frustum + flag after fly-out testing.
-- **Camera-relative rendering** — vertex positions relative to the camera to preserve float
-  precision at 10⁵+ IEU (needed before multi-star systems). Acceptance:
-  `test_scale precision_off_origin`. NOTE: the game repo is independently
-  spiking a double-precision engine build (STDFLOAT_DOUBLE) — if that
-  lands, it solves this half wholesale; decide after the spike verdict.
+- **Camera-relative rendering — THE CHOSEN R4.2 PATH (decision
+  2026-07-17).** The doubles engine build (STDFLOAT_DOUBLE spike, game
+  repo) is SHELVED for now — the compile cost can't be afforded on this
+  machine today; revisit at the next break (its handover doc preserves
+  the full procedure, and it would complement rather than replace this).
+  Camera-relative = anchor-relative placement in the GAME's positioning
+  layer: sim state stays in Python doubles; every node position is
+  `sim_pos - anchor` computed in doubles BEFORE set_pos, anchor follows
+  the player. **The contract is machine-proven in test_scale:** the
+  parent-cancel shortcut (huge coords in node transforms + parent at
+  -anchor) fails — local positions quantize (~1 IEU at 1.2e7) before
+  composition (`trap_parent_cancel_quantizes`: 8.5% pixel displacement
+  for a ship 1.5 IEU from anchor). Acceptance:
+  `test_scale precision_off_origin` stays the engine-baseline record;
+  the game-side criterion is a jitter-free orbit + fly-out at system
+  scale. Integrate WITH the nested-space architecture (deep-space mode
+  already locks the ship at origin — R4.2 generalizes that pattern;
+  coordinate with the game-space dev's NESTED_SPACE_ARCHITECTURE.md).
 - **Retire the sky camera** only after `test_scale.py` and a full fly-out test pass with log
   depth stable. The old roadmap's warning stands: never remove the workaround before its
   replacement is proven.
