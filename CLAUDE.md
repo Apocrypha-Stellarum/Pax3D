@@ -149,7 +149,8 @@ the GPU and Panda's C++, not in our orchestration layer.
 | Doubles engine build (`STDFLOAT_DOUBLE`) | Build flag | Shelved for CPU cost; resume via game repo `handover_doubles_spike.md` |
 | R2.3 DirectionalLight conveniences (`set_direction_world`, strip translation in `xform()`, non-zero-pos warning) | New C++ API | Queued, low urgency — the pipeline owns sun orientation |
 | DX9 removal (`dxgsg9/`, `pandadx9/`) + dead-path deletion | Deletion (R6) | Queued |
-| Vulkan-port evaluation (hand-port from read-only upstream reference) | Port | Only when it can run the paxtest suite |
+| Vulkan-port evaluation (hand-port from read-only upstream reference) | Port | Only when it can run the paxtest suite. Watch log 2026-07-17: ACTIVE — upstream merged `shaderpipeline` (SPIR-V) into the `vulkan` branch 2026-07-02/03, with unit tests; nowhere near paxtest-ready |
+| Upstream cherry-pick candidates (hand-pick at a build window if ever hit) | Cherry-pick | `70775c34` glgsg null-_current_properties guard; `fac1fd77` Texture copy-ctor drops clear-color fields; `29620e79` makepanda MSVC 14.5 (2026) support if the toolchain updates. Checked 2026-07-17: 93 commits since divergence, NOTHING rendering-critical (no light/shadow/skinning fixes; ShaderGenerator fixes don't apply — we bypass it). Upstream moved to C++17 (May 2026), so diffs drift fast |
 | Python→C++ promotions | Promotion | **None yet** — nothing Python has profiled hot |
 
 ---
