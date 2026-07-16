@@ -60,6 +60,23 @@ Every observed failure from the March effort, its actual cause, and where this p
 > eyeball parity; sRGB texture linearization experiment
 > (`make_base_color_textures_srgb()` helper is ready); drop the GLSL 120
 > dual-path once the game sets gl-version 3 2.
+>
+> **Session C update (2026-07-16):** R2 core landed — pax3d_render gains
+> `sun_light_mode='directional'`: a pipeline-owned real DirectionalLight
+> processed by the standard p3d_LightSource loop (SUN_FROM_LIGHTSOURCE
+> define), oriented via HPR so lighting and the shadow camera always agree.
+> `update_sun()` keeps its signature in both modes; paxtest lighting is
+> green in directional mode with measurements identical to uniforms mode,
+> and external DirectionalLights are now CONSUMED. **Sun shadows work**:
+> new `test_shadows.py` proves occlusion (0.79 lit → 0.09 shadowed),
+> runtime toggles via `set_sun_light_mode()` / `set_enable_shadows()` /
+> `set_shadow_extent()`. Fixed a real bug the harness caught: runtime
+> `_recompile_pbr()` wiped all shader inputs (now preserves the attrib).
+> Testbed: `--sun-mode/--shadows` flags, N/X hotkeys. Remaining R2:
+> game-side switch to directional mode + shadow-extent driving from planet
+> data (R2.4 at scale), planet tangents (only needed for normal maps),
+> engine C++ conveniences (set_direction_world — optional now that the
+> pipeline owns orientation).
 
 ### 1.3 The lesson
 

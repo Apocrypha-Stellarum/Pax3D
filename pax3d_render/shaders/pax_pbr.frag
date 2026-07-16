@@ -257,7 +257,11 @@ void main() {
 
     float n_dot_v = clamp(abs(dot(n, v)), 0.0, 1.0);
 
-    // ---- Pax sun directional light (world-space) ----
+#ifndef SUN_FROM_LIGHTSOURCE
+    // ---- Pax sun directional light (world-space, custom uniforms) ----
+    // Legacy mode: no shadow support on the sun. R2 replaces this with a
+    // real DirectionalLight processed by the p3d_LightSource loop below
+    // (define SUN_FROM_LIGHTSOURCE).
     {
         vec3 l = normalize(u_sun_dir_world);
         vec3 h = normalize(l + world_view);
@@ -282,13 +286,18 @@ void main() {
         vec3 spec_contrib = vec3(F * V * D);
         color.rgb += func_params.n_dot_l * u_sun_color * (diffuse_contrib + spec_contrib);
     }
+#endif
 
-    // ---- Additional lights (point/spot) from Panda3D light system ----
-    // Skip any directional lights (position.w < 0.5) since the sun is
-    // handled above via custom uniforms.
+    // ---- Lights from the Panda3D light system ----
+    // Point and spot lights always. With SUN_FROM_LIGHTSOURCE, directional
+    // lights (position.w == 0) are handled here too: the w-multiply below
+    // makes light_pos the view-space toward-light direction, attenuation
+    // resolves to 1, and the shadow path works via shadowViewMatrix.
     for (int i = 0; i < p3d_LightSource.length(); ++i) {
-        // Skip directional lights — they use w=0 in p3d_LightSource
+#ifndef SUN_FROM_LIGHTSOURCE
+        // Legacy mode: directional lights use the uniform sun block above
         if (p3d_LightSource[i].position.w < 0.5) continue;
+#endif
 
         vec3 lightcol = p3d_LightSource[i].diffuse.rgb;
 

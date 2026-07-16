@@ -18,10 +18,24 @@ July 2026, plus the following R1 additions:
     the target baseline is `gl-version 3 2` (GLSL 330).
   * debug output controlled by PAX3D_RENDER_DEBUG env var or debug=True.
 
-Sun lighting still uses the custom u_sun_dir_world / u_sun_color uniforms;
-switching to a real DirectionalLight is Phase R2.
+Phase R2 (sun_light_mode): the sun can now be a REAL DirectionalLight.
+
+  * sun_light_mode='uniforms' (default) — legacy custom u_sun_dir_world /
+    u_sun_color uniforms, byte-identical to the game's pax_pbr. No sun
+    shadows.
+  * sun_light_mode='directional' — the pipeline owns a DirectionalLight
+    node ('pax3d_sun'); the PBR shader processes it through the standard
+    p3d_LightSource loop (define SUN_FROM_LIGHTSOURCE), which also enables
+    the simplepbr shadow-map path for the sun. update_sun() keeps the same
+    signature and drives the node (orienting via HPR so the shadow camera
+    and the lighting direction always agree — never set_direction(), which
+    the shadow camera ignores).
+
+Switch at runtime with set_sun_light_mode(); toggle sun shadows with
+set_enable_shadows(); size the shadow frustum with set_shadow_extent().
 """
 import builtins
+import math
 import os
 
 import panda3d.core as p3d
@@ -109,6 +123,7 @@ class Pipeline:
                  enable_bloom=False, bloom_strength=1.0, bloom_intensity=1.0,
                  bloom_levels=5, tonemap_operator='aces',
                  enable_taa=False, debug=False,
+                 sun_light_mode='uniforms', shadow_map_size=2048,
                  **_kwargs):
         base = builtins.base
 
@@ -141,6 +156,19 @@ class Pipeline:
             tonemap_operator = 'aces'
         self.tonemap_operator = tonemap_operator
         self.enable_taa = enable_taa
+
+        # Sun light mode (R2)
+        if sun_light_mode not in ('uniforms', 'directional'):
+            print(f'[Pax3DRender] Unknown sun_light_mode "{sun_light_mode}", '
+                  f'falling back to "uniforms"')
+            sun_light_mode = 'uniforms'
+        self.sun_light_mode = sun_light_mode
+        self.shadow_map_size = shadow_map_size
+        self.sun_light_np = None
+        self._last_sun_dir = p3d.Vec3(0, 1, 0)
+        self._last_sun_color = p3d.Vec3(1.2, 1.15, 1.0)
+        self._shadow_extent = 800.0
+        self._shadow_depth = 4000.0
 
         self._is_webgl = 'WebGL' in self.window.type.name
 
@@ -188,6 +216,10 @@ class Pipeline:
         fallback_material = p3d.Material('pax3d-render-fallback')
         self.render_node.set_material(fallback_material)
 
+        # Create the sun DirectionalLight if requested (R2)
+        if self.sun_light_mode == 'directional':
+            self._create_sun_light()
+
         # Compile and apply PBR shader
         self._recompile_pbr()
 
@@ -198,13 +230,9 @@ class Pipeline:
         self._bloom_up_quads = []
         self._setup_tonemapping()
 
-        # Set initial sun uniforms (safe defaults — +Y world direction)
-        self.render_node.set_shader_input('u_sun_dir_world', p3d.Vec3(0, 1, 0))
-        self.render_node.set_shader_input('u_sun_color', p3d.Vec3(1.2, 1.15, 1.0))
-        # Float components (bypass any Vec3 CS conversion in set_shader_input)
-        self.render_node.set_shader_input('u_sun_dir_x', 0.0)
-        self.render_node.set_shader_input('u_sun_dir_y', 1.0)
-        self.render_node.set_shader_input('u_sun_dir_z', 0.0)
+        # Set initial sun state (safe defaults — +Y world direction).
+        # Drives the uniforms and, in directional mode, the light node.
+        self.update_sun(self._last_sun_dir, self._last_sun_color)
 
         # Limb darkening (0=off, only close sun renderer sets nonzero)
         self.render_node.set_shader_input('u_limb_darkening', 0.0)
@@ -240,15 +268,26 @@ class Pipeline:
             'IS_WEBGL': self._is_webgl,
             'ENABLE_SKINNING': self.enable_hardware_skinning,
             'CALC_NORMAL_Z': self.calculate_normalmap_blue,
+            'SUN_FROM_LIGHTSOURCE': self.sun_light_mode == 'directional',
         }
 
     def _recompile_pbr(self):
-        """Compile and apply the PBR shader to the render node."""
+        """Compile and apply the PBR shader to the render node.
+
+        Called at init AND at runtime (sun mode / shadow toggles). Must
+        preserve the existing ShaderAttrib's shader INPUTS — building a
+        fresh attrib would wipe every set_shader_input() made on the render
+        node (sun uniforms, debug mode, camera position, ...).
+        """
         defines = self._get_pbr_defines()
         pbr_shader = shaderutils.make_shader(
             'pax_pbr', 'pax_pbr.vert', 'pax_pbr.frag', defines
         )
-        attr = p3d.ShaderAttrib.make(pbr_shader)
+        prev = self.render_node.get_attrib(p3d.ShaderAttrib)
+        if prev is not None:
+            attr = prev.set_shader(pbr_shader)  # keeps existing inputs
+        else:
+            attr = p3d.ShaderAttrib.make(pbr_shader)
         if self.enable_hardware_skinning:
             attr = attr.set_flag(p3d.ShaderAttrib.F_hardware_skinning, True)
         self.render_node.set_attrib(attr)
@@ -721,24 +760,114 @@ class Pipeline:
         return result
 
     # ------------------------------------------------------------------
-    # Sun direction updates
+    # Sun light (R2): real DirectionalLight vs legacy uniforms
     # ------------------------------------------------------------------
 
+    def _create_sun_light(self):
+        """Create the pipeline-owned sun DirectionalLight."""
+        if self.sun_light_np is not None:
+            return
+        dlight = p3d.DirectionalLight('pax3d_sun')
+        c = self._last_sun_color
+        dlight.set_color(p3d.LColor(c[0], c[1], c[2], 1))
+        self.sun_light_np = self.render_node.attach_new_node(dlight)
+        self.render_node.set_light(self.sun_light_np)
+        if self.enable_shadows:
+            self._configure_sun_shadows(True)
+
+    def _destroy_sun_light(self):
+        if self.sun_light_np is None:
+            return
+        self.render_node.clear_light(self.sun_light_np)
+        self.sun_light_np.remove_node()
+        self.sun_light_np = None
+
+    def _configure_sun_shadows(self, enabled):
+        dlight = self.sun_light_np.node()
+        if enabled:
+            dlight.set_shadow_caster(True, self.shadow_map_size,
+                                     self.shadow_map_size)
+            self.set_shadow_extent(self._shadow_extent, self._shadow_depth)
+        else:
+            dlight.set_shadow_caster(False)
+
+    def set_shadow_extent(self, radius, depth=None):
+        """Size the sun's shadow frustum: the ortho lens covers a
+        (2*radius x 2*radius) area, depth units deep, centered on the
+        world origin. Call with the radius of the region that should
+        receive shadows (e.g. current planet/station cluster size)."""
+        self._shadow_extent = radius
+        if depth is not None:
+            self._shadow_depth = depth
+        if self.sun_light_np is None:
+            return
+        lens = self.sun_light_np.node().get_lens()
+        lens.set_film_size(2 * radius, 2 * radius)
+        lens.set_near_far(-self._shadow_depth / 2, self._shadow_depth / 2)
+
+    def set_sun_light_mode(self, mode):
+        """Switch between 'uniforms' (legacy) and 'directional' (real
+        DirectionalLight) at runtime. Recompiles the PBR shader."""
+        if mode not in ('uniforms', 'directional'):
+            print(f'[Pax3DRender] Unknown sun_light_mode "{mode}", ignoring')
+            return
+        if mode == self.sun_light_mode:
+            return
+        self.sun_light_mode = mode
+        if mode == 'directional':
+            self._create_sun_light()
+        else:
+            self._destroy_sun_light()
+        self._recompile_pbr()
+        self.update_sun(self._last_sun_dir, self._last_sun_color)
+
+    def set_enable_shadows(self, enabled):
+        """Toggle sun shadow mapping at runtime (directional mode only —
+        the legacy uniform sun has no light node to cast from)."""
+        if enabled == self.enable_shadows:
+            return
+        self.enable_shadows = enabled
+        self._recompile_pbr()
+        if self.sun_light_np is not None:
+            self._configure_sun_shadows(enabled)
+
     def update_sun(self, sun_dir_world, sun_color):
-        """Update the custom sun directional light uniforms.
+        """Update the sun. Same signature in both modes.
 
         Args:
             sun_dir_world: Vec3, world-space direction toward the sun
                            (normalized). Passed raw in Panda3D Z-up space.
             sun_color: Vec3, linear RGB color * intensity
         """
+        self._last_sun_dir = p3d.Vec3(sun_dir_world)
+        self._last_sun_color = p3d.Vec3(sun_color)
+
+        if self.sun_light_mode == 'directional' and self.sun_light_np is not None:
+            # Orient the NODE so its +Y forward is the photon travel
+            # direction. The engine derives the shader's toward-light vector
+            # from (default _direction) x (node transform), and the shadow
+            # camera looks along the node's forward — so both stay in
+            # agreement. (set_direction() would move the lighting but NOT
+            # the shadow camera; never use it here.)
+            travel = -p3d.Vec3(sun_dir_world)
+            if travel.length_squared() > 0:
+                travel.normalize()
+                heading = math.degrees(math.atan2(-travel.x, travel.y))
+                horiz = math.sqrt(travel.x * travel.x + travel.y * travel.y)
+                pitch = math.degrees(math.atan2(travel.z, horiz))
+                self.sun_light_np.set_hpr(heading, pitch, 0)
+            self.sun_light_np.node().set_color(
+                p3d.LColor(sun_color[0], sun_color[1], sun_color[2], 1))
+
+        # Uniforms are always updated: the legacy sun block reads them, and
+        # the shader debug modes (V key) visualize them in both modes.
         self.render_node.set_shader_input('u_sun_dir_world', sun_dir_world)
         self.render_node.set_shader_input('u_sun_color', sun_color)
 
         # Float components (for debug mode 9) — also raw Z-up
-        self.render_node.set_shader_input('u_sun_dir_x', float(sun_dir_world.x))
-        self.render_node.set_shader_input('u_sun_dir_y', float(sun_dir_world.y))
-        self.render_node.set_shader_input('u_sun_dir_z', float(sun_dir_world.z))
+        self.render_node.set_shader_input('u_sun_dir_x', float(sun_dir_world[0]))
+        self.render_node.set_shader_input('u_sun_dir_y', float(sun_dir_world[1]))
+        self.render_node.set_shader_input('u_sun_dir_z', float(sun_dir_world[2]))
 
     def set_debug_lighting(self, mode):
         """Set shader debug visualization mode (see pax_pbr.frag)."""
@@ -829,8 +958,9 @@ class Pipeline:
     # ------------------------------------------------------------------
 
     def cleanup(self):
-        """Remove the pipeline task, aux cameras, and FilterManager."""
+        """Remove the pipeline task, sun light, aux cameras, FilterManager."""
         self.taskmgr.remove('pax3d_render_update')
+        self._destroy_sun_light()
         for reg in list(self._scene_cameras):
             self.unregister_scene_camera(reg)
         if self.enable_taa:

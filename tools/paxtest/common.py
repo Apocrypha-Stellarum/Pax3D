@@ -107,7 +107,11 @@ class NoneAdapter:
     operators = ['linear']
 
     def create(self, base, msaa=0, exposure=0.0, tonemap='linear',
-               bloom=None):
+               bloom=None, sun_mode=None, shadows=False):
+        if sun_mode and sun_mode != 'uniforms':
+            raise AdapterError('none pipeline has no sun_light_mode support')
+        if shadows:
+            raise AdapterError('none pipeline has no shadow support')
         self.base = base
 
     def set_tonemap(self, op):
@@ -135,7 +139,13 @@ class _SimplepbrFamilyAdapter:
                 f'{self.module_name} not importable here: {exc}') from exc
 
     def create(self, base, msaa=0, exposure=0.0, tonemap='hejl_dawson',
-               bloom=None):
+               bloom=None, sun_mode=None, shadows=False):
+        if sun_mode and sun_mode != 'uniforms':
+            raise AdapterError(
+                f'{self.module_name} has no sun_light_mode support')
+        if shadows:
+            raise AdapterError(
+                f'{self.module_name} shadow testing not wired in paxtest')
         mod = self._import()
         self.base = base
         kwargs = dict(
@@ -210,16 +220,23 @@ class PaxPbrAdapter:
             raise AdapterError(f'graphics.pax_pbr not importable: {exc}') from exc
         return pipeline_init
 
+    supports_sun_modes = False
+
     def create(self, base, msaa=0, exposure=0.0, tonemap='hejl_dawson',
-               bloom=None):
+               bloom=None, sun_mode=None, shadows=False):
         pipeline_init = self._import_init()
         self.base = base
         kwargs = dict(
             msaa_samples=msaa,
-            enable_shadows=False,
+            enable_shadows=shadows,
             exposure=exposure,
             tonemap_operator=tonemap,
         )
+        if sun_mode and sun_mode != 'uniforms':
+            if not self.supports_sun_modes:
+                raise AdapterError(
+                    f'{self.name} has no sun_light_mode support')
+            kwargs['sun_light_mode'] = sun_mode
         if bloom:
             kwargs.update(
                 enable_bloom=True,
@@ -251,6 +268,7 @@ class Pax3dRenderAdapter(PaxPbrAdapter):
     """The unified pipeline in this repo (pax3d_render, Phase R1)."""
     name = 'pax3d_render'
     supports_camera_registration = True
+    supports_sun_modes = True   # 'uniforms' | 'directional' (R2)
 
     def _import_init(self):
         if PAX3D_ROOT not in sys.path:
@@ -331,12 +349,14 @@ class Harness:
         self.use_330 = args.baseline == 'modern'
         self.adapter = ADAPTERS[args.pipeline]()
 
-    def init_pipeline(self, exposure=0.0, tonemap='hejl_dawson', bloom=None):
+    def init_pipeline(self, exposure=0.0, tonemap='hejl_dawson', bloom=None,
+                      sun_mode=None, shadows=False):
         """Create the pipeline; call before building the scene."""
         try:
             self.adapter.create(self.base, msaa=self.args.msaa,
                                 exposure=exposure, tonemap=tonemap,
-                                bloom=bloom)
+                                bloom=bloom, sun_mode=sun_mode,
+                                shadows=shadows)
         except AdapterError as exc:
             self.report.skip(str(exc))
 

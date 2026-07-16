@@ -138,10 +138,17 @@ def main():
     parser = common.add_common_args(argparse.ArgumentParser())
     parser.add_argument('--gltf', default=DEFAULT_GLTF,
                         help='GLTF model to test (blank to skip)')
+    parser.add_argument('--sun-mode', default=None,
+                        choices=['uniforms', 'directional'],
+                        help='sun mechanism for pipelines that support it '
+                             '(pax3d_render R2)')
     args = parser.parse_args()
 
     h = common.Harness(args, 'lighting')
-    h.init_pipeline(exposure=0.0, tonemap='hejl_dawson')
+    h.init_pipeline(exposure=0.0, tonemap='hejl_dawson',
+                    sun_mode=args.sun_mode)
+    if args.sun_mode:
+        h.report.info('sun_mode', args.sun_mode)
     h.set_ortho(film_h=4.0)  # 1 world unit = win_h/4 px
     radius_px = 0.7 * (h.win_h / 4.0)  # sample disc inside the r=1 sphere
 

@@ -16,7 +16,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(HERE, 'output')
 
-ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild']
+ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 
@@ -51,9 +51,11 @@ def run_one(test, pipeline, extra_args, timeout=180):
         payload = {'test': test, 'pipeline': pipeline, 'status': 'ERROR',
                    'reason': f'no result (exit {proc.returncode})',
                    'output_tail': tail, 'checks': []}
-    for arg in extra_args:
+    for i, arg in enumerate(extra_args):
         if 'x' in arg and arg[0].isdigit():
             payload['win_size'] = arg
+        if arg == '--sun-mode' and i + 1 < len(extra_args):
+            payload['variant'] = extra_args[i + 1]
     return payload
 
 
@@ -85,6 +87,10 @@ def main():
                                  passthrough + ['--win-size', size]))
             else:
                 jobs.append((test, pipeline, list(passthrough)))
+            if test == 'lighting' and pipeline == 'pax3d_render':
+                # R2: also verify the real-DirectionalLight sun mode
+                jobs.append((test, pipeline,
+                             passthrough + ['--sun-mode', 'directional']))
 
     results = []
     print(f'paxtest: {len(jobs)} jobs, python={sys.executable}, '
@@ -93,6 +99,8 @@ def main():
         size = ''
         if '--win-size' in extra:
             size = ' @' + extra[extra.index('--win-size') + 1]
+        if '--sun-mode' in extra:
+            size += ' @' + extra[extra.index('--sun-mode') + 1]
         label = f'{test}/{pipeline}{size}'
         print(f'--- {label} ---')
         result = run_one(test, pipeline, extra)
@@ -117,6 +125,8 @@ def main():
     n_fail = n_err = 0
     for r in results:
         size = f' @{r.get("win_size", "")}' if r.get('win_size') else ''
+        if r.get('variant'):
+            size += f' @{r["variant"]}'
         counts = {'PASS': 0, 'FAIL': 0, 'INFO': 0}
         for c in r.get('checks', []):
             counts[c['status']] += 1
