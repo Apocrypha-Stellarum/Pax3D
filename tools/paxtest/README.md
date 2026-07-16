@@ -70,8 +70,26 @@ sky_camera.py way and FAIL (that's F4); pax3d_render attaches through
 sphere, `sun_light_mode='directional'` + `enable_shadows`. Asserts the
 occluded pole darkens to ambient, restores on toggle-off, and re-darkens on
 toggle-on (the toggle exercises the runtime shader-recompile path, which
-once wiped all shader inputs — guarded here). Skips pipelines without the
-directional sun mode.
+once wiped all shader inputs — guarded here). Session D adds the off-origin
+extent checks: geometry outside the frustum samples LIT,
+`set_shadow_extent(center=...)` recenters onto a far cluster, and
+positioning the light node leaves lighting bit-identical. Skips pipelines
+without the directional sun mode.
+
+**`test_ftl_blur.py`** — the FTL warp distortion pass (radial blur +
+chromatic aberration in tonemap); asserts zero-strength passthrough and
+effect behavior (added alongside the feature, post-Session-D).
+
+**`test_scale.py`** — R4 acceptance tests, **EXPECTED TO FAIL until R4
+lands** (they are the mechanical bug reports for log depth and
+camera-relative rendering): `zfight_at_range` (1 IEU separation at 2500 IEU
+under the game frustum 0.1/5000 — rear surface bleeds through in bands),
+and `precision_off_origin` (identical rotated-camera scene at origin vs
+1.2e6/1.2e7 IEU differs by 0.24%/22% of pixels). Near-field depth and
+origin-determinism controls must stay green forever. Engine-level,
+pipeline-independent: runs under 'none' and pax3d_render only. NOTE the
+finding: the precision defect requires a ROTATED camera — axis-aligned
+rigs cancel exactly in float32 and hide it.
 
 ## Goldens
 
@@ -79,18 +97,26 @@ directional sun mode.
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Results snapshot (post Session C, 2026-07-16)
+## Results snapshot (post Session D, 2026-07-17)
 
-Same results on stock 1.10.16 and Pax3D 1.11.0 — remaining defects are in
-the Python/GLSL pipelines, not the engine:
+Same results on stock 1.10.16 and Pax3D 1.11.0. Note: with the game's
+`use_pax3d_render` flag flipped (Session D), the `pax_pbr` adapter routes
+to pax3d_render — its column now mirrors pax3d_render except for `rebuild`
+(the test exercises the old attach pattern, which fails by design).
 
-| Test | none | simplepbr | pax_pbr | pax3d_render |
+| Test | none | simplepbr | pax_pbr (routed) | pax3d_render |
 |---|---|---|---|---|
 | gamma | PASS | PASS | PASS | PASS |
 | lighting | PASS | PASS | PASS | PASS (both sun modes) |
-| bloom | skip | skip | **FAIL (F3 blocky)** | **FAIL (F3 blocky)** |
+| bloom | skip | skip | PASS | **PASS (F3 fixed, Session D)** |
 | rebuild | skip | skip | FAIL (F4, by design of the old pattern) | **PASS** |
-| shadows | skip | skip | skip | **PASS** |
+| shadows | skip | skip | skip | **PASS (incl. off-origin extent)** |
+| ftl_blur | skip | skip | PASS | PASS |
+| scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)** |
+
+`pax3d_simplepbr` (retired) keeps its historical bloom/rebuild failures.
+`scale` failing is the DOCUMENTED baseline until R4 lands — see its entry
+above.
 
 Key established facts (full analysis:
 `documents/PAXTEST_FINDINGS_SESSION_A.md` + master plan session updates):
@@ -101,7 +127,10 @@ Key established facts (full analysis:
 - **No DirectionalLight engine bug** — real lights work on every mesh type;
   pax3d_render's directional sun measures identically to the uniform sun,
   and its shadows are proven (lit 0.79 → shadowed 0.09).
-- **Blocky bloom (F3)** is reproducible at any resolution — truncation
-  ruled out; suspects are buffer filter state, the upsample design, and a
-  half-texel Y offset (halo vertically asymmetric ~0.06). This is the R3
-  target; `test_bloom` is its acceptance test.
+- **Blocky bloom (F3) is FIXED (Session D)** — the root cause was 8-bit
+  intermediate FBOs (`render_quad_into` without float fbprops), NOT
+  filtering; the banding mimics nearest-neighbor sampling. Guarded by
+  `bloom_buffers_float`.
+- **Scale defects (R4) are reproduced** — depth resolution ~1.9 IEU at
+  2500 IEU under the game frustum; float32 view-matrix precision loss
+  needs a rotated camera to manifest.

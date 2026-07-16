@@ -194,7 +194,7 @@ against whichever engine is in the active venv:
 | `test_lighting.py` | UV sphere (standard winding), UV sphere (game winding), GLTF ship, all with one DirectionalLight at each cardinal | Sample lit/unlit hemisphere pixels; assert lit side faces the light. Resolves Formula B/C per mesh type once and for all (F8). |
 | `test_bloom.py` | Black scene + single small emissive quad | Render with bloom; assert radially smooth falloff (no blockiness), assert energy roughly conserved. **Reproduces F3 in isolation.** |
 | `test_rebuild.py` | Pipeline + registered auxiliary camera; toggle bloom/levels at runtime | Assert auxiliary camera still renders after rebuild (F4). |
-| `test_scale.py` | Two coplanar quads at 10⁵ IEU | Screenshot; check for Z-fighting (for R4). |
+| `test_scale.py` | **Implemented (Session D addendum).** Tilted near-coplanar cards at 2500 IEU (game frustum 0.1/5000) + identical rotated-camera scene at origin vs 1.2e6/1.2e7 IEU | R4 acceptance: zfight_at_range FAILS today (green bleed 0.54); precision_off_origin FAILS today (diff 0.0024 @1e6, 0.22 @1e7). Controls (near-field depth, origin determinism) green. NOTE: the precision defect needs a ROTATED camera — axis-aligned rigs cancel exactly. |
 
 Plus: `paxtest run --golden` captures reference screenshots; `paxtest run --check` diffs against
 them. Keep it crude — image RMS diff is enough.
@@ -328,6 +328,25 @@ bloom at runtime is safe (R1.2 already guarantees it).
 ### Phase R4 — Space-Scale Rendering (high effort; engine-heavy)
 
 **Goal:** One camera, near 0.1 to far 10⁹, no Z-fighting, no sky-camera architecture.
+
+**R4.0 — Acceptance tests (DONE, Session D addendum 2026-07-17).**
+`test_scale.py` reproduces both defects mechanically against the current
+stack (identical under stock and Pax3D engines, 'none' and pax3d_render —
+engine-level, pipeline-independent):
+- `zfight_at_range`: 1.0 IEU separation at 2500 IEU under the game frustum
+  (0.1/5000, 24-bit depth) cannot be resolved — the rear surface bleeds
+  through in bands (green fraction 0.54; theoretical depth resolution at
+  that range ≈ 1.9 IEU). Near-field control (50 IEU) resolves cleanly and
+  must stay green after log depth lands.
+- `precision_off_origin`: the same rotated-camera scene at the origin vs
+  1.2e6 / 1.2e7 IEU differs by 0.24% / 22% of pixels (float32 view-matrix
+  composition). **Finding:** the defect requires camera ROTATION — with an
+  identity-rotation axis-aligned rig the large translations cancel exactly
+  and everything looks fine; this is why the game degrades when orbiting
+  at range, not when flying straight out.
+These rows are EXPECTED FAILs in the matrix until R4 lands — they are the
+definition of done for log depth (zfight) and camera-relative rendering
+(precision).
 
 - **Logarithmic depth** in the unified shader set (single formula in one include, used by scene,
   sky objects, and shadow passes). Engine hook in the shader generator if auto-shader paths
