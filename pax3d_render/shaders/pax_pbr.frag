@@ -436,6 +436,20 @@ void main() {
         float ndl_float = clamp(dot(world_normal, float_sun), 0.0, 1.0);
         color = vec4(vec3(ndl_float), 1.0);  // Same as mode 2 but from floats
     }
+#ifdef ENABLE_SHADOWS
+    else if (u_debug_lighting > 9.5 && u_debug_lighting < 10.5) {
+        // Mode 10: shadow-map UV of light 0 (R=u, G=v, B=depth ref).
+        // In-frustum fragments show a smooth 0..1 gradient; solid saturated
+        // colors mean the shadowViewMatrix maps them off-map.
+        vec3 suv = v_shadow_pos[0].xyz / max(abs(v_shadow_pos[0].w), 1e-6);
+        color = vec4(suv, 1.0);
+    } else if (u_debug_lighting > 10.5 && u_debug_lighting < 11.5) {
+        // Mode 11: shadow term of light 0 (white=lit, black=shadowed).
+        float s = shadow_caster_contrib(p3d_LightSource[0].shadowMap,
+                                        v_shadow_pos[0]);
+        color = vec4(vec3(s), 1.0);
+    }
+#endif
 
 #ifdef LOG_DEPTH
     // Window-space depth in [0,1], logarithmic in view distance: resolves
