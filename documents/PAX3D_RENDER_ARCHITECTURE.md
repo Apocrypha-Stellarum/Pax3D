@@ -39,7 +39,7 @@ Files:
 | `shaderutils.py` | Loads `shaders/*` from disk, injects `#define`s, mechanical GLSL 120→330 upgrade |
 | `shaders/pax_pbr.vert/.frag` | The PBR scene shader (metal-rough, IBL hooks, debug modes) |
 | `shaders/tonemap.frag` | 4 operators + bloom composite + dither |
-| `shaders/bloom_extract/downsample/upsample.frag` | Kawase-style bloom chain (KNOWN DEFECT — §8) |
+| `shaders/bloom_extract/downsample/upsample.frag` | Jimenez-style bloom chain (F3 fixed Session D — §9) |
 | `shaders/taa_resolve.frag`, `passthrough.frag` | TAA resolve + copies |
 | `shaders/shadow.vert/.frag` | Shadow-caster depth pass |
 | `textures/` | Optional `brdf_lut.txo` (absent → 1×1 white fallback; only matters once env maps are used) |
@@ -70,11 +70,18 @@ then: `taa_resolve` (history blend + neighborhood clamp) → history copy →
 passthrough to window. Camera gets per-frame Halton sub-pixel jitter from
 the `_update` task.
 
-All intermediate textures are RGBA16F. The scene buffer is explicitly
-**linear** (`srgb_color=False`); sRGB encoding happens exactly once, in
-`tonemap.frag` (explicit `pow(1/2.2)` for ACES/Reinhard/Uncharted2;
-Hejl-Dawson bakes its own curve). **paxtest `test_gamma` proves this chain
-matches the analytic curves — keep it that way.**
+All intermediate textures are RGBA16F — and since Session D this is true
+of the actual framebuffers, not just the texture declarations: every bloom
+`render_quad_into` passes explicit float fbprops. **Without fbprops,
+FilterManager creates a default 8-bit FBO and the texture bind silently
+rewrites the declared format to match** — that was the F3 root cause (§9).
+Any new post pass that carries HDR data MUST pass float fbprops; the
+paxtest `bloom_buffers_float` check guards the bloom chain. The scene
+buffer is explicitly **linear** (`srgb_color=False`); sRGB encoding happens
+exactly once, in `tonemap.frag` (explicit `pow(1/2.2)` for
+ACES/Reinhard/Uncharted2; Hejl-Dawson bakes its own curve). **paxtest
+`test_gamma` proves this chain matches the analytic curves — keep it that
+way.**
 
 Everything is orchestrated through Panda3D's `FilterManager`
 (`render_scene_into` for the scene buffer, `render_quad_into` for each
@@ -283,29 +290,46 @@ full paxtest matrix under both baselines before/after.
 
 ## 9. Known Defects / Where the Next Phases Land
 
-### F3 — Blocky bloom (R3, next up)
+### F3 — Blocky bloom — FIXED (Session D, 2026-07-17)
 
-Reproduced deterministically by `paxtest test_bloom` (both pipelines, both
-512×512 and 960×540 → truncation ruled out). The halo is chunky and
-vertically asymmetric (up/down luminance delta ~0.06 at equal radius;
-left/right ~0). Investigate in this order:
+`test_bloom` is green at both resolutions, both engines, both GL
+baselines. The fix was three defects, in order of importance:
 
-1. **Filter/wrap state** on every intermediate bloom texture — the tent
-   and accumulator sampling assume bilinear + clamp-to-edge; the textures
-   are created bare (`p3d.Texture(name)`) in `_setup_tonemapping`.
-2. **Upsample design flaw**: `bloom_upsample.frag` applies the 9-tap tent
-   to the SAME-resolution downsample texture but samples the coarser-mip
-   accumulator (`bloom_accum_tex`) with a single bilinear tap — so each mip
-   is effectively upsampled by raw bilinear alone. The Jimenez reference
-   tents the coarser mip. Swapping which input gets the tent is the likely
-   real fix.
-3. **Half-texel offset** (the vertical asymmetry signature) — check
-   `texel_size` uniforms vs actual buffer sizes and the UV convention in
-   `render_quad_into` buffers.
+1. **Root cause — 8-bit intermediate FBOs.** The bloom `render_quad_into`
+   calls passed no fbprops, so FilterManager created default 8-bit
+   framebuffers and the texture bind silently rewrote the declared RGBA16F
+   format to match. The extract's `*0.005` scale then crushed the halo
+   tail into a handful of 8-bit codes; the tonemap amplified each 1-code
+   step into a visible band. Diagnostic trap for posterity: the banding
+   shows up as *texel-aligned flat plateaus with 1px cliffs*, which
+   perfectly mimics nearest-neighbor sampling and misdirects toward
+   filter state. It was cornered by reading back the intermediates
+   (`RTM_copy_ram`) and noticing every value was exactly n/255. Fixed by
+   passing explicit float fbprops (`bloom_fbprops`) to every bloom pass;
+   guarded by the `bloom_buffers_float` check in test_bloom.
+2. **Downsample kernel typo** (`bloom_downsample.frag`): the four corner
+   boxes of the 13-tap Jimenez kernel must each include the center sample
+   `a`; the code had `b`/`c` in its place, over-weighting the two -y inner
+   taps (kernel summed to 1.125, vertically lopsided). This was the
+   up/down halo asymmetry (~0.05–0.07 delta, left/right ~0). Now sums to
+   exactly 1.0 and is symmetric.
+3. **Upsample tent on the wrong input** (`bloom_upsample.frag`): the
+   9-tap tent was applied to the same-res downsample (near no-op) while
+   the coarser accumulator — the texture actually being magnified — got a
+   single bilinear tap. Now the tent filters the coarser accumulator
+   (Jimenez-style progressive upsample; `texel_size` = accumulator texel)
+   and the same-res source gets one exact tap, keeping the per-mip tint
+   on the source contribution as before.
 
-Fix procedure: make `test_bloom` pass at both resolutions, keep
-`test_gamma` green (composite happens pre-tonemap), then eyeball halos in
-the testbed (`--bloom`, U/J/I/K tuning).
+Also hardened: all bloom textures get explicit bilinear + clamp-to-edge
+(`_set_bloom_filtering`) — the Panda default wrap is repeat, which bled
+the halo across screen edges.
+
+Remaining R3 (content, not correctness): retune strength/intensity/tints
+in the testbed (`--bloom`, U/J/I/K) — brightness rose because the tail is
+no longer quantized to zero and HDR extract values survive; the per-mip
+tint indexing also reads inverted vs its comment labels (finest mip gets
+the "deep warm outer" tint) — decide intent when retuning.
 
 ### R4 hooks (log depth / camera-relative)
 

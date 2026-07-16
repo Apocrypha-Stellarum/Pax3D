@@ -104,6 +104,24 @@ def main():
                   f'left/right delta={lr_delta:.4f}, '
                   f'up/down delta={ud_delta:.4f}')
 
+    # 5. Bloom intermediates must be real float FBOs. This was the F3 root
+    # cause: render_quad_into without fbprops makes default 8-bit buffers
+    # (silently rewriting the texture's declared RGBA16F format), and the
+    # dim halo tail quantizes into visible bands. Checked AFTER rendering
+    # because the format rewrite happens at first bind.
+    fm = getattr(getattr(h.adapter, 'pipeline', None), '_filtermgr', None)
+    if fm is not None:
+        bloom_bufs = [b for b in fm.buffers
+                      if b.get_texture() is not None
+                      and b.get_texture().get_name().startswith('bloom')]
+        nonfloat = [b.get_texture().get_name() for b in bloom_bufs
+                    if not b.get_fb_properties().get_float_color()]
+        if bloom_bufs:
+            h.report.check(
+                'bloom_buffers_float', not nonfloat,
+                f'{len(bloom_bufs)} bloom buffers, '
+                f'non-float: {nonfloat if nonfloat else "none"}')
+
     h.report.finish()
 
 

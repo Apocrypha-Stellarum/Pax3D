@@ -33,7 +33,7 @@ Every observed failure from the March effort, its actual cause, and where this p
 |---|---|---|---|
 | F1 | Ships look flat; bloom "does nothing useful" | No DirectionalLight → no specular highlights → nothing bright for bloom to amplify. Post-processing was built on an unlit scene. | Phase R2 |
 | F2 | ACES/Reinhard/Uncharted2 washed out | ~~Suspected double-gamma~~ **DISPROVEN by paxtest (Session A):** the post chain matches the analytic curves exactly. Real cause: **inputs are not linearized** — sRGB textures sampled raw, content hand-tuned against Hejl-Dawson. R1 = flag textures sRGB + retune intensities. | Phase R1 |
-| F3 | Bloom produces blocky artifacts | **Reproduced in isolation by paxtest (Session A)** at both clean and game-like resolutions → truncation ruled out. Suspects: buffer filter state, upsample design (tent on same-res, bare bilinear on coarser accum), half-texel Y offset (halo is vertically asymmetric). | Phase R3 |
+| F3 | Bloom produces blocky artifacts | **FIXED (Session D).** Root cause: bloom intermediates were 8-bit FBOs (`render_quad_into` without fbprops; the bind silently rewrites the declared RGBA16F texture format) → dim halo tail quantized into bands. Secondary: downsample kernel typo (vertical asymmetry), upsample tented the wrong input. Guarded by `test_bloom` incl. `bloom_buffers_float`. | Phase R3 — done |
 | F4 | Toggling bloom kills the skybox permanently | `_rebuild_tonemapping()` destroys the FilterManager; the sky camera found its display region by *searching* for it once at init and can't recover. Architectural: the pipeline doesn't own its auxiliary cameras. | Phase R1 |
 | F5 | Tuning was guesswork; regressions couldn't be attributed | Many variables changed at once (bloom + tonemap + compensation removal in one session), tested only by launching the full game and eyeballing. | Phase R0 |
 | F6 | Planet spheres forced the custom-uniform workaround | `V3n3t2` format — no tangents → NaN TBN in the stock shader. Worked around instead of fixed. | Phase R2 |
@@ -77,6 +77,30 @@ Every observed failure from the March effort, its actual cause, and where this p
 > data (R2.4 at scale), planet tangents (only needed for normal maps),
 > engine C++ conveniences (set_direction_world — optional now that the
 > pipeline owns orientation).
+
+> **Session D update (2026-07-17):** R3.1 done — **F3 (blocky bloom) is
+> root-caused and fixed**; `test_bloom` is green at both resolutions, both
+> engines, both GL baselines. The real cause was none of the three
+> suspects: the bloom intermediates were **8-bit framebuffers**.
+> `render_quad_into()` without `fbprops` creates a default 8-bit FBO and
+> the texture bind silently rewrites the declared RGBA16F format to match,
+> so the extract's `*0.005` scale crushed the halo tail into a handful of
+> 8-bit codes — the tonemap then amplified each 1-code step into a visible
+> band (texel-aligned plateaus that mimic nearest-neighbor sampling; this
+> misdirected the investigation toward filter state). Fix: explicit float
+> fbprops on every bloom `render_quad_into` (pipeline.py), plus two real
+> but secondary defects found on the way: the 13-tap downsample kernel
+> used `b`/`c` where the center sample `a` belongs (over-weighted the -y
+> taps — this was the vertical halo asymmetry), and the 9-tap upsample
+> tent was applied to the same-res source while the coarser accumulator
+> got one bilinear tap (Jimenez tents the coarser mip). Also explicit
+> bilinear+clamp on all bloom textures (was default repeat → edge bleed).
+> New paxtest check `bloom_buffers_float` guards the root cause. Legacy
+> pax_pbr/pax3d_simplepbr still fail test_bloom by design (frozen A/B
+> copies). Remaining R3: content retune (R3.2/R3.3 — strength/intensity/
+> tints; note the per-mip tint list reads inverted vs its comment labels),
+> auto-exposure stretch (R3.4), and the game-side bloom-on decision after
+> the R1/R2 flag flips.
 
 ### 1.3 The lesson
 
@@ -257,11 +281,11 @@ hemispheres correct at all four cardinals (debug overlay reads OK); shadows togg
 
 **Goal:** The March feature set, working, on top of a scene that now has real light.
 
-**R3.1 — Diagnose blockiness in the harness (F3).**
-`test_bloom.py` + RenderDoc/apitrace on the isolated scene. Check in order:
-buffer sizes actually allocated by `render_quad_into(div=…)` vs. the `texel_size` uniforms
-(integer truncation at 1/16, 1/32); texture padding; min/mag filter = linear and wrap =
-clamp-to-edge on **every** bloom buffer. Fix until the golden test shows smooth falloff.
+**R3.1 — Diagnose blockiness in the harness (F3).** **DONE (Session D,
+2026-07-17).** Root cause was 8-bit intermediate FBOs, not any of the listed
+suspects — see the Session D update in §1.2 and the F3 register row.
+`test_bloom` green at 512×512 and 960×540, both engines, both GL baselines;
+new `bloom_buffers_float` check prevents regression.
 
 **R3.2 — Physical-ish light units.**
 Sun intensity, emissives, and exposure defined in consistent relative units with exposure in EV

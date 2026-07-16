@@ -36,7 +36,7 @@ The rendering program runs in gated phases (see the master plan):
 | R0 | paxtest harness | **DONE** — gates everything below |
 | R1 | Unified renderer (`pax3d_render`), color contract, camera registration | **Core done.** Remaining: in-game parity sign-off, sRGB input linearization rollout, drop GLSL-120 dual path |
 | R2 | Real DirectionalLight sun + shadows | **Core done, harness-proven.** Remaining: game switches to directional mode; shadow extent at planetary scale |
-| R3 | Bloom fixed + HDR polish | **NEXT.** Blocky-bloom defect reproduced and cornered (see F3 in the plan) |
+| R3 | Bloom fixed + HDR polish | **Core done (Session D).** F3 fixed (8-bit intermediate FBOs were the root cause), test_bloom green everywhere. Remaining: content retune (strength/intensity/tints), light units, auto-exposure stretch |
 | R4 | Log depth, camera-relative rendering, single camera | Not started |
 | R5 | Atmospheric scattering, env-driven ambient, signature look | Not started |
 | R6 | Engine hygiene (DX9 removal, upstream sync, Vulkan watch) | Ongoing, low priority |
@@ -59,9 +59,12 @@ full analysis in `documents/PAXTEST_FINDINGS_SESSION_A.md`):
   their analytic curves exactly. ACES looks washed out because *inputs* are
   not linearized (sRGB textures sampled raw) and content was tuned around
   Hejl-Dawson.
-- **The blocky bloom is real and reproducible** at any resolution —
-  truncation is ruled out; suspects are buffer filter state, the
-  upsample-pass design, and a half-texel Y offset.
+- **The blocky bloom is FIXED (Session D, 2026-07-17).** Root cause: the
+  bloom intermediates were 8-bit FBOs (`render_quad_into` without fbprops
+  silently downgrades the declared RGBA16F texture) — quantization
+  banding, not filtering. Any HDR post pass MUST pass float fbprops;
+  `bloom_buffers_float` in test_bloom guards this. Beware the diagnostic
+  trap: this banding looks exactly like nearest-neighbor sampling.
 
 ---
 

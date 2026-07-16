@@ -36,13 +36,16 @@ void main() {
     vec3 l = texture2D(src_tex, uv + vec2(        0.0,  2.0 * ts.y)).rgb;
     vec3 m = texture2D(src_tex, uv + vec2( 2.0 * ts.x,  2.0 * ts.y)).rgb;
 
-    // 13-tap Jimenez kernel: center box weight 0.5, four corner boxes 0.125 each
-    vec3 result = a * 0.125;
-    result += (b + c + d + e) * 0.125;
-    result += (f + g + b + i) * 0.03125;
-    result += (g + h + c + j) * 0.03125;
-    result += (i + b + k + l) * 0.03125;
-    result += (c + j + l + m) * 0.03125;
+    // 13-tap Jimenez kernel: five overlapping 4-tap boxes — the inner box
+    // (b,c,d,e) at weight 0.5, four corner boxes at 0.125 each. Every
+    // corner box includes the CENTER sample a (not b/c — that typo
+    // overweighted the -y taps and skewed the halo vertically, F3).
+    // Weights sum to exactly 1.0.
+    vec3 result = (b + c + d + e) * 0.125;
+    result += (f + g + i + a) * 0.03125;
+    result += (g + h + a + j) * 0.03125;
+    result += (i + a + k + l) * 0.03125;
+    result += (a + j + l + m) * 0.03125;
 
     // Energy compensation — boost to counteract resolution halving
     result *= 1.3;

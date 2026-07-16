@@ -64,6 +64,19 @@ _MIP_TINTS = [
 ]
 
 
+def _set_bloom_filtering(tex):
+    """Bilinear + clamp-to-edge on a bloom intermediate texture.
+
+    The tent/box kernels sample between mismatched resolutions and assume
+    this state; Panda's default wrap is repeat, which bleeds the halo
+    across screen edges (part of F3).
+    """
+    tex.set_minfilter(p3d.SamplerState.FT_linear)
+    tex.set_magfilter(p3d.SamplerState.FT_linear)
+    tex.set_wrap_u(p3d.SamplerState.WM_clamp)
+    tex.set_wrap_v(p3d.SamplerState.WM_clamp)
+
+
 def _load_brdf_lut(debug=False):
     """Load the BRDF LUT texture for IBL specular.
 
@@ -500,12 +513,23 @@ class Pipeline:
                 'IS_WEBGL': self._is_webgl,
             }
 
+            # Bloom buffers must be REAL float FBOs. Without explicit
+            # fbprops, render_quad_into creates a default 8-bit framebuffer
+            # and the texture bind silently rewrites the declared RGBA16F
+            # format to match it — the extract's 0.005 scale then collapses
+            # the halo tail into a handful of 8-bit codes, which the tonemap
+            # amplifies into visible banding (defect F3).
+            bloom_fbprops = p3d.FrameBufferProperties()
+            bloom_fbprops.float_color = True
+            bloom_fbprops.set_rgba_bits(16, 16, 16, 16)
+
             # 2. Bloom extract pass (full resolution)
             bloom_extract_tex = p3d.Texture('bloom_extract')
             bloom_extract_tex.set_format(p3d.Texture.F_rgba16)
             bloom_extract_tex.set_component_type(p3d.Texture.T_float)
+            _set_bloom_filtering(bloom_extract_tex)
             extract_quad = self._filtermgr.render_quad_into(
-                colortex=bloom_extract_tex)
+                colortex=bloom_extract_tex, fbprops=bloom_fbprops)
             extract_quad.set_shader(shaderutils.make_shader(
                 'bloom_extract', 'post.vert', 'bloom_extract.frag',
                 bloom_defines
@@ -522,8 +546,9 @@ class Pipeline:
                 tex = p3d.Texture(f'bloom_down_{i}')
                 tex.set_format(p3d.Texture.F_rgba16)
                 tex.set_component_type(p3d.Texture.T_float)
+                _set_bloom_filtering(tex)
                 quad = self._filtermgr.render_quad_into(
-                    colortex=tex, div=div)
+                    colortex=tex, div=div, fbprops=bloom_fbprops)
                 quad.set_shader(shaderutils.make_shader(
                     'bloom_down', 'post.vert', 'bloom_downsample.frag',
                     bloom_defines
@@ -548,22 +573,25 @@ class Pipeline:
                 tex = p3d.Texture(f'bloom_up_{i}')
                 tex.set_format(p3d.Texture.F_rgba16)
                 tex.set_component_type(p3d.Texture.T_float)
+                _set_bloom_filtering(tex)
                 if div > 1:
                     quad = self._filtermgr.render_quad_into(
-                        colortex=tex, div=div)
+                        colortex=tex, div=div, fbprops=bloom_fbprops)
                 else:
-                    quad = self._filtermgr.render_quad_into(colortex=tex)
+                    quad = self._filtermgr.render_quad_into(
+                        colortex=tex, fbprops=bloom_fbprops)
                 quad.set_shader(shaderutils.make_shader(
                     'bloom_up', 'post.vert', 'bloom_upsample.frag',
                     bloom_defines
                 ))
                 quad.set_shader_input('src_tex', down_textures[src_idx])
                 quad.set_shader_input('bloom_accum_tex', up_tex)
-                # Texel size of the source texture for tent filter
-                src_w = max(1, win_x // (2 ** src_idx))
-                src_h = max(1, win_y // (2 ** src_idx))
+                # Texel size of the COARSER accumulator — that's what the
+                # tent filter reads (matches FilterManager's win//div sizing)
+                accum_w = max(1, win_x // (2 ** (src_idx + 1)))
+                accum_h = max(1, win_y // (2 ** (src_idx + 1)))
                 quad.set_shader_input('texel_size', p3d.LVecBase2(
-                    1.0 / src_w, 1.0 / src_h
+                    1.0 / accum_w, 1.0 / accum_h
                 ))
                 # Per-mip tint (cycle if more levels than tints)
                 tint = _MIP_TINTS[i % len(_MIP_TINTS)]
