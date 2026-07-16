@@ -202,8 +202,9 @@ You should see the venv path. If it still shows the system path, the venv may no
 3. If missing, reinstall dependencies:
    ```bash
    cd C:\python\pax3d-env
-   pip install panda3d panda3d-gltf panda3d-simplepbr numpy pillow PyQt6
+   pip install panda3d panda3d-gltf panda3d-simplepbr numpy pillow PyQt6 pygame scipy
    ```
+   **IMPORTANT:** `pygame` and `scipy` are required even though the game appears to launch without them. Missing `pygame` causes silent import failures in `textad/` modules, breaking planet subtype allocation (planets render as white spheres). Missing `scipy` disables KDTree-based starfield optimizations.
 
 ### Problem: venv activation doesn't work on PowerShell
 

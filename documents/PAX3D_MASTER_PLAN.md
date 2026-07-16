@@ -1,0 +1,337 @@
+# Pax3D Master Plan v2 — The Rendering Program, Rebooted
+
+**Project:** Pax3D (Panda3D 1.11.0-dev fork) + Pax Abyssi (`C:\python\sfb2`)
+**Date:** 2026-07-16
+**Supersedes:** `RENDERING_ROADMAP.md` (2026-02-26), `LIGHTING_CHANGE_PLAN.md` (Session 459)
+**Status of predecessors:** kept as reference; their analysis is still valid, their sequencing is not.
+
+---
+
+## 1. Why the Previous Plan Didn't Deliver
+
+An honest audit (July 2026) of both repos shows the March effort stalled, and *why* it stalled
+is the most important input to this plan.
+
+### 1.1 What the state actually is
+
+| Claim in old docs | Reality (verified 2026-07-16) |
+|---|---|
+| "Phase 2 (Bloom + HDR) implemented" | Bloom code exists in `sfb2/graphics/pax_pbr/pipeline.py` but is **disabled** (`enable_bloom: false`). When enabled it produced blocky artifacts and no useful glow. |
+| "ACES tonemapping" | Reverted. `tonemap_operator: "hejl_dawson"` — the *stock simplepbr curve we started with*. ACES/Reinhard/Uncharted2 all looked wrong (suspected double-gamma, never diagnosed). |
+| "Game uses pax3d_simplepbr" | The game **never adopted it**. It uses its own fork-of-a-fork, `sfb2/graphics/pax_pbr/`, with the bloom code copy-pasted in. `pax3d_simplepbr/` sits unused in the engine repo. |
+| "Phase 1 (directional lighting) resolved" | The *formula* was resolved. But the scene has **no DirectionalLight at all** — the sun is driven by custom `u_sun_dir_world`/`u_sun_color` uniforms in a custom shader. Ships get no directional light and no sun specular. Shadows are off. |
+| "Pax3D engine fork" | **Zero engine C++ changes exist.** The only committed change is a build-system fix. |
+
+Rendering work stopped at Session 459 (2026-03-03). Sessions 460–595 were all gameplay systems.
+The DirectionalLight restoration that Session 459's handover called "next session" never happened.
+
+### 1.2 Root-cause register
+
+Every observed failure from the March effort, its actual cause, and where this plan fixes it:
+
+| # | Observed failure | Root cause | Fixed in |
+|---|---|---|---|
+| F1 | Ships look flat; bloom "does nothing useful" | No DirectionalLight → no specular highlights → nothing bright for bloom to amplify. Post-processing was built on an unlit scene. | Phase R2 |
+| F2 | ACES/Reinhard/Uncharted2 washed out | ~~Suspected double-gamma~~ **DISPROVEN by paxtest (Session A):** the post chain matches the analytic curves exactly. Real cause: **inputs are not linearized** — sRGB textures sampled raw, content hand-tuned against Hejl-Dawson. R1 = flag textures sRGB + retune intensities. | Phase R1 |
+| F3 | Bloom produces blocky artifacts | **Reproduced in isolation by paxtest (Session A)** at both clean and game-like resolutions → truncation ruled out. Suspects: buffer filter state, upsample design (tent on same-res, bare bilinear on coarser accum), half-texel Y offset (halo is vertically asymmetric). | Phase R3 |
+| F4 | Toggling bloom kills the skybox permanently | `_rebuild_tonemapping()` destroys the FilterManager; the sky camera found its display region by *searching* for it once at init and can't recover. Architectural: the pipeline doesn't own its auxiliary cameras. | Phase R1 |
+| F5 | Tuning was guesswork; regressions couldn't be attributed | Many variables changed at once (bloom + tonemap + compensation removal in one session), tested only by launching the full game and eyeballing. | Phase R0 |
+| F6 | Planet spheres forced the custom-uniform workaround | `V3n3t2` format — no tangents → NaN TBN in the stock shader. Worked around instead of fixed. | Phase R2 |
+| F7 | Two divergent renderer forks | `pax3d_simplepbr` (engine repo) and `graphics/pax_pbr` (game repo) implement the same pipeline differently. Fixes land in one and not the other; neither is authoritative. | Phase R1 |
+| F8 | Winding-dependent lighting (Formula B vs C) | Planet sphere winding is non-standard; GLTF assets follow spec CCW. Two conventions in one scene. | Phase R2 |
+
+> **Session A update (2026-07-16):** Phase R0 is complete — `tools/paxtest/`
+> exists and its first run revised this register: F2's double-gamma
+> hypothesis is disproven (real cause: input linearization), F3 is reproduced
+> in isolation, F8 is confirmed, and a real DirectionalLight is proven to
+> work on all current mesh types (de-risking R2). Full analysis in
+> `PAXTEST_FINDINGS_SESSION_A.md`.
+
+### 1.3 The lesson
+
+The March plan ordered work by *visual payoff* (bloom first, because it's exciting). The correct
+order is by *dependency*: *test harness → color correctness → lighting → post-processing → scale →
+atmosphere*. Bloom amplifies whatever the lighting produces; when the lighting produces nothing,
+bloom amplifies nothing — this was learned empirically at the cost of a month.
+
+---
+
+## 2. Strategy
+
+### 2.1 Five principles
+
+1. **Fix the light before the glow.** No post-processing work until a real DirectionalLight
+   produces correct diffuse + specular on every mesh type in the scene.
+
+2. **One renderer, owned by the engine repo.** Merge `graphics/pax_pbr` (game) and
+   `pax3d_simplepbr` (engine) into a single first-party package in the Pax3D repo. The game
+   becomes a consumer with a thin adapter. Every rendering fix lands in exactly one place.
+
+3. **Verify in a harness, not by launching the game.** A standalone test kit in the engine repo
+   renders known scenes offscreen and checks the output programmatically. Gamma correctness is
+   checked with a ramp image, not by opinion. Lighting direction is checked by sampling pixels
+   on a sphere, not by squinting. This is the single highest-leverage item in the whole plan.
+
+4. **GLSL 330 core, minimum.** Set `gl-version 3 2` and delete the GLSL 120 dual-path. The
+   hardware target is OpenGL 4.x-class GPUs; carrying 2008-era shader syntax doubles every
+   shader's surface area for bugs (and is entangled with the sRGB confusion).
+
+5. **Engine C++ changes only where Python can't reach.** The fork earns its keep in a small
+   number of targeted changes (DirectionalLight API, tangent generation, log-depth hooks,
+   DX9 removal) — not in a rewrite. This keeps upstream sync viable.
+
+### 2.2 Graphics API decision (the "modern DirectX" question)
+
+Recommendation: **OpenGL 4.x core profile now; upstream Vulkan later; no DirectX.**
+
+- Panda3D's only DirectX backend is **DirectX 9** (`dxgsg9/`) — a 2004-era API already scheduled
+  for removal in our own roadmap. There is nothing modern to build on there.
+- Writing a D3D12 backend from scratch is a multi-man-year project, Windows-only, and would
+  diverge us permanently from upstream. It delivers nothing the game needs that GL 4.x doesn't.
+- OpenGL 4.6 *is* a modern API on Windows: compute shaders, HDR framebuffers, everything in
+  Phases R1–R5 runs on it. It is what tobspr's RenderPipeline (our shader donor) targets.
+- Upstream Panda3D has an experimental **Vulkan** backend in a development branch (not in our
+  tree). When it matures, syncing it in is the realistic path to a next-gen API — and everything
+  in this plan (GLSL 330+, no fixed-function, engine-owned pipeline) moves *toward* that port,
+  not away from it.
+
+If "modern DirectX framework" meant "modern rendering feature set" (PBR, HDR, bloom,
+physically-based atmospherics), that is exactly what Phases R1–R5 deliver, on GL.
+
+---
+
+## 3. The Program
+
+Six phases. Each has a hard acceptance gate; no phase starts until the previous gate passes.
+R0 is deliberately small — do it first, in one or two sessions.
+
+```
+R0 Harness ──> R1 Unified renderer + color correctness ──> R2 Real lighting ──> R3 HDR/bloom
+                                                                     │
+                                                                     ├──> R4 Space-scale rendering
+                                                                     └──> R5 Atmosphere & signature look
+R6 Engine hygiene (DX9 removal, upstream sync) — parallel, low priority
+```
+
+---
+
+### Phase R0 — Test Harness & Ground Truth (small; 1–2 sessions)
+
+**Goal:** Never again tune a renderer by restarting the game and guessing.
+
+Build `tools/paxtest/` in the Pax3D repo — standalone Panda3D scripts that run in seconds
+against whichever engine is in the active venv:
+
+| Test | Scene | Programmatic check |
+|---|---|---|
+| `test_gamma.py` | Fullscreen quad of known linear values (0.0–1.0 ramp) through the full pipeline | Read back pixels; assert output matches sRGB curve within tolerance. **Detects double-gamma (F2) mechanically.** |
+| `test_lighting.py` | UV sphere (standard winding), UV sphere (game winding), GLTF ship, all with one DirectionalLight at each cardinal | Sample lit/unlit hemisphere pixels; assert lit side faces the light. Resolves Formula B/C per mesh type once and for all (F8). |
+| `test_bloom.py` | Black scene + single small emissive quad | Render with bloom; assert radially smooth falloff (no blockiness), assert energy roughly conserved. **Reproduces F3 in isolation.** |
+| `test_rebuild.py` | Pipeline + registered auxiliary camera; toggle bloom/levels at runtime | Assert auxiliary camera still renders after rebuild (F4). |
+| `test_scale.py` | Two coplanar quads at 10⁵ IEU | Screenshot; check for Z-fighting (for R4). |
+
+Plus: `paxtest run --golden` captures reference screenshots; `paxtest run --check` diffs against
+them. Keep it crude — image RMS diff is enough.
+
+**Also in R0:** establish the PRC baseline the whole program assumes:
+`gl-version 3 2`, `textures-power-2 none`, explicit framebuffer bits. Document it in one place.
+
+**Gate:** the harness runs green on stock behaviour, and `test_gamma.py` + `test_bloom.py`
+demonstrably *fail* against the current pipeline (proving they can catch F2/F3).
+
+---
+
+### Phase R1 — One Renderer, Correct Color (medium; 3–5 sessions)
+
+**Goal:** A single engine-owned render package with a verified linear-light pipeline.
+
+**R1.1 — Merge the forks (F7).**
+Create `pax3d_render/` in the Pax3D repo (evolving `pax3d_simplepbr/`, absorbing the good parts
+of the game's `graphics/pax_pbr`: sun debug modes, dithering, runtime tuning hooks). The game's
+`graphics/pax_pbr/` becomes a thin adapter (`from pax3d_render import ...`) and its 600-line
+pipeline.py is deleted. `pax3d_simplepbr/` is retired.
+
+**R1.2 — Pipeline owns its cameras (F4).**
+First-class API for auxiliary display regions:
+
+```python
+pipeline = pax3d_render.init(...)
+pipeline.register_scene_camera(sky_cam, sort=-100, clear_color=True)   # sky camera
+```
+
+The pipeline creates the DR on its internal buffer and **re-creates it on every rebuild**.
+`sky_camera.py`'s `_find_render_target()` spelunking is deleted. Toggling bloom, changing
+levels, resizing — nothing can orphan the skybox again.
+
+**R1.3 — Explicit color-space contract (F2).**
+One contract, enforced by `test_gamma.py`:
+
+- Scene renders in **linear** light into RGBA16F (`srgb_color=False` — already true).
+- All albedo/emissive textures flagged sRGB on load (hardware decode → linear in shader).
+- Linear → sRGB conversion happens **exactly once**, in the final present pass —
+  and pick one mechanism: in-shader `pow(1/2.2)` **or** sRGB-enabled window framebuffer, never both.
+- With this verified, ACES/Reinhard/Uncharted2 become usable; Hejl-Dawson survives only as a
+  legacy toggle (its baked-in gamma violates the contract).
+
+**R1.4 — GLSL 330 core only.**
+Delete the 120/330 dual-path from every shader. `gl-version 3 2` becomes required
+(set by `pax3d_render.init()` if not already configured).
+
+**Gate:** game renders via `pax3d_render` visually identical to today (bloom off, Hejl-Dawson);
+`test_gamma.py` passes with ACES; `test_rebuild.py` passes.
+
+---
+
+### Phase R2 — Real Directional Lighting (medium; 3–5 sessions) ★ the payoff phase
+
+**Goal:** A real `DirectionalLight` lights every mesh in the scene — diffuse, specular, shadows.
+This is the fix for "ships look flat" and the prerequisite for bloom being worth anything.
+
+**R2.1 — Restore the DirectionalLight node (F1).**
+`planetary_lighting.py` creates a real `DirectionalLight` again. The PBR shader's sun block
+reads `p3d_LightSource[0]` (the `w == 0` branch it currently *skips*) instead of
+`u_sun_dir_world`. Panda3D handles the direction transform; `sun_position_manager.py` shrinks
+to one canonical call. Keep `u_sun_color`-style intensity control as a multiplier if useful.
+
+*Why read the light node rather than keep uniforms:* shadows, the shader generator, `p3d_LightSource`
+consumers (GLTF viewer paths, future point lights) and any engine-level lighting work all key off
+the node. The uniforms were a detour; going back now costs one shader block.
+
+**R2.2 — Fix the geometry, not the formula (F6, F8).**
+- `planet_factory.py`: emit **standard CCW winding** and **analytic tangents** (trivial for a UV
+  sphere: `tangent = normalize(∂P/∂u)`). This makes planets follow the same convention as every
+  GLTF asset, makes Formula C / `lookAt()` semantics correct, and un-blocks normal-mapped planets.
+- Keep the shader's tangentless fallback as a safety net for any other procedural geometry.
+- `test_lighting.py` proves both sphere variants and the GLTF ship agree before the game is touched.
+
+**R2.3 — Engine C++ (the fork's first real changes).**
+Small, surgical, upstream-syncable — from `DIRECTIONAL_LIGHTING_PLAN.md`:
+- `DirectionalLight::set_direction_world(const LVector3&)` — takes the photon-travel direction,
+  no atan2 in game code ever again.
+- Strip translation in `DirectionalLight::xform()` so `setPos()`/`lookAt()` cannot corrupt it.
+- Debug warning when a DirectionalLight has a non-zero position.
+
+**R2.4 — Shadows at planet scale.**
+Enable shadow mapping with dynamic ortho-lens sizing driven by the current planet's diameter
+(the game-side `update_shadow_for_planet()` sketch from the old roadmap). Validate terminator
+and ship self-shadowing at the four cardinals.
+
+**Gate:** in-game — ships show sun specular that moves correctly as the camera orbits; lit
+hemispheres correct at all four cardinals (debug overlay reads OK); shadows toggle cleanly;
+`test_lighting.py` green for all mesh types.
+
+---
+
+### Phase R3 — HDR & Bloom, Second Attempt (medium; 2–4 sessions)
+
+**Goal:** The March feature set, working, on top of a scene that now has real light.
+
+**R3.1 — Diagnose blockiness in the harness (F3).**
+`test_bloom.py` + RenderDoc/apitrace on the isolated scene. Check in order:
+buffer sizes actually allocated by `render_quad_into(div=…)` vs. the `texel_size` uniforms
+(integer truncation at 1/16, 1/32); texture padding; min/mag filter = linear and wrap =
+clamp-to-edge on **every** bloom buffer. Fix until the golden test shows smooth falloff.
+
+**R3.2 — Physical-ish light units.**
+Sun intensity, emissives, and exposure defined in consistent relative units with exposure in EV
+stops (already there) — so "close solar approach" vs "deep space" is an exposure change, not a
+per-effect retune.
+
+**R3.3 — Kill the magic numbers, one at a time.**
+The 0.45×/0.7×/0.25×/0.35× compensation factors go, *one per test run*, tuning
+`bloom_strength`/exposure after each — the discipline that F5 says March lacked. Now that
+additive glows sit in a verified-linear HDR buffer with working bloom, they should finally be
+removable for real.
+
+**R3.4 — Stretch: auto-exposure.**
+Average-luminance readback from the existing downsample chain (it's already a luminance
+pyramid) driving EV with smooth adaptation. Deep space and solar approach stop needing manual
+exposure presets. Cheap to try once R3.1 works.
+
+**Gate:** bloom on by default in the game; no blocky artifacts; sun/engines/weapons glow
+naturally with zero per-effect compensation factors; `test_bloom.py` golden green; toggling
+bloom at runtime is safe (R1.2 already guarantees it).
+
+---
+
+### Phase R4 — Space-Scale Rendering (high effort; engine-heavy)
+
+**Goal:** One camera, near 0.1 to far 10⁹, no Z-fighting, no sky-camera architecture.
+
+- **Logarithmic depth** in the unified shader set (single formula in one include, used by scene,
+  sky objects, and shadow passes). Engine hook in the shader generator if auto-shader paths
+  need it.
+- **Camera-relative rendering** — vertex positions relative to the camera to preserve float
+  precision at 10⁵+ IEU (needed before multi-star systems).
+- **Retire the sky camera** only after `test_scale.py` and a full fly-out test pass with log
+  depth stable. The old roadmap's warning stands: never remove the workaround before its
+  replacement is proven.
+
+**Gate:** continuous planet-surface-to-deep-space fly-out with zero Z-fighting on a single
+camera; `sky_camera.py` deleted.
+
+---
+
+### Phase R5 — Atmosphere & the Signature Look (high effort; the "wow" phase)
+
+With correct lighting, verified color, working bloom, and single-camera depth, the showpiece
+features become tractable:
+
+- **Atmospheric scattering for orbital views.** Start with a single-scattering analytic limb
+  model (per-planet-type parameters: rocky/ocean/gas/airless); Bruneton LUTs as a stretch goal
+  once compute-shader precompute is worth the effort. Replaces the additive Fresnel shader.
+- **Height fog / volumetric media** (~65 lines GLSL, tobspr) for gas giant depth and nebula
+  volumes.
+- **Environment-driven ambient:** derive ambient light from the skybox/nebula (spherical
+  harmonics from the sky texture) instead of a flat constant — ships in a red nebula pick up
+  red fill light. Distinctive, cheap (simplepbr's IBL machinery already exists in the fork),
+  and uniquely fitting for this game.
+- Lens flare/dirt polish on top of the bloom chain.
+
+**Gate:** aesthetic sign-off per planet type; `Alt+A` comparisons against the old Fresnel shader.
+
+---
+
+### Phase R6 — Engine Hygiene (parallel, low priority)
+
+- Remove `dxgsg9/` + `pandadx9/` (~600 KB dead code) once nothing references DX9.
+- Cg dependency audit; shader-generator GLSL modernisation as needed by R4.
+- Quarterly upstream sync (`panda3d/panda3d` master) while divergence is still small.
+- Watch upstream's Vulkan branch; evaluate adoption when it can run the paxtest suite.
+
+---
+
+## 4. What Changes vs. the Old Plan
+
+| Old plan | This plan | Why |
+|---|---|---|
+| Bloom/HDR (Phase 2) before real lighting | Lighting (R2) strictly before bloom (R3) | F1 — bloom on an unlit scene does nothing |
+| No test infrastructure | R0 harness is the first deliverable | F2/F3/F5 all survived because nothing could catch them |
+| Extend simplepbr *and* game keeps pax_pbr | One `pax3d_render` package, game is a consumer | F7 — divergent forks meant fixes never landed where they ran |
+| GLSL 120 with 330 ifdefs | GLSL 330 core minimum | Half the shader surface area, ends the sRGB ambiguity |
+| Winding accepted, Formula B canonical | Fix sphere winding + tangents to match GLTF convention | One convention scene-wide; unlocks lookAt(), normal maps, upstream sanity |
+| Engine changes deferred indefinitely | Small targeted C++ in R2; big C++ (log depth) in R4 | The fork should earn its existence, incrementally |
+| DirectX direction ambiguous | Explicit: GL 4.x now, upstream Vulkan later, no D3D | §2.2 |
+
+## 5. Suggested First Three Sessions
+
+1. **Session A (R0):** Build `tools/paxtest/` with `test_gamma.py` + `test_lighting.py` +
+   `test_bloom.py`. Run them against the current stack; record which fail and why. This turns
+   F2 and F3 from mysteries into bug reports.
+2. **Session B (R1 start):** Create `pax3d_render` from `pax3d_simplepbr` + game pax_pbr merge;
+   GLSL 330; color contract; camera registration API. Game adapter behind a settings flag.
+3. **Session C (R2 start):** Winding + tangents in `planet_factory.py` (validated by harness),
+   then restore the DirectionalLight and switch the sun block to `p3d_LightSource[0]`.
+
+---
+
+## 6. Risks
+
+| Risk | Mitigation |
+|---|---|
+| Switching sun to `p3d_LightSource[0]` regresses planet look | Harness compares before/after per mesh type; keep `u_sun_*` path behind a define for one release |
+| GLSL 330 breaks on some in-use shader | paxtest smoke-loads every shader in the package; the game's other custom shaders (atmosphere, terrain) are ported in R1 or explicitly left on their own path |
+| Winding fix breaks atmosphere Fresnel / moon renderer | Old roadmap's regression list still applies — test atmosphere limb, moons, distant sprites after the mesh change |
+| Log depth inconsistencies across shaders | Single `#include`-style snippet injected by `_shaderutils`; R4 gate requires the full fly-out test |
+| Fork drift from upstream | R6 quarterly syncs; all C++ changes tagged `// PAX3D:` and listed in CLAUDE.md |
+| This plan also stalls after the fun parts | The gates are the guard: bloom (R3) is *blocked* until lighting (R2) passes its gate — enforced by the plan, checked by the harness |
