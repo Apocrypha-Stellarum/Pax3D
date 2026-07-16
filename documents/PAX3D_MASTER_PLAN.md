@@ -129,6 +129,39 @@ Every observed failure from the March effort, its actual cause, and where this p
 > test_ftl_blur, green) and the game repo's doubles-build spike (candidate
 > for the R4.2 precision half).
 
+> **Session E update (2026-07-17):** R2 shadow hardening, driven by the
+> openworld build's engine feedback (`PAX3D_FEEDBACK.md` in that repo;
+> our reply: `OPENWORLD_FEEDBACK_RESPONSE.md`). Their P0 — "skinned
+> meshes cast no shadows" — was **root-caused as NOT an engine bug**:
+> (1) the visible symptom was the shadow-bias trap (normalized bias ×
+> extent depth: the 0.005 default = 3.0 m at their 600-deep frustum ≈ a
+> standing character's entire light-ray depth gap at a 30° sun, so
+> characters lost shadows while buildings kept them — reconstructed
+> exactly in their live build, 0.450→0.450 vs 0.450→0.378); (2) their
+> 0-texel depth-map evidence was contaminated by their own proxy-prism
+> workaround occupying the same light-space column (proven in their
+> build: 0 texels with proxy, 60 without). The skinned depth path is
+> proven green nine ways in paxtest (egg + their glb via Actor, hw+sw
+> skinning, GLSL 120+330, bam-cache, blend, masks, angled sun, posed
+> joints 0.321→0.037) — new permanent coverage in test_shadows incl. a
+> `@softskin` matrix row and a depth-map texel-diff instrument.
+> **Landed in pax3d_render (opt-in, defaults byte-identical):**
+> `shadow_bias_world` / `set_shadow_bias(v, world_units=True)` (rescales
+> with extent depth — kills the trap class), `shadow_filter_size=3`
+> (3×3 multi-tap PCF, edge 6→16 px, interior unchanged),
+> `shadow_caster_mask` + `exclude_from_shadows()`/`include_in_shadows()`
+> (blessed no-cast API), openworld's shadow debug modes 10/11 committed.
+> New `test_shadow_quality.py`: angled-sun-at-predicted-position,
+> bias-trap measured record, PCF, no-cast — 9/9 both engines, both GL
+> baselines. **Space-game exposure:** sfb2 runs extent 500/4000 with the
+> default bias ⇒ ~20 IEU effective offset — ship-on-station/ship
+> shadows are likely being erased in-game today; when validating R2,
+> set a world-unit bias (start ~0.5 IEU). Backlog added: engine-side
+> texel snapping in `set_shadow_extent` (openworld's game-side snap is
+> the reference impl), slope-scaled bias, runtime fog toggle,
+> intermittent `shaderAttrib.cxx:471` assert (needs repro), CSM +
+> clustered lights (post-R5).
+
 ### 1.3 The lesson
 
 The March plan ordered work by *visual payoff* (bloom first, because it's exciting). The correct
@@ -301,7 +334,14 @@ the CAMERA every sun update (`sun_position_manager`, settings keys
 `shadow_extent_radius`/`shadow_extent_depth`, defaults 500/4000) — shadow
 resolution follows the player instead of planet-sized extents. Remaining:
 in-game validation of terminator + ship self-shadowing at the four
-cardinals once the user flips directional mode.
+cardinals once the user flips directional mode. **Session E addendum:**
+that validation MUST set a world-unit bias first — at 500/4000 the
+default normalized bias is ~20 IEU of depth offset, which erases most
+ship-scale shadows (`set_shadow_bias(0.5, world_units=True)` or
+`shadow_bias_world` in settings; see the bias trap, architecture doc
+§5.1). Shadow quality knobs now available for the eyeball pass:
+`shadow_filter_size=3` (3×3 PCF), `exclude_from_shadows()` for FX/sky
+geometry.
 
 **Gate:** in-game — ships show sun specular that moves correctly as the camera orbits; lit
 hemispheres correct at all four cardinals (debug overlay reads OK); shadows toggle cleanly;

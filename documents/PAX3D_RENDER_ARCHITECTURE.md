@@ -215,6 +215,71 @@ mis-centered extents produce shadow-free zones, not artifacts (proven by
 paxtest `extent_miss_is_lit`). At planetary scales the game must drive
 radius AND center from scene context (R2.4).
 
+### 5.1 THE BIAS TRAP (read before sizing any shadow frustum)
+
+`shadow_bias` is consumed in **normalized light-space depth**: its
+world-space size is `bias × extent depth`. The 0.005 default is 0.3
+units deep in paxtest's 60-unit frustum — but 12.5 m at an open-world
+`set_shadow_extent(450, 2500)` and **20 IEU at the game's 500/4000**.
+Any caster whose light-ray depth gap to its receiver is smaller than
+that offset casts **no shadow at all, with no artifact hinting why**
+(a standing character at 30° sun elevation has a ~2.4–3.6 m gap; a
+building survives). This erased every character shadow in the openworld
+build and was misdiagnosed there as a skinned-mesh engine bug
+(Session E root-cause; see `OPENWORLD_FEEDBACK_RESPONSE.md`).
+
+**Use world units instead:** `shadow_bias_world=<units>` (init) or
+`set_shadow_bias(v, world_units=True)` (runtime, uniform-only). The
+pipeline divides by the *current* extent depth and rescales on every
+`set_shadow_extent`, so the offset stays physical. Measured record:
+paxtest `shadow_quality` `bias_trap_at_scale` (erasure at defaults) /
+`bias_world_units_restores` / `bias_world_extent_invariant`.
+
+### 5.2 Filtering: `shadow_filter_size` (1 | 3)
+
+Default 1 = the original single hardware-PCF tap (byte-identical).
+3 = 3×3 multi-tap PCF (9 hardware taps one texel apart via
+`u_shadow_texel`), visibly softer and more stable edges — measured:
+edge transition 6 px → 16 px with interior/lit luminance unchanged
+(`pcf_edge_softens` / `pcf_interior_unchanged`). Runtime:
+`set_shadow_filter_size(n)` (recompile-class). Interaction to know:
+multi-tap sampling on a sloped receiver needs
+`bias_world ≥ texel_world × tan(slope-vs-light)` or open surfaces can
+self-shadow; at real map densities (e.g. 4096² over 280 m ⇒ 0.068 m
+texels) any sane world bias clears this comfortably.
+
+### 5.3 Opting out of casting: `exclude_from_shadows(np)`
+
+Configure a dedicated camera-mask bit for the sun's shadow camera
+(`shadow_caster_mask=<bit index or BitMask32>`, or
+`set_shadow_caster_mask()`), then `pipeline.exclude_from_shadows(np)` /
+`include_in_shadows(np)`. The node stops writing the sun depth map but
+stays visible to every other camera (Panda visibility is
+camera-mask ∩ node-show-mask). Use for clouds, sky geometry, FX quads —
+anything whose depth footprint would blanket the scene (a drifting
+cloud crossing the sun ray shadows the whole map). Assigning the mask
+alone changes nothing; nodes cast by default. Proven by
+`nocast_excluded_ground_lit` / `nocast_still_visible_to_camera`.
+
+### 5.4 Skinned casters — proven working (Session E)
+
+The depth pass renders skinned Characters correctly: hardware AND CPU
+skinning, egg- and glTF-loaded (`panda3d-gltf` + `Actor`), GLSL 120 and
+330, including posed joints (the shadow follows `control_joint`, not
+the bind pose). `StandardMunger` converts blend tables to the hardware
+path per-state (the shadow attrib carries `F_hardware_skinning`), and
+the GL layer pads short/missing transform tables with identity — so the
+always-on `ENABLE_SKINNING` depth shader is safe for static meshes too.
+Guarded permanently by test_shadows `skinned_*` + `gltf_caster_*`
+checks (depth-map texel-diff instrument in `common.py`). Any report of
+"skinned meshes don't cast" should first rule out §5.1 (the bias trap
+erases short casters — characters — while sparing tall ones) and
+measurement contamination by co-located proxy geometry.
+
+Shader debug modes for shadow work: `set_debug_lighting(10)` = light-0
+shadow-map UV + depth ref, `11` = raw shadow term (openworld
+contribution, permanent).
+
 ---
 
 ## 6. Auxiliary Scene Cameras (R1 — the skybox-death fix)
@@ -255,14 +320,15 @@ Three cost classes — keep new parameters within this taxonomy:
 
 | Class | Cost | Parameters / methods |
 |---|---|---|
-| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent` |
-| Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth` |
+| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_caster_mask`, `exclude_from_shadows`/`include_in_shadows` |
+| Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size` |
 | FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, (`bloom_levels`, `msaa_samples` at init) |
 
 Constructor parameters (all keyword): `render_node, window, camera_node,
 taskmgr, msaa_samples=4, max_lights=8, enable_shadows=False,
 use_normal_maps=False, use_emission_maps=True, use_occlusion_maps=False,
 enable_fog=False, exposure=0.0, shadow_bias=0.005,
+shadow_bias_world=None, shadow_filter_size=1, shadow_caster_mask=None,
 enable_hardware_skinning=True, calculate_normalmap_blue=True,
 enable_bloom=False, bloom_strength=1.0, bloom_intensity=1.0,
 bloom_levels=5, tonemap_operator='aces', enable_taa=False, debug=False,
