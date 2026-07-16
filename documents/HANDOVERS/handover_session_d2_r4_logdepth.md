@@ -111,6 +111,10 @@ positioning layer:
   vs its comment labels).
 - R1 leftovers: sRGB linearization experiment (testbed G key); GLSL-120
   path removal once the game runs `gl-version 3 2`.
-- R6: upstream merge — `git fetch upstream && git merge upstream/master`
+- ~~R6: upstream merge — `git fetch upstream && git merge upstream/master`
   (93 commits pending, remote now configured); rebuild + full paxtest
-  after. Doubles-build spike: resume when CPU allows.
+  after.~~ **CANCELLED 2026-07-17: upstream severed by user decision —
+  Pax3D is sovereign, no sync ever; upstream is a read-only reference
+  for hand cherry-picks (see CLAUDE.md "Upstream Relationship —
+  SEVERED").** Doubles-build spike: resume when CPU allows (a scheduled
+  build window — unaffected by the policy change).

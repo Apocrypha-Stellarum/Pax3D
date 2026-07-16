@@ -193,21 +193,28 @@ bloom amplifies nothing — this was learned empirically at the cost of a month.
 
 5. **Engine C++ changes only where Python can't reach.** The fork earns its keep in a small
    number of targeted changes (DirectionalLight API, tangent generation, log-depth hooks,
-   DX9 removal) — not in a rewrite. This keeps upstream sync viable.
+   DX9 removal) — not in a rewrite. Every C++ change costs a full engine rebuild, and
+   **builds only run in windows the user schedules** — so C++ items are batched, not landed
+   casually. *(The original rationale here — keeping upstream sync viable — is obsolete: the
+   upstream relationship was severed by user decision 2026-07-17; see CLAUDE.md "Upstream
+   Relationship — SEVERED". Pax3D is sovereign; `// PAX3D:` tags remain for auditability.)*
 
 ### 2.2 Graphics API decision (the "modern DirectX" question)
 
-Recommendation: **OpenGL 4.x core profile now; upstream Vulkan later; no DirectX.**
+Recommendation: **OpenGL 4.x core profile now; hand-ported Vulkan later, if ever; no DirectX.**
+*(Updated 2026-07-17 for the severed-upstream policy — "sync it in" is no longer a mechanism;
+anything we take from upstream is a deliberate hand cherry-pick from the read-only reference.)*
 
 - Panda3D's only DirectX backend is **DirectX 9** (`dxgsg9/`) — a 2004-era API already scheduled
   for removal in our own roadmap. There is nothing modern to build on there.
-- Writing a D3D12 backend from scratch is a multi-man-year project, Windows-only, and would
-  diverge us permanently from upstream. It delivers nothing the game needs that GL 4.x doesn't.
+- Writing a D3D12 backend from scratch is a multi-man-year project and Windows-only. It delivers
+  nothing the game needs that GL 4.x doesn't.
 - OpenGL 4.6 *is* a modern API on Windows: compute shaders, HDR framebuffers, everything in
   Phases R1–R5 runs on it. It is what tobspr's RenderPipeline (our shader donor) targets.
-- Upstream Panda3D has an experimental **Vulkan** backend in a development branch (not in our
-  tree). When it matures, syncing it in is the realistic path to a next-gen API — and everything
-  in this plan (GLSL 330+, no fixed-function, engine-owned pipeline) moves *toward* that port,
+- Upstream Panda3D has an experimental **Vulkan** backend in a development branch. If it ever
+  matures, porting it BY HAND into our tree (a scheduled-build-window project, evaluated only
+  when it can run the paxtest suite) is the realistic next-gen path — and everything in this
+  plan (GLSL 330+, no fixed-function, engine-owned pipeline) moves *toward* such a port,
   not away from it.
 
 If "modern DirectX framework" meant "modern rendering feature set" (PBR, HDR, bloom,
@@ -225,7 +232,7 @@ R0 Harness ──> R1 Unified renderer + color correctness ──> R2 Real light
                                                                      │
                                                                      ├──> R4 Space-scale rendering
                                                                      └──> R5 Atmosphere & signature look
-R6 Engine hygiene (DX9 removal, upstream sync) — parallel, low priority
+R6 Engine hygiene (DX9 removal, dead-path deletion) — parallel, low priority
 ```
 
 ---
@@ -320,7 +327,7 @@ the node. The uniforms were a detour; going back now costs one shader block.
 - `test_lighting.py` proves both sphere variants and the GLTF ship agree before the game is touched.
 
 **R2.3 — Engine C++ (the fork's first real changes).**
-Small, surgical, upstream-syncable — from `DIRECTIONAL_LIGHTING_PLAN.md`:
+Small, surgical, `// PAX3D:`-tagged — from `DIRECTIONAL_LIGHTING_PLAN.md`:
 - `DirectionalLight::set_direction_world(const LVector3&)` — takes the photon-travel direction,
   no atan2 in game code ever again.
 - Strip translation in `DirectionalLight::xform()` so `setPos()`/`lookAt()` cannot corrupt it.
@@ -466,8 +473,13 @@ features become tractable:
 
 - Remove `dxgsg9/` + `pandadx9/` (~600 KB dead code) once nothing references DX9.
 - Cg dependency audit; shader-generator GLSL modernisation as needed by R4.
-- Quarterly upstream sync (`panda3d/panda3d` master) while divergence is still small.
-- Watch upstream's Vulkan branch; evaluate adoption when it can run the paxtest suite.
+- ~~Quarterly upstream sync~~ **CANCELLED (2026-07-17): upstream severed by user decision —
+  Pax3D is sovereign.** Upstream (`panda3d/panda3d`) is a read-only reference; specific fixes
+  are hand cherry-picked if one ever matters. No cadence, no merge, no compatibility goal.
+  Engine changes may now freely change defaults, rename, and delete inherited paths
+  (`// PAX3D:` tags stay, for auditability not mergeability). See CLAUDE.md.
+- Watch upstream's Vulkan branch as a *porting source*; evaluate only when it can run the
+  paxtest suite (hand-port, scheduled build window — see §2.2).
 
 ---
 
@@ -479,9 +491,9 @@ features become tractable:
 | No test infrastructure | R0 harness is the first deliverable | F2/F3/F5 all survived because nothing could catch them |
 | Extend simplepbr *and* game keeps pax_pbr | One `pax3d_render` package, game is a consumer | F7 — divergent forks meant fixes never landed where they ran |
 | GLSL 120 with 330 ifdefs | GLSL 330 core minimum | Half the shader surface area, ends the sRGB ambiguity |
-| Winding accepted, Formula B canonical | Fix sphere winding + tangents to match GLTF convention | One convention scene-wide; unlocks lookAt(), normal maps, upstream sanity |
+| Winding accepted, Formula B canonical | Fix sphere winding + tangents to match GLTF convention | One convention scene-wide; unlocks lookAt(), normal maps, spec sanity |
 | Engine changes deferred indefinitely | Small targeted C++ in R2; big C++ (log depth) in R4 | The fork should earn its existence, incrementally |
-| DirectX direction ambiguous | Explicit: GL 4.x now, upstream Vulkan later, no D3D | §2.2 |
+| DirectX direction ambiguous | Explicit: GL 4.x now, hand-ported Vulkan later if ever, no D3D | §2.2 |
 
 ## 5. Suggested First Three Sessions
 
@@ -503,5 +515,5 @@ features become tractable:
 | GLSL 330 breaks on some in-use shader | paxtest smoke-loads every shader in the package; the game's other custom shaders (atmosphere, terrain) are ported in R1 or explicitly left on their own path |
 | Winding fix breaks atmosphere Fresnel / moon renderer | Old roadmap's regression list still applies — test atmosphere limb, moons, distant sprites after the mesh change |
 | Log depth inconsistencies across shaders | Single `#include`-style snippet injected by `_shaderutils`; R4 gate requires the full fly-out test |
-| Fork drift from upstream | R6 quarterly syncs; all C++ changes tagged `// PAX3D:` and listed in CLAUDE.md |
+| ~~Fork drift from upstream~~ Divergence is now POLICY (severed 2026-07-17); residual risk: missing future upstream bug/security/driver fixes | Upstream remote kept read-only for hand cherry-picks; all C++ changes tagged `// PAX3D:` and listed in CLAUDE.md so our code stays identifiable |
 | This plan also stalls after the fun parts | The gates are the guard: bloom (R3) is *blocked* until lighting (R2) passes its gate — enforced by the plan, checked by the harness |
