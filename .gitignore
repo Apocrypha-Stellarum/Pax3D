@@ -76,3 +76,7 @@ mt.exe
 /.settings/
 /.cproject
 /.project
+
+# paxtest artifacts
+tools/paxtest/output/
+tools/paxtest/__pycache__/
