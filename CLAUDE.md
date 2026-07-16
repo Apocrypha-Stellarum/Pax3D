@@ -39,12 +39,13 @@ The rendering program runs in gated phases (see the master plan):
 | R3 | Bloom fixed + HDR polish | **Core done (Session D).** F3 fixed (8-bit intermediate FBOs were the root cause), test_bloom green everywhere. Remaining: content retune (strength/intensity/tints), light units, auto-exposure stretch |
 | R4 | Log depth, camera-relative rendering, single camera | **Log depth landed opt-in (Session D)** — `enable_log_depth`, acceptance row `scale @logdepth` green. Remaining: camera-relative/doubles decision (see game repo spike), sky-camera retirement, game frustum flip |
 | R5 | Atmospheric scattering, env-driven ambient, signature look | Not started |
-| R6 | Engine hygiene (DX9 removal, upstream sync, Vulkan watch) | Ongoing, low priority |
+| R6 | Engine hygiene (DX9 removal, dead-path deletion, Vulkan watch) | Ongoing, low priority |
 
 **Engine C++ changes so far: one build-system fix.** Everything else is
 Python/GLSL in `pax3d_render/`. The C++ fork earns its keep in R4 (log
 depth) and targeted conveniences; do not start engine C++ work casually —
-each change costs upstream-sync friction.
+every C++ change needs a full rebuild, and **builds only run in windows the
+user schedules** (never during dev sessions — game-repo memory rule).
 
 ### Hard-won facts (do not re-litigate without new evidence)
 
@@ -158,23 +159,28 @@ not C++). See `documents/SWITCHING_ENGINES.md`.
   var or `debug=True`).
 - Don't break the game's API surface: `from graphics.pax_pbr import init`
   must keep working (it routes here via the settings flag). Add, don't rename.
-- Keep upstream sync possible: focused diffs, no drive-by reformatting of
-  engine code.
+- Focused diffs, no drive-by reformatting of engine code — for reviewability
+  and `// PAX3D:` auditability, not for upstream's sake (see below).
 - Commit style: one logical change per commit; note the phase (e.g.
   "Session C / R2") in the subject.
 
-## Upstream Relationship
+## Upstream Relationship — SEVERED (user decision, 2026-07-17)
+
+**Pax3D is a sovereign engine. We do NOT maintain compatibility with future
+Panda3D versions, and upstream sync is no longer a goal or a cost to weigh.**
+Modify the engine however the game needs: change defaults, rename, delete
+legacy paths, add engine-level features. The `// PAX3D:` change tags stay —
+they exist so we know our code from inherited code, not to ease merges.
+
+Upstream (`panda3d/panda3d`) remains a read-only *reference*: cherry-pick a
+specific fix by hand if one ever matters. There is no sync cadence.
 
 | | |
 |---|---|
-| Upstream | `panda3d/panda3d` (GitHub) |
-| Our fork | `Apocrypha-Stellarum/Pax3D` |
-| Last sync | 2026-02-26 (`2d2bdc9a`), upstream 1.11.0-dev |
-| Sync cadence | Quarterly while C++ divergence is small (R6) |
-
-```bash
-git fetch upstream && git merge upstream/master
-```
+| Upstream (reference only) | `panda3d/panda3d` (GitHub) |
+| Our engine | `Apocrypha-Stellarum/Pax3D` |
+| Divergence point | 2026-02-26 (`2d2bdc9a`), upstream 1.11.0-dev |
+| Sync cadence | **None — severed 2026-07-17** |
 
 ---
 
