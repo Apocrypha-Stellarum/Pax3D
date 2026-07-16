@@ -17,6 +17,13 @@ uniform sampler2D tex;
 uniform float exposure;
 uniform int tonemap_operator;
 
+// FTL warp distortion: radial motion blur + chromatic aberration.
+// Both strengths default to 0.0 = single-tap passthrough (the multi-tap
+// loop is skipped entirely; cost is one coherent branch per pixel).
+uniform float radial_blur_strength;
+uniform float chroma_strength;
+uniform vec2 radial_blur_center;
+
 varying vec2 v_texcoord;
 
 #ifdef USE_330
@@ -71,6 +78,29 @@ float interleavedGradientNoise(vec2 p) {
 void main() {
     vec4 tex_color = texture2D(tex, v_texcoord);
     vec3 color = tex_color.rgb;
+
+    // FTL warp distortion: N-tap radial smear toward radial_blur_center
+    // with per-channel radial offsets for chromatic fringing.  Runs in
+    // HDR space (before exposure/tonemap) so highlights streak
+    // realistically.  Zero at the center, growing radially — the
+    // vanishing point of motion stays sharp.
+    if (radial_blur_strength > 0.0005 || chroma_strength > 0.0005) {
+        // dir is unnormalized, so tap offsets (dir * t) already grow
+        // linearly with distance from the center — zero at the center
+        vec2 dir = v_texcoord - radial_blur_center;
+        float amt = radial_blur_strength * 0.22;
+        float ca = chroma_strength * 0.012;
+        vec3 acc = vec3(0.0);
+        const int TAPS = 8;
+        for (int i = 0; i < TAPS; i++) {
+            float t = (float(i) / float(TAPS - 1) - 0.5) * amt;
+            vec2 base_uv = v_texcoord - dir * t;
+            acc.r += texture2D(tex, base_uv - dir * ca).r;
+            acc.g += texture2D(tex, base_uv).g;
+            acc.b += texture2D(tex, base_uv + dir * ca).b;
+        }
+        color = acc / float(TAPS);
+    }
 
     // Bloom composite (additive, before tonemapping for correct rolloff)
 #ifdef ENABLE_BLOOM

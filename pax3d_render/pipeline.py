@@ -137,6 +137,9 @@ class Pipeline:
                  bloom_levels=5, tonemap_operator='aces',
                  enable_taa=False, debug=False,
                  sun_light_mode='uniforms', shadow_map_size=2048,
+                 radial_blur_strength=0.0,
+                 chromatic_aberration_strength=0.0,
+                 radial_blur_center=(0.5, 0.5),
                  **_kwargs):
         base = builtins.base
 
@@ -169,6 +172,15 @@ class Pipeline:
             tonemap_operator = 'aces'
         self.tonemap_operator = tonemap_operator
         self.enable_taa = enable_taa
+
+        # FTL warp distortion (radial motion blur + chromatic aberration).
+        # Uniform-only: 0.0 strengths = passthrough, no rebuild ever needed.
+        self.radial_blur_strength = max(0.0, min(
+            float(radial_blur_strength), 1.0))
+        self.chromatic_aberration_strength = max(0.0, min(
+            float(chromatic_aberration_strength), 1.0))
+        self.radial_blur_center = (float(radial_blur_center[0]),
+                                   float(radial_blur_center[1]))
 
         # Sun light mode (R2)
         if sun_light_mode not in ('uniforms', 'directional'):
@@ -488,6 +500,13 @@ class Pipeline:
         scene_tex = p3d.Texture('scene_hdr')
         scene_tex.set_format(p3d.Texture.F_rgba16)
         scene_tex.set_component_type(p3d.Texture.T_float)
+        # Clamp + bilinear: the radial-blur taps in tonemap.frag sample
+        # off the pixel grid near the screen edge — Panda's default
+        # repeat wrap would bleed the opposite edge in
+        scene_tex.set_wrap_u(p3d.SamplerState.WM_clamp)
+        scene_tex.set_wrap_v(p3d.SamplerState.WM_clamp)
+        scene_tex.set_minfilter(p3d.SamplerState.FT_linear)
+        scene_tex.set_magfilter(p3d.SamplerState.FT_linear)
 
         postquad = self._filtermgr.render_scene_into(
             colortex=scene_tex, fbprops=fbprops
@@ -633,6 +652,7 @@ class Pipeline:
                 tonemap_quad.set_shader_input('bloom_tex', bloom_result_tex)
                 tonemap_quad.set_shader_input('bloom_intensity',
                                               self.bloom_intensity)
+            self._apply_warp_distortion_inputs(tonemap_quad)
             self._tonemap_quad = tonemap_quad
 
             # Resolved and history textures
@@ -700,6 +720,7 @@ class Pipeline:
                 postquad.set_shader_input('bloom_tex', bloom_result_tex)
                 postquad.set_shader_input('bloom_intensity',
                                           self.bloom_intensity)
+            self._apply_warp_distortion_inputs(postquad)
 
         self._post_process_quad = postquad
 
@@ -758,6 +779,48 @@ class Pipeline:
         target = self._tonemap_quad or self._post_process_quad
         if target:
             target.set_shader_input('exposure', 2 ** self.exposure)
+
+    def _apply_warp_distortion_inputs(self, quad):
+        """Push the FTL warp-distortion uniforms to a tonemap quad.
+
+        Called for both the TAA and non-TAA tonemap quads during
+        (re)builds so the values survive bloom/TAA toggles.
+        """
+        quad.set_shader_input('radial_blur_strength',
+                              self.radial_blur_strength)
+        quad.set_shader_input('chroma_strength',
+                              self.chromatic_aberration_strength)
+        quad.set_shader_input('radial_blur_center',
+                              p3d.Vec2(*self.radial_blur_center))
+
+    def set_radial_blur(self, value):
+        """Radial motion-blur strength 0-1 (uniform-only, no rebuild).
+
+        0.0 disables the multi-tap loop entirely.  The blur is zero at
+        radial_blur_center and grows outward — the vanishing point of
+        motion stays sharp (FTL high-warp effect).
+        """
+        self.radial_blur_strength = max(0.0, min(float(value), 1.0))
+        target = self._tonemap_quad or self._post_process_quad
+        if target:
+            target.set_shader_input('radial_blur_strength',
+                                    self.radial_blur_strength)
+
+    def set_chromatic_aberration(self, value):
+        """Radial chromatic-aberration strength 0-1 (uniform-only)."""
+        self.chromatic_aberration_strength = max(0.0, min(float(value), 1.0))
+        target = self._tonemap_quad or self._post_process_quad
+        if target:
+            target.set_shader_input('chroma_strength',
+                                    self.chromatic_aberration_strength)
+
+    def set_radial_blur_center(self, x, y):
+        """Move the radial-blur center (texture UV space, default 0.5, 0.5)."""
+        self.radial_blur_center = (float(x), float(y))
+        target = self._tonemap_quad or self._post_process_quad
+        if target:
+            target.set_shader_input('radial_blur_center',
+                                    p3d.Vec2(*self.radial_blur_center))
 
     def set_enable_bloom(self, enabled):
         """Enable or disable bloom (requires buffer rebuild)."""
