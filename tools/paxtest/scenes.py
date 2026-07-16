@@ -220,6 +220,96 @@ def make_uv_sphere(resolution=48, winding='game'):
     return np
 
 
+# ----------------------------------------------------------------------
+# Skinned geometry (shadow-caster coverage — openworld P0)
+# ----------------------------------------------------------------------
+
+def make_skinned_sheet(half=1.0, height=4.0, segments=8):
+    """A horizontal soft-skinned sheet: a Character with two joints.
+
+    Built via in-memory egg synthesis so it exercises the exact machinery
+    real characters use (egg/gltf loaders both produce a Character with a
+    TransformBlendTable). The sheet lies in the XY plane at z=height,
+    x/y in [-half, half]; skin weights ramp along +x from joint_root
+    (x=-half, weight 1) to joint_tip (x=+half, weight 1), so most vertices
+    have BLENDED weights — the loader cannot rigidify them.
+
+    Returns the loaded NodePath (contains '**/+Character').
+    Translating joint_tip by +dx stretches the sheet's +x half sideways
+    (linear weight ramp: a vertex at bind-pose x lands at x + t*dx with
+    t=(x+half)/(2*half), so the footprint [-1,1] becomes [-1, 1+dx]),
+    which the shadow tests use to prove the depth pass renders the POSED
+    skin, not the bind pose.
+    """
+    from panda3d import egg as pegg
+
+    data = pegg.EggData()
+    data.set_coordinate_system(p3d.CS_zup_right)
+
+    dart = pegg.EggGroup('skinned_sheet')
+    dart.set_dart_type(pegg.EggGroup.DT_default)
+    data.add_child(dart)
+
+    pool = pegg.EggVertexPool('vp')
+    dart.add_child(pool)
+
+    j_root = pegg.EggGroup('joint_root')
+    j_root.set_group_type(pegg.EggGroup.GT_joint)
+    dart.add_child(j_root)
+    j_tip = pegg.EggGroup('joint_tip')
+    j_tip.set_group_type(pegg.EggGroup.GT_joint)
+    j_root.add_child(j_tip)
+
+    verts = {}
+    for iy in range(segments + 1):
+        for ix in range(segments + 1):
+            x = -half + 2.0 * half * ix / segments
+            y = -half + 2.0 * half * iy / segments
+            v = pegg.EggVertex()
+            v.set_pos(p3d.LPoint3d(x, y, height))
+            v.set_normal(p3d.LVector3d(0, 0, 1))
+            v = pool.add_vertex(v)
+            t = ix / segments  # 0 at -x edge -> root, 1 at +x edge -> tip
+            if t < 1.0:
+                j_root.ref_vertex(v, 1.0 - t)
+            if t > 0.0:
+                j_tip.ref_vertex(v, t)
+            verts[(ix, iy)] = v
+
+    for iy in range(segments):
+        for ix in range(segments):
+            poly = pegg.EggPolygon()
+            # CCW seen from +z (normal side)
+            poly.add_vertex(verts[(ix, iy)])
+            poly.add_vertex(verts[(ix + 1, iy)])
+            poly.add_vertex(verts[(ix + 1, iy + 1)])
+            poly.add_vertex(verts[(ix, iy + 1)])
+            dart.add_child(poly)
+
+    node = pegg.load_egg_data(data)
+    if node is None:
+        raise RuntimeError('skinned sheet egg failed to load')
+    np = p3d.NodePath(node)
+    np.set_two_sided(True)
+    return np
+
+
+def character_blend_info(np):
+    """(has_character, has_blend_table) for a loaded model — used by tests
+    to assert the caster really is soft-skinned (guards against the egg
+    loader silently rigidifying the geometry)."""
+    char = np.find('**/+Character')
+    has_char = not char.is_empty()
+    has_blend = False
+    for geom_np in np.find_all_matches('**/+GeomNode'):
+        gnode = geom_np.node()
+        for i in range(gnode.get_num_geoms()):
+            vdata = gnode.get_geom(i).get_vertex_data()
+            if vdata.get_transform_blend_table() is not None:
+                has_blend = True
+    return has_char, has_blend
+
+
 def apply_flat_pbr_surface(np, rgb=(0.8, 0.8, 0.8)):
     """Give a mesh a neutral PBR surface: gray base-color material,
     white modulate texture (so shaders that sample a base-color texture

@@ -59,6 +59,8 @@ def run_one(test, pipeline, extra_args, timeout=180):
             payload['variant'] = extra_args[i + 1]
         if arg == '--log-depth':
             payload['variant'] = 'logdepth'
+        if arg == '--soft-skin':
+            payload['variant'] = 'softskin'
     return payload
 
 
@@ -98,6 +100,10 @@ def main():
                 # R4.1: the log-depth acceptance run (must PASS, unlike the
                 # default run which documents the engine baseline)
                 jobs.append((test, pipeline, passthrough + ['--log-depth']))
+            if test == 'shadows' and pipeline == 'pax3d_render':
+                # openworld P0: skinned casters must work on the CPU-skinning
+                # path too (enable_hardware_skinning=False)
+                jobs.append((test, pipeline, passthrough + ['--soft-skin']))
 
     results = []
     print(f'paxtest: {len(jobs)} jobs, python={sys.executable}, '
@@ -110,6 +116,8 @@ def main():
             size += ' @' + extra[extra.index('--sun-mode') + 1]
         if '--log-depth' in extra:
             size += ' @logdepth'
+        if '--soft-skin' in extra:
+            size += ' @softskin'
         label = f'{test}/{pipeline}{size}'
         print(f'--- {label} ---')
         result = run_one(test, pipeline, extra)

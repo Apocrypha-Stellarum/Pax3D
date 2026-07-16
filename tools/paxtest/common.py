@@ -107,13 +107,16 @@ class NoneAdapter:
     operators = ['linear']
 
     def create(self, base, msaa=0, exposure=0.0, tonemap='linear',
-               bloom=None, sun_mode=None, shadows=False, log_depth=False):
+               bloom=None, sun_mode=None, shadows=False, log_depth=False,
+               extra_kwargs=None):
         if sun_mode and sun_mode != 'uniforms':
             raise AdapterError('none pipeline has no sun_light_mode support')
         if shadows:
             raise AdapterError('none pipeline has no shadow support')
         if log_depth:
             raise AdapterError('none pipeline has no log-depth support')
+        if extra_kwargs:
+            raise AdapterError('none pipeline takes no pipeline kwargs')
         self.base = base
 
     def set_tonemap(self, op):
@@ -141,7 +144,8 @@ class _SimplepbrFamilyAdapter:
                 f'{self.module_name} not importable here: {exc}') from exc
 
     def create(self, base, msaa=0, exposure=0.0, tonemap='hejl_dawson',
-               bloom=None, sun_mode=None, shadows=False, log_depth=False):
+               bloom=None, sun_mode=None, shadows=False, log_depth=False,
+               extra_kwargs=None):
         if sun_mode and sun_mode != 'uniforms':
             raise AdapterError(
                 f'{self.module_name} has no sun_light_mode support')
@@ -151,6 +155,9 @@ class _SimplepbrFamilyAdapter:
         if log_depth:
             raise AdapterError(
                 f'{self.module_name} has no log-depth support')
+        if extra_kwargs:
+            raise AdapterError(
+                f'{self.module_name} takes no extra pipeline kwargs')
         mod = self._import()
         self.base = base
         kwargs = dict(
@@ -229,7 +236,8 @@ class PaxPbrAdapter:
     supports_log_depth = False
 
     def create(self, base, msaa=0, exposure=0.0, tonemap='hejl_dawson',
-               bloom=None, sun_mode=None, shadows=False, log_depth=False):
+               bloom=None, sun_mode=None, shadows=False, log_depth=False,
+               extra_kwargs=None):
         pipeline_init = self._import_init()
         self.base = base
         kwargs = dict(
@@ -238,6 +246,8 @@ class PaxPbrAdapter:
             exposure=exposure,
             tonemap_operator=tonemap,
         )
+        if extra_kwargs:
+            kwargs.update(extra_kwargs)
         if sun_mode and sun_mode != 'uniforms':
             if not self.supports_sun_modes:
                 raise AdapterError(
@@ -362,13 +372,20 @@ class Harness:
         self.adapter = ADAPTERS[args.pipeline]()
 
     def init_pipeline(self, exposure=0.0, tonemap='hejl_dawson', bloom=None,
-                      sun_mode=None, shadows=False, log_depth=False):
-        """Create the pipeline; call before building the scene."""
+                      sun_mode=None, shadows=False, log_depth=False,
+                      extra_pipeline_kwargs=None):
+        """Create the pipeline; call before building the scene.
+
+        extra_pipeline_kwargs: passed through to the pipeline constructor
+        (pax_pbr-family adapters only) for test-specific init flags, e.g.
+        {'enable_hardware_skinning': False}.
+        """
         try:
             self.adapter.create(self.base, msaa=self.args.msaa,
                                 exposure=exposure, tonemap=tonemap,
                                 bloom=bloom, sun_mode=sun_mode,
-                                shadows=shadows, log_depth=log_depth)
+                                shadows=shadows, log_depth=log_depth,
+                                extra_kwargs=extra_pipeline_kwargs)
         except AdapterError as exc:
             self.report.skip(str(exc))
 
@@ -410,6 +427,62 @@ class Harness:
                 self.report.check(f'golden:{tag}', rms < 0.03,
                                   f'rms={rms:.4f}')
         return path
+
+
+# ----------------------------------------------------------------------
+# Shadow depth-map readback (the openworld diff method)
+# ----------------------------------------------------------------------
+
+def find_light_depth_texture(light_np):
+    """The depth texture of a shadow-casting light's buffer, or None.
+
+    Walks the engine's outputs for the display region whose camera is the
+    light node (the same association pipeline._get_all_casters uses)."""
+    engine = p3d.GraphicsEngine.get_global_ptr()
+    for win in engine.windows:
+        for dr in win.active_display_regions:
+            cam = dr.camera
+            if cam.is_empty() or cam.node() != light_np.node():
+                continue
+            for i in range(win.count_textures()):
+                plane = win.get_texture_plane(i)
+                if plane in (p3d.GraphicsOutput.RTP_depth,
+                             p3d.GraphicsOutput.RTP_depth_stencil):
+                    return win.get_texture(i)
+            if win.count_textures():
+                return win.get_texture(0)
+    return None
+
+
+def read_depth_image(base, tex):
+    """Extract a depth texture into a grayscale PNMImage (None on failure)."""
+    if tex is None:
+        return None
+    try:
+        if not base.graphics_engine.extract_texture_data(
+                tex, base.win.get_gsg()):
+            return None
+        img = p3d.PNMImage()
+        if not tex.store(img):
+            return None
+        return img
+    except Exception:
+        return None
+
+
+def count_gray_diff(a, b, thresh=1.0 / 512, step=2):
+    """Number of sampled texels whose gray value differs by > thresh."""
+    if a is None or b is None:
+        return -1
+    if (a.get_x_size() != b.get_x_size()
+            or a.get_y_size() != b.get_y_size()):
+        return -1
+    n = 0
+    for y in range(0, a.get_y_size(), step):
+        for x in range(0, a.get_x_size(), step):
+            if abs(a.get_gray(x, y) - b.get_gray(x, y)) > thresh:
+                n += 1
+    return n * step * step  # scale sample count back to full-res texels
 
 
 # ----------------------------------------------------------------------
