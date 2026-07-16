@@ -227,6 +227,52 @@ def main():
             f'origin vs {off:.0e} IEU diff_fraction={frac:.5f} '
             f'(R4 acceptance — expected FAIL until camera-relative)')
 
+    # ------------------------------------------------------------------
+    # 3. The R4.2 trap, measured (informational)
+    # ------------------------------------------------------------------
+    # The obvious floating-origin implementation — store sim-scale
+    # positions in node transforms and cancel them with a parent at
+    # -anchor — quantizes every LOCAL position to float32 spacing (~1 IEU
+    # at 1.2e7) BEFORE composition. An object exactly at the anchor
+    # survives by identical-rounding luck; an object NEAR the anchor (a
+    # ship 27.7 IEU from the camera) lands up to half a spacing (~0.5
+    # IEU) off. Camera-relative rendering must subtract in Python doubles
+    # FIRST and only hand small numbers to set_pos. (A doubles engine
+    # build retires this trap — this line would then read ~0.)
+    off = OFFSETS[1]
+    ship_arm = 1.5  # near-anchor object, inside the film-6 ortho frame
+
+    # Baseline: anchor at the origin, ship 27.7 IEU from it
+    sphere.set_pos(ship_arm, 0, 0)
+    base.camera.set_pos(CAM_ARM)
+    base.camera.look_at(0, 0, 0)
+    h.step(3)
+    img_base = h.capture()
+    h.save_capture(img_base, 'rebase_baseline')
+
+    # Same relative layout via parent-cancellation at 1.2e7
+    root = base.render.attach_new_node('rebase_parent_cancel')
+    root.set_pos(-off, 0, 0)
+    sphere.reparent_to(root)
+    sphere.set_pos(off + ship_arm, 0, 0)
+    cam_parent = base.camera.get_parent()
+    base.camera.reparent_to(root)
+    base.camera.set_pos(p3d.Vec3(off, 0, 0) + CAM_ARM)
+    base.camera.look_at(p3d.Point3(off, 0, 0))
+    h.step(3)
+    img_cancel = h.capture()
+    h.save_capture(img_cancel, 'rebase_parent_cancel')
+    frac = diff_fraction(img_base, img_cancel)
+    base.camera.reparent_to(cam_parent)
+    sphere.reparent_to(base.render)
+    root.remove_node()
+    h.report.info(
+        'trap_parent_cancel_quantizes',
+        f'parent at -1.2e7 "canceling" stored sim coords: ship '
+        f'{ship_arm} IEU from anchor renders diff_fraction={frac:.5f} '
+        f'vs the true layout — local positions quantize (~1 IEU spacing '
+        f'there) before composition; subtract in doubles instead')
+
     h.report.finish()
 
 
