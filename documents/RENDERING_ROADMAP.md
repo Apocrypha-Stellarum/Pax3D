@@ -1,3 +1,8 @@
+> **HISTORICAL (Feb 2026) — superseded by `PAX3D_MASTER_PLAN.md`.** The
+> analysis here fed the current plan, but the phasing was replaced and two
+> key premises were later disproven by the paxtest harness (see
+> `PAXTEST_FINDINGS_SESSION_A.md`).
+
 # Pax3D Rendering Roadmap
 **Repository:** github.com/Apocrypha-Stellarum/Pax3D
 **Game:** Pax Abyssi Space Simulation

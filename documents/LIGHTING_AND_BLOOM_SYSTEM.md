@@ -1,3 +1,10 @@
+> **HISTORICAL (Mar 2026).** Describes `pax3d_simplepbr`, which is now
+> RETIRED — its features were merged into `pax3d_render/` (July 2026),
+> which the game consumes via the `use_pax3d_render` flag. The bloom
+> implementation described here shipped with a blocky-halo defect (fix is
+> phase R3). Current docs: `PAX3D_RENDER_ARCHITECTURE.md` and the game
+> repo's `USING_PAX3D_RENDER.md`.
+
 # Pax3D Lighting and Bloom System
 
 **Project:** Pax3D (fork of Panda3D 1.11.0-dev)

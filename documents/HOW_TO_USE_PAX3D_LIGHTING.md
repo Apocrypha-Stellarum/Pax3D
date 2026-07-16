@@ -1,3 +1,10 @@
+> **HISTORICAL (Mar 2026) — DO NOT FOLLOW.** This guide targets the retired
+> `pax3d_simplepbr` package and an integration path the game never adopted
+> (the game runs its own `graphics/pax_pbr`, now superseded by
+> `pax3d_render` behind the `use_pax3d_render` settings flag). The current
+> usage guide is in the game repo:
+> `sfb2/documents/PAX_3D_ENGINE_AND_GRAPHICS/USING_PAX3D_RENDER.md`.
+
 # How to Use Pax3D Bloom and Tonemapping in Pax Abyssi
 
 **Project:** Pax3D (fork of Panda3D 1.11.0-dev)

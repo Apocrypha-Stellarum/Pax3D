@@ -1,3 +1,8 @@
+> **HISTORICAL (Session 459, Mar 2026).** The plan + retrospective of the
+> bloom/tonemap integration that was largely reverted. Its "Key Lessons"
+> section motivated the harness-first reboot (`PAX3D_MASTER_PLAN.md`).
+> Note: lesson 1's double-gamma suspicion was later DISPROVEN by paxtest.
+
  Here is Claude's plan:                                                                                     ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ Bloom + HDR Tonemapping for Pax3D
 
 ## Session 459 — Bloom + HDR Tonemapping Integration (2026-03-03)

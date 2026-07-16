@@ -1,3 +1,12 @@
+> **HISTORICAL (Feb 2026).** The saga documented here is RESOLVED: the
+> paxtest harness proved a real DirectionalLight works on every current
+> mesh type (no engine bug), and `pax3d_render`'s `sun_light_mode=
+> 'directional'` now provides the sun this document wished for — with
+> shadows. The two-representations analysis (§2.1: `_direction` vs node
+> transform) remains REQUIRED READING for anyone touching sun/shadow code;
+> the pipeline's HPR-orientation approach exists because of it. See
+> `PAX3D_RENDER_ARCHITECTURE.md` §4.
+
 # Directional Lighting — Problem Analysis and Engine Fix Plan
 
 **Project:** Pax3D (Panda3D fork)

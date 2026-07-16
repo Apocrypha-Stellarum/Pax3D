@@ -1,0 +1,338 @@
+# pax3d_render — Architecture & Maintainer's Guide
+
+**Audience:** the AI/human dev working on the Pax3D engine repo.
+**Package:** `C:\python\pax3d\pax3d_render\`
+**Status:** Active — this is where ALL rendering work lands (see CLAUDE.md
+working method). Game-side usage is documented separately in
+`sfb2/documents/PAX_3D_ENGINE_AND_GRAPHICS/USING_PAX3D_RENDER.md`.
+**Last updated:** 2026-07-16 (post Session C / R2)
+
+---
+
+## 1. Lineage and Design Intent
+
+```
+simplepbr 0.13.1 (Moguri, pip)
+   └── graphics/pax_pbr (game repo, ~Feb-Mar 2026)
+   │      custom sun uniforms, debug modes, bloom port, TAA, dither,
+   │      geometric specular AA, disk-loaded shaders
+   └── pax3d_simplepbr (this repo, Mar 2026) — bloom + tonemap operators
+          │
+          └──> pax3d_render (July 2026) = MERGE of both + R1/R2 additions
+```
+
+Design intent:
+- **One pipeline, engine-owned.** The game consumes it via an opt-in flag;
+  fixes land here exactly once.
+- **Byte-compatible by default.** Every new behavior is opt-in
+  (`sun_light_mode`, sRGB helpers); with defaults, output is identical to
+  the game's legacy `graphics/pax_pbr`.
+- **No game imports.** The package depends only on panda3d. Debug prints
+  gate on `PAX3D_RENDER_DEBUG` env var or `debug=True`.
+
+Files:
+
+| File | Purpose |
+|---|---|
+| `__init__.py` | Exports (`init = Pipeline`), `configure_prc()`, `make_base_color_textures_srgb()` |
+| `pipeline.py` | The Pipeline class — everything below |
+| `shaderutils.py` | Loads `shaders/*` from disk, injects `#define`s, mechanical GLSL 120→330 upgrade |
+| `shaders/pax_pbr.vert/.frag` | The PBR scene shader (metal-rough, IBL hooks, debug modes) |
+| `shaders/tonemap.frag` | 4 operators + bloom composite + dither |
+| `shaders/bloom_extract/downsample/upsample.frag` | Kawase-style bloom chain (KNOWN DEFECT — §8) |
+| `shaders/taa_resolve.frag`, `passthrough.frag` | TAA resolve + copies |
+| `shaders/shadow.vert/.frag` | Shadow-caster depth pass |
+| `textures/` | Optional `brdf_lut.txo` (absent → 1×1 white fallback; only matters once env maps are used) |
+
+---
+
+## 2. Frame Anatomy
+
+Default (no bloom, no TAA) — 2 passes:
+
+```
+render (PBR shader, HDR linear) ──> scene_hdr  RGBA16F + D24 [+MSAA]
+                                        │
+                                 tonemap.frag (operator + dither) ──> window
+```
+
+With bloom (`enable_bloom=True`) — 13 passes:
+
+```
+scene_hdr ──> bloom_extract (full res) ──> down×N (1/2 … 1/2^N)
+                                              └──> up×N (tent + per-mip tint,
+                                                          accumulating)
+scene_hdr + bloom_result ──> tonemap (composite BEFORE tone curve) ──> window
+```
+
+With TAA (`enable_taa=True`), tonemap goes to an intermediate LDR texture,
+then: `taa_resolve` (history blend + neighborhood clamp) → history copy →
+passthrough to window. Camera gets per-frame Halton sub-pixel jitter from
+the `_update` task.
+
+All intermediate textures are RGBA16F. The scene buffer is explicitly
+**linear** (`srgb_color=False`); sRGB encoding happens exactly once, in
+`tonemap.frag` (explicit `pow(1/2.2)` for ACES/Reinhard/Uncharted2;
+Hejl-Dawson bakes its own curve). **paxtest `test_gamma` proves this chain
+matches the analytic curves — keep it that way.**
+
+Everything is orchestrated through Panda3D's `FilterManager`
+(`render_scene_into` for the scene buffer, `render_quad_into` for each
+post pass). A structural change (`enable_bloom`, `bloom_levels`,
+`enable_taa`) destroys and rebuilds the whole FilterManager chain
+(`_rebuild_tonemapping()`).
+
+---
+
+## 3. The Scene Shader and Its Defines
+
+`_recompile_pbr()` compiles `pax_pbr.vert/.frag` with defines from
+`_get_pbr_defines()` and applies the ShaderAttrib to `render`:
+
+| Define | Driven by | Effect |
+|---|---|---|
+| `MAX_LIGHTS` | `max_lights` | Size of `p3d_LightSource[]` |
+| `USE_NORMAL_MAP` | `use_normal_maps` | TBN normal mapping (needs tangents!) |
+| `USE_EMISSION_MAP` | `use_emission_maps` | Emission texture sampling |
+| `ENABLE_SHADOWS` | `enable_shadows` | Shadow-map sampling + per-light `v_shadow_pos` |
+| `ENABLE_FOG` | `enable_fog` | Exponential fog |
+| `USE_OCCLUSION_MAP` | `use_occlusion_maps` | AO from metal-rough texture R channel |
+| `USE_330` | gl-version ≥ 3.2 | Mechanical 120→330 shader upgrade |
+| `ENABLE_SKINNING` | `enable_hardware_skinning` | GPU skinning |
+| `CALC_NORMAL_Z` | `calculate_normalmap_blue` | Reconstruct normal-map Z |
+| `SUN_FROM_LIGHTSOURCE` | `sun_light_mode == 'directional'` | **R2**: sun via `p3d_LightSource` loop (§4) |
+
+Notable shader features already present (inherited from the game's fork):
+geometric specular anti-aliasing (Kaplanyan-Hill), Eddington limb darkening
+for stellar surfaces (`u_limb_darkening`), tangentless fallback (uses
+`v_world_normal` when `USE_NORMAL_MAP` is off — procedural spheres have no
+tangents), and 9 debug visualization modes on `u_debug_lighting` (world
+normals, n·l, light dir, position-derived normals, signed n·l,
+axis-magnitudes, hardcoded-sun test, float-uniform test).
+
+### CRITICAL invariant: `_recompile_pbr()` preserves shader inputs
+
+Shader inputs (`set_shader_input`) live inside the node's ShaderAttrib.
+Runtime recompiles (`set_sun_light_mode`, `set_enable_shadows`) must
+`prev.set_shader(new_shader)` on the EXISTING attrib — building a fresh
+`ShaderAttrib.make(shader)` silently wipes every input on `render`
+(u_sun_*, u_debug_lighting, camera_world_position, ...) and crashes the
+next frame with "Shader input X is not present". This bug shipped once;
+`test_shadows.py`'s toggle check guards it now.
+
+---
+
+## 4. Sun Lighting — the Two Modes (R2)
+
+`sun_light_mode` selects how the sun reaches the shader. **The game-facing
+API is identical in both modes:** `pipeline.update_sun(toward_sun_vec,
+color_vec)` every frame.
+
+### 'uniforms' (default — legacy, byte-identical to graphics/pax_pbr)
+
+`update_sun` writes `u_sun_dir_world` / `u_sun_color`; the shader has a
+dedicated world-space sun block. Directional lights in `p3d_LightSource[]`
+are explicitly skipped. **No sun shadows possible** (no light node).
+
+### 'directional' (R2 — the target mode)
+
+The pipeline owns a `DirectionalLight('pax3d_sun')` attached to render.
+The shader compiles with `SUN_FROM_LIGHTSOURCE`: the standard light loop
+processes directional entries too (`position.w == 0` → the
+`position.xyz - v_view_position * w` trick yields the view-space
+toward-light vector; attenuation resolves to 1; spot terms self-disable).
+Same BRDF, and the simplepbr shadow path works (§5).
+
+`update_sun` in this mode orients the node and sets its color. The uniforms
+are STILL updated every frame (debug modes visualize them; cheap).
+
+### THE trap: node transform vs `_direction` (do not regress this)
+
+`DirectionalLight` has two direction representations:
+- the `_direction` field (`set_direction()`) — what the *lighting* math
+  transforms by the node matrix;
+- the node transform — what the *shadow camera* looks along.
+
+`set_direction()` moves the light but NOT the shadow camera. Therefore the
+pipeline NEVER calls `set_direction()`; it leaves `_direction` at its
+default (+Y forward) and orients the NODE:
+
+```python
+travel = -toward_sun          # photon travel direction
+H = atan2(-travel.x, travel.y)
+P = atan2(travel.z, hypot(travel.x, travel.y))
+sun_light_np.set_hpr(deg(H), deg(P), 0)
+```
+
+This maps node-forward exactly onto `travel`, so shader lighting
+(`-(_direction · node_mat)` = toward-sun) and the shadow camera agree by
+construction. This resolves the 2025-2026 "Formula B vs C" saga — the full
+history is in `DIRECTIONAL_LIGHTING_PLAN.md` (historical).
+
+Also inherited wisdom: never `set_pos()` a directional light; keep it
+parented to render.
+
+---
+
+## 5. Sun Shadows (R2)
+
+Only in `'directional'` mode. Machinery is simplepbr's, inherited intact:
+
+1. `dlight.set_shadow_caster(True, size, size)` creates the shadow buffer
+   (`shadow_map_size`, default 2048).
+2. The ortho lens is sized by `set_shadow_extent(radius, depth)`: film
+   `2r×2r`, near/far `±depth/2`, centered on the world origin along the
+   node's forward. **The caller must size this** — e.g. the game should
+   drive it from the current planet/station cluster (R2 leftover).
+3. The `_update` task assigns the shadow depth shader
+   (`shadow.vert/.frag`) to every shadow-casting light camera via
+   camera initial-state override.
+4. The vertex shader computes `v_shadow_pos[i] = shadowViewMatrix ×
+   view_position` for every light; the fragment shader does the
+   `sampler2DShadow` lookup with `global_shadow_bias` (param
+   `shadow_bias`, default 0.005).
+
+Runtime toggles: `set_enable_shadows(bool)` (recompiles the PBR shader +
+configures the caster) — proven by `paxtest test_shadows` (lit 0.79 →
+shadowed 0.09 → restored → re-shadowed).
+
+Geometry outside the shadow frustum samples as LIT — undersized extents
+produce shadow-free zones, not artifacts. At planetary scales this needs
+the dynamic-extent work (R2.4) before shipping in-game.
+
+---
+
+## 6. Auxiliary Scene Cameras (R1 — the skybox-death fix)
+
+External code must never hunt for the FilterManager buffer (the game's old
+sky camera found it once at init and died on every rebuild — failure F4).
+Instead the pipeline owns auxiliary display regions:
+
+```python
+reg = pipeline.register_scene_camera(cam_np, sort=-100,
+                                     clear_color=(0,0,0,1),
+                                     clear_depth=True, name='sky_camera')
+pipeline.unregister_scene_camera(reg)
+```
+
+Internals: `_attach_scene_camera` makes a DR on `_filtermgr.buffers[0]`
+with the given sort/clears; for any background camera (sort < 0) the MAIN
+scene DR is set to color-clear OFF / depth-clear ON (preserves background
+pixels, standard sky-camera contract). `_setup_tonemapping()` ends with
+`_reattach_scene_cameras()`, so every rebuild (bloom/TAA toggles) re-creates
+all registered DRs on the new buffer. Proven by `paxtest test_rebuild`
+(manual-discovery pattern dies, registration survives).
+
+Caller keeps ownership of the camera node: lens, camera masks, scene root,
+transform sync are the caller's business (the game's `sky_camera.py` shows
+the pattern and auto-uses this API when available).
+
+Gotcha for tests/tools: the FilterManager buffer appears in
+`GraphicsEngine`'s window list only after a frame renders — anything doing
+manual discovery must render ≥1 frame first (the registration API is
+immune; it holds the buffer object directly).
+
+---
+
+## 7. Runtime Parameter Model
+
+Three cost classes — keep new parameters within this taxonomy:
+
+| Class | Cost | Parameters / methods |
+|---|---|---|
+| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent` |
+| Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows` |
+| FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, (`bloom_levels`, `msaa_samples` at init) |
+
+Constructor parameters (all keyword): `render_node, window, camera_node,
+taskmgr, msaa_samples=4, max_lights=8, enable_shadows=False,
+use_normal_maps=False, use_emission_maps=True, use_occlusion_maps=False,
+enable_fog=False, exposure=0.0, shadow_bias=0.005,
+enable_hardware_skinning=True, calculate_normalmap_blue=True,
+enable_bloom=False, bloom_strength=1.0, bloom_intensity=1.0,
+bloom_levels=5, tonemap_operator='aces', enable_taa=False, debug=False,
+sun_light_mode='uniforms', shadow_map_size=2048` — unknown kwargs are
+swallowed (`**_kwargs`) for forward/backward compatibility with the game's
+call sites.
+
+---
+
+## 8. Color Pipeline — Verified State and Remaining Work
+
+Verified by `paxtest test_gamma` (both engines, both GL baselines):
+
+- Post chain is analytically correct for ALL operators (ACES, Reinhard,
+  Uncharted2, Hejl-Dawson) and the EV exposure path. There is NO
+  double-gamma. Do not "fix" the tonemap shaders.
+- **Inputs are NOT linearized**: 8-bit textures are sampled raw. Game
+  content is sRGB-encoded and hand-tuned around Hejl-Dawson, which is why
+  correct operators look washed out on it.
+
+Remaining R1 work: roll out input linearization —
+`make_base_color_textures_srgb(nodepath)` flags modulate-stage textures as
+`F_srgb`/`F_srgb_alpha` (normal/metal-rough stay linear!), then retune
+sun/ambient/exposure. This is a content-facing change; keep it opt-in and
+A/B it in the testbed (`G` key toggles it live).
+
+GLSL: sources are 120 with a mechanical 330 upgrade in `shaderutils`
+(`--baseline modern` / `gl-version 3 2`). R1.4 plans to delete the 120 path
+once the game runs on gl-version 3 2 — do it in one sweep, verified by the
+full paxtest matrix under both baselines before/after.
+
+---
+
+## 9. Known Defects / Where the Next Phases Land
+
+### F3 — Blocky bloom (R3, next up)
+
+Reproduced deterministically by `paxtest test_bloom` (both pipelines, both
+512×512 and 960×540 → truncation ruled out). The halo is chunky and
+vertically asymmetric (up/down luminance delta ~0.06 at equal radius;
+left/right ~0). Investigate in this order:
+
+1. **Filter/wrap state** on every intermediate bloom texture — the tent
+   and accumulator sampling assume bilinear + clamp-to-edge; the textures
+   are created bare (`p3d.Texture(name)`) in `_setup_tonemapping`.
+2. **Upsample design flaw**: `bloom_upsample.frag` applies the 9-tap tent
+   to the SAME-resolution downsample texture but samples the coarser-mip
+   accumulator (`bloom_accum_tex`) with a single bilinear tap — so each mip
+   is effectively upsampled by raw bilinear alone. The Jimenez reference
+   tents the coarser mip. Swapping which input gets the tent is the likely
+   real fix.
+3. **Half-texel offset** (the vertical asymmetry signature) — check
+   `texel_size` uniforms vs actual buffer sizes and the UV convention in
+   `render_quad_into` buffers.
+
+Fix procedure: make `test_bloom` pass at both resolutions, keep
+`test_gamma` green (composite happens pre-tonemap), then eyeball halos in
+the testbed (`--bloom`, U/J/I/K tuning).
+
+### R4 hooks (log depth / camera-relative)
+
+Will need: a shared GLSL snippet injected by `shaderutils` into every
+depth-writing shader (pax_pbr, shadow, sky objects), a pipeline flag, and a
+new paxtest (`test_scale` is sketched in the master plan). The shadow pass
+must use the SAME depth formula.
+
+### R5 hooks (atmosphere / env ambient)
+
+IBL plumbing already exists (SH coefficients `sh_coeffs[9]`, filtered env
+cubemap + BRDF LUT, currently fed zeros/white). Environment-driven ambient
+= computing real SH from the skybox and feeding `_set_env_map_uniforms` —
+no shader changes needed to first light.
+
+---
+
+## 10. Testing Contract
+
+- Every feature has (at least) one paxtest: gamma, lighting (×sun-modes),
+  bloom, rebuild, shadows. Run `tools/paxtest/run.py` before and after.
+- Add a test WITH the feature, not after. Analytic checks > goldens;
+  goldens (`--golden` / `--check-golden`) are a refactor safety net.
+- The testbed (`sfb2/test3d_pax.py`) is the eyeball companion — its
+  `--selftest` mode (offscreen, 30 frames, screenshot) is scriptable.
+- Harness gotchas encoded in the tests (keep them in mind for new ones):
+  attach a small `AmbientLight` in lighting tests (with NO lights attached,
+  `p3d_LightModel.ambient` is pure white and floods PBR output); render a
+  frame before any manual buffer discovery; sample bar/halo centers to
+  dodge the tonemap dither.

@@ -51,8 +51,9 @@ contract).
 GLTF ship from sfb2, lit from each cardinal direction through the pipeline's
 native sun mechanism (`update_sun()` uniforms for pax_pbr, a real
 `DirectionalLight` + `set_direction()` elsewhere). Asserts the lit hemisphere
-faces the sun. For pax_pbr, additionally documents whether a real
-DirectionalLight is consumed at all.
+faces the sun. Also documents whether a real DirectionalLight is consumed.
+For pax3d_render, `--sun-mode directional` runs the same checks through the
+real-DirectionalLight sun (R2) — the runner does both variants automatically.
 
 **`test_bloom.py`** — black scene + one small HDR emissive quad, bloom on.
 Asserts a halo exists and decays smoothly (max adjacent-pixel step, outward
@@ -65,28 +66,42 @@ auxiliary region still renders afterwards. Legacy pipelines attach the
 sky_camera.py way and FAIL (that's F4); pax3d_render attaches through
 `register_scene_camera()` and passes.
 
+**`test_shadows.py`** — occluder sphere on the sun ray above a larger
+sphere, `sun_light_mode='directional'` + `enable_shadows`. Asserts the
+occluded pole darkens to ambient, restores on toggle-off, and re-darkens on
+toggle-on (the toggle exercises the runtime shader-recompile path, which
+once wiped all shader inputs — guarded here). Skips pipelines without the
+directional sun mode.
+
 ## Goldens
 
 `--golden` blesses the current captures into `goldens/`; `--check-golden`
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Findings snapshot (Session A, 2026-07-16)
+## Results snapshot (post Session C, 2026-07-16)
 
-Same results on stock 1.10.16 and Pax3D 1.11.0 — the defects are in the
-Python/GLSL pipelines, not the engine:
+Same results on stock 1.10.16 and Pax3D 1.11.0 — remaining defects are in
+the Python/GLSL pipelines, not the engine:
 
-- `gamma`: **PASS everywhere.** ACES/Reinhard/Uncharted2/Hejl-Dawson all match
-  their analytic curves exactly on pax_pbr and pax3d_simplepbr. The
-  Session-459 "double gamma" hypothesis is disproven; the ACES wash-out is an
-  *input* problem (textures sampled RAW, content tuned for Hejl-Dawson).
-- `lighting`: game-winding sphere and GLTF ship light **correctly** under a
-  real DirectionalLight on simplepbr — the R2 restoration is viable today.
-  Reversed winding inverts lighting (PBR) or culls to black (fixed-function).
-  pax_pbr confirmed to IGNORE real DirectionalLights.
-- `bloom`: blocky halo (F3) reproduced in isolation on both pipelines at both
-  resolutions — not a resolution-truncation bug; suspect filtering/upsample
-  design in the mip chain. Halo is also vertically asymmetric (~0.05–0.07
-  up/down luminance delta at equal radius).
+| Test | none | simplepbr | pax_pbr | pax3d_render |
+|---|---|---|---|---|
+| gamma | PASS | PASS | PASS | PASS |
+| lighting | PASS | PASS | PASS | PASS (both sun modes) |
+| bloom | skip | skip | **FAIL (F3 blocky)** | **FAIL (F3 blocky)** |
+| rebuild | skip | skip | FAIL (F4, by design of the old pattern) | **PASS** |
+| shadows | skip | skip | skip | **PASS** |
 
-See `documents/PAXTEST_FINDINGS_SESSION_A.md` for the full analysis.
+Key established facts (full analysis:
+`documents/PAXTEST_FINDINGS_SESSION_A.md` + master plan session updates):
+
+- **No double gamma** — all tonemap operators match their analytic curves;
+  the ACES wash-out is an input-linearization problem (textures sampled
+  RAW, content tuned for Hejl-Dawson).
+- **No DirectionalLight engine bug** — real lights work on every mesh type;
+  pax3d_render's directional sun measures identically to the uniform sun,
+  and its shadows are proven (lit 0.79 → shadowed 0.09).
+- **Blocky bloom (F3)** is reproducible at any resolution — truncation
+  ruled out; suspects are buffer filter state, the upsample design, and a
+  half-texel Y offset (halo vertically asymmetric ~0.06). This is the R3
+  target; `test_bloom` is its acceptance test.
