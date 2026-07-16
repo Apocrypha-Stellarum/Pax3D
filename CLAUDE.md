@@ -42,10 +42,10 @@ The rendering program runs in gated phases (see the master plan):
 | R6 | Engine hygiene (DX9 removal, dead-path deletion, Vulkan watch) | Ongoing, low priority |
 
 **Engine C++ changes so far: one build-system fix.** Everything else is
-Python/GLSL in `pax3d_render/`. The C++ fork earns its keep in R4 (log
-depth) and targeted conveniences; do not start engine C++ work casually —
-every C++ change needs a full rebuild, and **builds only run in windows the
-user schedules** (never during dev sessions — game-repo memory rule).
+Python/GLSL in `pax3d_render/`. When to use which language is canon — see
+**Language Canon** below: prototype in Python/GLSL, promote to C++ on
+evidence; C++ only in build windows the user schedules (never casually
+mid-session — every C++ change needs a full rebuild).
 
 ### Hard-won facts (do not re-litigate without new evidence)
 
@@ -97,6 +97,60 @@ full analysis in `documents/PAXTEST_FINDINGS_SESSION_A.md`):
 5. **Keep behavior changes opt-in until proven.** The game adopts new
    pipeline behavior via flags (`use_pax3d_render`, `sun_light_mode`), with
    the old path selectable for A/B until the new one is signed off.
+
+6. **Prototype in Python/GLSL; promote to C++ on evidence.** See the
+   Language Canon below — the near-instant iteration loop is this
+   project's superpower; C++ is for the classes of work that demand it,
+   never a default.
+
+---
+
+## Language Canon (user-ratified 2026-07-17)
+
+**Prototype in Python/GLSL; promote to C++ on evidence.**
+
+The loop — edit → paxtest → seconds → hand to a downstream AI dev →
+same-day field report — is this project's superpower and the fuel of the
+measure-first method. KEEP THE SUPERPOWER. But Pax3D must stay performant
+as the fork deepens, so C++ is used when the class of work demands it:
+
+| Work | Language | Why |
+|---|---|---|
+| Orchestration, configuration, per-frame O(1) uniform pushes | Python (`pax3d_render/`) | Not in any hot loop (the whole per-frame Python is ~microseconds); iteration speed is worth more than the cycles |
+| Per-pixel / per-vertex work | GLSL | The real performance language of a renderer — and it also iterates instantly |
+| Per-frame × per-object/per-vertex machinery that can't live on the GPU (cull callbacks, CSM/instancing/light-culling managers, engine data paths) | C++ (`panda/src/`) | The engine's hot loops are already C++; new work of that class joins them |
+| Proven, stable Python that a **profile** shows in the hot path | Promote to C++ | Port when the design has stopped moving — never while a feature is still iterating |
+
+Rules:
+
+1. **Never port on faith.** A measurement (profiler or harness number)
+   showing the work in a hot path comes first. Performance claims get the
+   same discipline as rendering claims — this repo has killed too many
+   myths to accept "C++ is faster" without a number.
+2. **C++ lands only in user-scheduled build windows** (a full rebuild is
+   the 30–60-minute class; failed builds corrupt `built_x64/`). Candidates
+   accumulate in the queue below — they are batched, never landed casually
+   mid-session.
+3. **New engine-adjacent features default to a Python/GLSL prototype even
+   when C++ is their eventual home.** Stabilize the design at zero build
+   cost, then sink it.
+
+Evidence on file: the bloom root-cause fix, log depth, and the entire
+Session E shadow package (root-cause in a downstream game + three APIs +
+tests + docs) each landed same-day *because* they were Python/GLSL; the
+openworld build measured 103–115 fps at 1600×900 (40 animated NPCs, 4096²
+shadows, MSAA 4×, bloom) through the Python pipeline — the frame lives in
+the GPU and Panda's C++, not in our orchestration layer.
+
+### Build-window queue (living list — add candidates here)
+
+| Item | Class | Status |
+|---|---|---|
+| Doubles engine build (`STDFLOAT_DOUBLE`) | Build flag | Shelved for CPU cost; resume via game repo `handover_doubles_spike.md` |
+| R2.3 DirectionalLight conveniences (`set_direction_world`, strip translation in `xform()`, non-zero-pos warning) | New C++ API | Queued, low urgency — the pipeline owns sun orientation |
+| DX9 removal (`dxgsg9/`, `pandadx9/`) + dead-path deletion | Deletion (R6) | Queued |
+| Vulkan-port evaluation (hand-port from read-only upstream reference) | Port | Only when it can run the paxtest suite |
+| Python→C++ promotions | Promotion | **None yet** — nothing Python has profiled hot |
 
 ---
 

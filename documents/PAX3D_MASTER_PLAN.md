@@ -191,13 +191,15 @@ bloom amplifies nothing — this was learned empirically at the cost of a month.
    hardware target is OpenGL 4.x-class GPUs; carrying 2008-era shader syntax doubles every
    shader's surface area for bugs (and is entangled with the sRGB confusion).
 
-5. **Engine C++ changes only where Python can't reach.** The fork earns its keep in a small
-   number of targeted changes (DirectionalLight API, tangent generation, log-depth hooks,
-   DX9 removal) — not in a rewrite. Every C++ change costs a full engine rebuild, and
-   **builds only run in windows the user schedules** — so C++ items are batched, not landed
-   casually. *(The original rationale here — keeping upstream sync viable — is obsolete: the
-   upstream relationship was severed by user decision 2026-07-17; see CLAUDE.md "Upstream
-   Relationship — SEVERED". Pax3D is sovereign; `// PAX3D:` tags remain for auditability.)*
+5. **Prototype in Python/GLSL; promote to C++ on evidence.** *(v2, user-ratified 2026-07-17 —
+   supersedes "C++ only where Python can't reach", whose upstream-sync rationale died with the
+   severed-upstream policy.)* The near-instant Python/GLSL loop — edit → paxtest → seconds →
+   downstream AI dev feedback same-day — is the program's superpower and the default for ALL
+   new work, even features whose eventual home is C++. C++ is used when the class of work
+   demands it: per-frame × per-object/per-vertex machinery that can't live on the GPU, and
+   stable, proven Python that a profile shows in the hot path. Never port on faith; C++
+   batches into user-scheduled build windows. Full canon + the living build-window queue:
+   CLAUDE.md "Language Canon".
 
 ### 2.2 Graphics API decision (the "modern DirectX" question)
 
