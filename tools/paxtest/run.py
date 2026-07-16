@@ -57,6 +57,8 @@ def run_one(test, pipeline, extra_args, timeout=180):
             payload['win_size'] = arg
         if arg == '--sun-mode' and i + 1 < len(extra_args):
             payload['variant'] = extra_args[i + 1]
+        if arg == '--log-depth':
+            payload['variant'] = 'logdepth'
     return payload
 
 
@@ -92,6 +94,10 @@ def main():
                 # R2: also verify the real-DirectionalLight sun mode
                 jobs.append((test, pipeline,
                              passthrough + ['--sun-mode', 'directional']))
+            if test == 'scale' and pipeline == 'pax3d_render':
+                # R4.1: the log-depth acceptance run (must PASS, unlike the
+                # default run which documents the engine baseline)
+                jobs.append((test, pipeline, passthrough + ['--log-depth']))
 
     results = []
     print(f'paxtest: {len(jobs)} jobs, python={sys.executable}, '
@@ -102,6 +108,8 @@ def main():
             size = ' @' + extra[extra.index('--win-size') + 1]
         if '--sun-mode' in extra:
             size += ' @' + extra[extra.index('--sun-mode') + 1]
+        if '--log-depth' in extra:
+            size += ' @logdepth'
         label = f'{test}/{pipeline}{size}'
         print(f'--- {label} ---')
         result = run_one(test, pipeline, extra)

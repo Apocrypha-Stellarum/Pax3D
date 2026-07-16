@@ -80,16 +80,20 @@ without the directional sun mode.
 chromatic aberration in tonemap); asserts zero-strength passthrough and
 effect behavior (added alongside the feature, post-Session-D).
 
-**`test_scale.py`** — R4 acceptance tests, **EXPECTED TO FAIL until R4
-lands** (they are the mechanical bug reports for log depth and
-camera-relative rendering): `zfight_at_range` (1 IEU separation at 2500 IEU
-under the game frustum 0.1/5000 — rear surface bleeds through in bands),
-and `precision_off_origin` (identical rotated-camera scene at origin vs
-1.2e6/1.2e7 IEU differs by 0.24%/22% of pixels). Near-field depth and
-origin-determinism controls must stay green forever. Engine-level,
-pipeline-independent: runs under 'none' and pax3d_render only. NOTE the
-finding: the precision defect requires a ROTATED camera — axis-aligned
-rigs cancel exactly in float32 and hide it.
+**`test_scale.py`** — R4 acceptance tests: `zfight_at_range` (1 IEU
+separation at 2500 IEU under the game frustum 0.1/5000 — swept through a
+full depth-quantization cell in 6 sub-resolution steps; the rear surface
+bleeds through at some step, worst ~89%), and `precision_off_origin`
+(identical rotated-camera scene at origin vs 1.2e6/1.2e7 IEU differs by
+0.24%/22% of pixels). Near-field depth and origin-determinism controls
+must stay green forever. The default runs document the engine baseline
+and FAIL by design until R4 completes; the **`--log-depth` variant
+(`scale/pax3d_render @logdepth`) must PASS** — it runs the depth checks
+with `enable_log_depth=True` under a 0.1/1e9 frustum (R4.1, landed).
+Two findings encoded here: the precision defect requires a ROTATED
+camera (axis-aligned rigs cancel exactly in float32 and hide it), and
+z-fight probing must SWEEP — a single frame can tie-break uniformly in
+the correct surface's favor and mimic a working depth buffer.
 
 ## Goldens
 
@@ -112,7 +116,7 @@ to pax3d_render — its column now mirrors pax3d_render except for `rebuild`
 | rebuild | skip | skip | FAIL (F4, by design of the old pattern) | **PASS** |
 | shadows | skip | skip | skip | **PASS (incl. off-origin extent)** |
 | ftl_blur | skip | skip | PASS | PASS |
-| scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)** |
+| scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)**; **@logdepth PASS (R4.1)** |
 
 `pax3d_simplepbr` (retired) keeps its historical bloom/rebuild failures.
 `scale` failing is the DOCUMENTED baseline until R4 lands — see its entry

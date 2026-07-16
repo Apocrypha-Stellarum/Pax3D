@@ -113,6 +113,22 @@ Every observed failure from the March effort, its actual cause, and where this p
 > flip `use_pax3d_render` → parity eyeball → flip `sun_light_mode` to
 > 'directional' → validate shadows in-game.
 
+> **Session D addendum (2026-07-17, cont.):** Flags FLIPPED on user order
+> (`use_pax3d_render`, `sun_light_mode=directional`, `enable_shadows`) —
+> game smoke-boots clean on pax3d_render, zero shader errors; visual
+> parity eyeball still pending. **R4.0 done:** `test_scale.py` reproduces
+> both scale defects deterministically (Z-fight sweep at 2500 IEU;
+> off-origin precision loss — which requires a ROTATED camera to
+> manifest; axis-aligned rigs cancel exactly). **R4.1 core done:**
+> opt-in `enable_log_depth` in pax3d_render — fragment-level log depth,
+> `scale/pax3d_render @logdepth` GREEN under both GLSL baselines and both
+> engines; testbed Z hotkey / `--log-depth`; planet approach clean through
+> a 0.1/1e9 frustum. Sweep-based z-fight probing was required: single
+> frames can tie-break uniformly and mimic correct rendering. Parallel
+> sessions the same day: FTL warp distortion in the tonemap pass (with
+> test_ftl_blur, green) and the game repo's doubles-build spike (candidate
+> for the R4.2 precision half).
+
 ### 1.3 The lesson
 
 The March plan ordered work by *visual payoff* (bloom first, because it's exciting). The correct
@@ -348,11 +364,22 @@ These rows are EXPECTED FAILs in the matrix until R4 lands — they are the
 definition of done for log depth (zfight) and camera-relative rendering
 (precision).
 
-- **Logarithmic depth** in the unified shader set (single formula in one include, used by scene,
-  sky objects, and shadow passes). Engine hook in the shader generator if auto-shader paths
-  need it.
+- **Logarithmic depth** — **CORE LANDED, opt-in (Session D addendum).**
+  `enable_log_depth` in pax3d_render: fragment-level log depth in the PBR
+  shader, coefficient tracks the lens far every frame. Acceptance row
+  `scale/pax3d_render @logdepth` is GREEN: two surfaces 1 IEU apart at
+  2500 IEU order correctly at every step of a sub-resolution sweep under a
+  0.1/1e9 frustum (linear buffer: 89% bleed-through at the worst step).
+  Verified GLSL 120+330, both engines; testbed `--log-depth` / Z hotkey;
+  planet approach renders clean through the wide frustum. Deliberately NOT
+  applied to the ortho shadow pass (linear depth is already uniform
+  there). Remaining: sky-object shaders adopt the formula when the sky
+  camera retires; game flips the frustum + flag after fly-out testing.
 - **Camera-relative rendering** — vertex positions relative to the camera to preserve float
-  precision at 10⁵+ IEU (needed before multi-star systems).
+  precision at 10⁵+ IEU (needed before multi-star systems). Acceptance:
+  `test_scale precision_off_origin`. NOTE: the game repo is independently
+  spiking a double-precision engine build (STDFLOAT_DOUBLE) — if that
+  lands, it solves this half wholesale; decide after the spike verdict.
 - **Retire the sky camera** only after `test_scale.py` and a full fly-out test pass with log
   depth stable. The old roadmap's warning stands: never remove the workaround before its
   replacement is proven.

@@ -137,6 +137,7 @@ class Pipeline:
                  bloom_levels=5, tonemap_operator='aces',
                  enable_taa=False, debug=False,
                  sun_light_mode='uniforms', shadow_map_size=2048,
+                 enable_log_depth=False,
                  radial_blur_strength=0.0,
                  chromatic_aberration_strength=0.0,
                  radial_blur_center=(0.5, 0.5),
@@ -181,6 +182,12 @@ class Pipeline:
             float(chromatic_aberration_strength), 1.0))
         self.radial_blur_center = (float(radial_blur_center[0]),
                                    float(radial_blur_center[1]))
+
+        # Logarithmic depth (R4.1) — opt-in until the game adopts the wide
+        # frustum. With it on, set the camera lens near/far to the real
+        # scene span (e.g. 0.1 / 1e9); the pipeline tracks the lens far
+        # every frame for the shader coefficient.
+        self.enable_log_depth = enable_log_depth
 
         # Sun light mode (R2)
         if sun_light_mode not in ('uniforms', 'directional'):
@@ -295,6 +302,7 @@ class Pipeline:
             'ENABLE_SKINNING': self.enable_hardware_skinning,
             'CALC_NORMAL_Z': self.calculate_normalmap_blue,
             'SUN_FROM_LIGHTSOURCE': self.sun_light_mode == 'directional',
+            'LOG_DEPTH': self.enable_log_depth,
         }
 
     def _recompile_pbr(self):
@@ -935,6 +943,15 @@ class Pipeline:
         if self.sun_light_np is not None:
             self._configure_sun_shadows(enabled)
 
+    def set_enable_log_depth(self, enabled):
+        """Toggle logarithmic depth at runtime (R4.1). Recompiles the PBR
+        shader. The caller owns the lens: widen near/far (e.g. 0.1 / 1e9)
+        when enabling, restore when disabling."""
+        if enabled == self.enable_log_depth:
+            return
+        self.enable_log_depth = enabled
+        self._recompile_pbr()
+
     def update_sun(self, sun_dir_world, sun_color):
         """Update the sun. Same signature in both modes.
 
@@ -1004,6 +1021,13 @@ class Pipeline:
         # Camera world position for IBL reflections — raw Z-up, no CS conversion
         cam_pos = self.camera_node.get_pos(self.render_node)
         self.render_node.set_shader_input('camera_world_position', cam_pos)
+
+        # Log-depth coefficient tracks the camera lens far plane (R4.1) —
+        # the game may change near/far at runtime (regime switches)
+        if self.enable_log_depth:
+            far = max(2.0, self.camera_node.node().get_lens().get_far())
+            self.render_node.set_shader_input(
+                'u_log_depth_coef', 1.0 / math.log2(1.0 + far))
 
         # TAA per-frame jitter
         if self.enable_taa and self._taa_resolve_quad is not None:

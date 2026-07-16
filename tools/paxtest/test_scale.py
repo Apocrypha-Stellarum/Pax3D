@@ -93,26 +93,45 @@ def diff_fraction(img_a, img_b, threshold=0.1):
 
 def main():
     parser = common.add_common_args(argparse.ArgumentParser())
+    parser.add_argument('--log-depth', action='store_true',
+                        help='R4.1 variant: enable_log_depth=True with a '
+                             '0.1/1e9 frustum; runs the depth checks only '
+                             '(zfight must PASS — this is the acceptance '
+                             'run for logarithmic depth)')
     args = parser.parse_args()
 
     h = common.Harness(args, 'scale')
     if args.pipeline not in ('none', 'pax3d_render'):
         h.report.skip('scale defects are engine-level; '
                       'run under none + pax3d_render only')
-    h.init_pipeline(exposure=0.0, tonemap='hejl_dawson')
+    h.init_pipeline(exposure=0.0, tonemap='hejl_dawson',
+                    log_depth=args.log_depth)
     base = h.base
+    tag_suffix = '_logdepth' if args.log_depth else ''
 
     # ------------------------------------------------------------------
     # 1. Depth precision: perspective camera, game near/far
     # ------------------------------------------------------------------
     lens = p3d.PerspectiveLens()
     lens.set_fov(40)
-    lens.set_near_far(NEAR, FAR)
+    # Log depth exists to allow a huge frustum — test it with one.
+    lens.set_near_far(NEAR, 1.0e9 if args.log_depth else FAR)
     base.cam.node().set_lens(lens)
     base.camera.set_pos(0, 0, 0)
     base.camera.set_hpr(0, 0, 0)
 
     cx, cy = h.win_w // 2, h.win_h // 2
+
+    def make_zfight_card(parent, rgb, half, name):
+        # Under a pipeline the cards must go through ITS scene shader —
+        # log depth lives there. PBR material + the no-lights white
+        # LightModel.ambient gives flat base color. 'none' has no scene
+        # shader; a minimal unlit shader supplies the color identity.
+        if args.pipeline == 'none':
+            return make_color_card(parent, h.use_330, rgb, half, name)
+        np = scenes._make_card(parent, half, half, name)
+        scenes.apply_flat_pbr_surface(np, rgb=rgb)
+        return np
 
     def zfight_rig(distance, tag):
         # Green (rear) attached FIRST, red (front) second: with the default
@@ -123,34 +142,52 @@ def main():
         # (the classic banding pattern).
         root = base.render.attach_new_node(f'zfight_{tag}')
         scale = distance / RANGE_FAR
-        green = make_color_card(root, h.use_330, (0, 1, 0),
-                                500.0 * scale, 'rear_green')
+        green = make_zfight_card(root, (0, 1, 0), 500.0 * scale,
+                                 'rear_green')
         green.set_pos(0, distance + SEPARATION, 0)
         green.set_p(30)
-        red = make_color_card(root, h.use_330, (1, 0, 0),
-                              400.0 * scale, 'front_red')
+        red = make_zfight_card(root, (1, 0, 0), 400.0 * scale, 'front_red')
         red.set_pos(0, distance, 0)
         red.set_p(30)
 
         h.step(3)
         img = h.capture()
-        h.save_capture(img, tag)
+        h.save_capture(img, tag + tag_suffix)
         red_f, green_f = classify_fractions(img, cx, cy, half=60)
         root.remove_node()
         return red_f, green_f
 
-    red_f, green_f = zfight_rig(RANGE_FAR, 'zfight_at_range')
+    # Sweep the pair through sub-resolution distance offsets (a full
+    # ~1.9 IEU quantization cell at 2500). A single frame is NOT a valid
+    # z-fight probe: quantization ties can happen to break uniformly in
+    # the front surface's favor and mimic a correct render (observed).
+    # Correct ordering must hold at EVERY phase of the cell.
+    worst_green, worst_red, worst_off = 0.0, 1.0, 0.0
+    for k, doff in enumerate([0.0, 0.31, 0.62, 0.93, 1.24, 1.55]):
+        red_f, green_f = zfight_rig(RANGE_FAR + doff,
+                                    f'zfight_at_range_{k}')
+        if green_f > worst_green:
+            worst_green, worst_red, worst_off = green_f, red_f, doff
     h.report.check(
-        'zfight_at_range', red_f > 0.5 and green_f < 0.02,
-        f'overlap at {RANGE_FAR:.0f} IEU (sep {SEPARATION}): '
-        f'red={red_f:.2f} green={green_f:.2f} '
-        f'(R4 acceptance — expected FAIL until log depth)')
+        'zfight_at_range', worst_red > 0.5 and worst_green < 0.02,
+        f'overlap at {RANGE_FAR:.0f} IEU (sep {SEPARATION}, 6-step sweep): '
+        f'worst red={worst_red:.2f} green={worst_green:.2f} '
+        f'at +{worst_off:.2f} '
+        + ('(log depth ON — must pass)' if args.log_depth else
+           '(R4 acceptance — expected FAIL until log depth)'))
 
     red_f, green_f = zfight_rig(RANGE_NEAR, 'zfight_near_control')
     h.report.check(
         'zfight_near_control', red_f > 0.5 and green_f < 0.02,
         f'overlap at {RANGE_NEAR:.0f} IEU: red={red_f:.2f} '
         f'green={green_f:.2f} (must stay green forever)')
+
+    if args.log_depth:
+        # The precision scenario measures CPU-side transform composition —
+        # log depth neither fixes nor touches it (that's camera-relative
+        # rendering, R4.2). Keep this acceptance run about depth only.
+        h.report.finish()
+        return
 
     # ------------------------------------------------------------------
     # 2. Transform precision far from the origin

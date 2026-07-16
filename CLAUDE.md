@@ -37,7 +37,7 @@ The rendering program runs in gated phases (see the master plan):
 | R1 | Unified renderer (`pax3d_render`), color contract, camera registration | **Core done.** Remaining: in-game parity sign-off, sRGB input linearization rollout, drop GLSL-120 dual path |
 | R2 | Real DirectionalLight sun + shadows | **Core done, harness-proven.** Extent centering + camera-driven sizing done (Session D). Remaining: user flips `sun_light_mode` to directional in-game and validates |
 | R3 | Bloom fixed + HDR polish | **Core done (Session D).** F3 fixed (8-bit intermediate FBOs were the root cause), test_bloom green everywhere. Remaining: content retune (strength/intensity/tints), light units, auto-exposure stretch |
-| R4 | Log depth, camera-relative rendering, single camera | Not started |
+| R4 | Log depth, camera-relative rendering, single camera | **Log depth landed opt-in (Session D)** — `enable_log_depth`, acceptance row `scale @logdepth` green. Remaining: camera-relative/doubles decision (see game repo spike), sky-camera retirement, game frustum flip |
 | R5 | Atmospheric scattering, env-driven ambient, signature look | Not started |
 | R6 | Engine hygiene (DX9 removal, upstream sync, Vulkan watch) | Ongoing, low priority |
 

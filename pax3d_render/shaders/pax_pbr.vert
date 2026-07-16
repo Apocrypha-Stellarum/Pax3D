@@ -50,6 +50,9 @@ varying vec3 v_world_normal;
 #ifdef ENABLE_SHADOWS
 varying vec4 v_shadow_pos[MAX_LIGHTS];
 #endif
+#ifdef LOG_DEPTH
+varying float v_log_depth_w;
+#endif
 
 void main() {
 #ifdef ENABLE_SKINNING
@@ -112,4 +115,10 @@ void main() {
     );
 
     gl_Position = p3d_ProjectionMatrix * view_position;
+#ifdef LOG_DEPTH
+    // Logarithmic depth (R4.1): pass 1+w to the fragment shader, which
+    // writes gl_FragDepth = log2(1+w) * u_log_depth_coef. Fragment-level
+    // (not vertex-level) so depth stays correct across long triangles.
+    v_log_depth_w = 1.0 + gl_Position.w;
+#endif
 }

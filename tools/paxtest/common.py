@@ -107,11 +107,13 @@ class NoneAdapter:
     operators = ['linear']
 
     def create(self, base, msaa=0, exposure=0.0, tonemap='linear',
-               bloom=None, sun_mode=None, shadows=False):
+               bloom=None, sun_mode=None, shadows=False, log_depth=False):
         if sun_mode and sun_mode != 'uniforms':
             raise AdapterError('none pipeline has no sun_light_mode support')
         if shadows:
             raise AdapterError('none pipeline has no shadow support')
+        if log_depth:
+            raise AdapterError('none pipeline has no log-depth support')
         self.base = base
 
     def set_tonemap(self, op):
@@ -139,13 +141,16 @@ class _SimplepbrFamilyAdapter:
                 f'{self.module_name} not importable here: {exc}') from exc
 
     def create(self, base, msaa=0, exposure=0.0, tonemap='hejl_dawson',
-               bloom=None, sun_mode=None, shadows=False):
+               bloom=None, sun_mode=None, shadows=False, log_depth=False):
         if sun_mode and sun_mode != 'uniforms':
             raise AdapterError(
                 f'{self.module_name} has no sun_light_mode support')
         if shadows:
             raise AdapterError(
                 f'{self.module_name} shadow testing not wired in paxtest')
+        if log_depth:
+            raise AdapterError(
+                f'{self.module_name} has no log-depth support')
         mod = self._import()
         self.base = base
         kwargs = dict(
@@ -221,9 +226,10 @@ class PaxPbrAdapter:
         return pipeline_init
 
     supports_sun_modes = False
+    supports_log_depth = False
 
     def create(self, base, msaa=0, exposure=0.0, tonemap='hejl_dawson',
-               bloom=None, sun_mode=None, shadows=False):
+               bloom=None, sun_mode=None, shadows=False, log_depth=False):
         pipeline_init = self._import_init()
         self.base = base
         kwargs = dict(
@@ -237,6 +243,11 @@ class PaxPbrAdapter:
                 raise AdapterError(
                     f'{self.name} has no sun_light_mode support')
             kwargs['sun_light_mode'] = sun_mode
+        if log_depth:
+            if not self.supports_log_depth:
+                raise AdapterError(
+                    f'{self.name} has no log-depth support')
+            kwargs['enable_log_depth'] = True
         if bloom:
             kwargs.update(
                 enable_bloom=True,
@@ -269,6 +280,7 @@ class Pax3dRenderAdapter(PaxPbrAdapter):
     name = 'pax3d_render'
     supports_camera_registration = True
     supports_sun_modes = True   # 'uniforms' | 'directional' (R2)
+    supports_log_depth = True   # enable_log_depth (R4.1)
 
     def _import_init(self):
         if PAX3D_ROOT not in sys.path:
@@ -350,13 +362,13 @@ class Harness:
         self.adapter = ADAPTERS[args.pipeline]()
 
     def init_pipeline(self, exposure=0.0, tonemap='hejl_dawson', bloom=None,
-                      sun_mode=None, shadows=False):
+                      sun_mode=None, shadows=False, log_depth=False):
         """Create the pipeline; call before building the scene."""
         try:
             self.adapter.create(self.base, msaa=self.args.msaa,
                                 exposure=exposure, tonemap=tonemap,
                                 bloom=bloom, sun_mode=sun_mode,
-                                shadows=shadows)
+                                shadows=shadows, log_depth=log_depth)
         except AdapterError as exc:
             self.report.skip(str(exc))
 

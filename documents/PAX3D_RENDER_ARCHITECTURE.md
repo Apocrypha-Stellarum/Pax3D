@@ -108,6 +108,7 @@ post pass). A structural change (`enable_bloom`, `bloom_levels`,
 | `ENABLE_SKINNING` | `enable_hardware_skinning` | GPU skinning |
 | `CALC_NORMAL_Z` | `calculate_normalmap_blue` | Reconstruct normal-map Z |
 | `SUN_FROM_LIGHTSOURCE` | `sun_light_mode == 'directional'` | **R2**: sun via `p3d_LightSource` loop (§4) |
+| `LOG_DEPTH` | `enable_log_depth` | **R4.1**: fragment-level logarithmic depth (§9) |
 
 Notable shader features already present (inherited from the game's fork):
 geometric specular anti-aliasing (Kaplanyan-Hill), Eddington limb darkening
@@ -255,7 +256,7 @@ Three cost classes — keep new parameters within this taxonomy:
 | Class | Cost | Parameters / methods |
 |---|---|---|
 | Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent` |
-| Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows` |
+| Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth` |
 | FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, (`bloom_levels`, `msaa_samples` at init) |
 
 Constructor parameters (all keyword): `render_node, window, camera_node,
@@ -338,12 +339,46 @@ no longer quantized to zero and HDR extract values survive; the per-mip
 tint indexing also reads inverted vs its comment labels (finest mip gets
 the "deep warm outer" tint) — decide intent when retuning.
 
-### R4 hooks (log depth / camera-relative)
+### R4.1 — Logarithmic depth (LANDED, opt-in — Session D addendum)
 
-Will need: a shared GLSL snippet injected by `shaderutils` into every
-depth-writing shader (pax_pbr, shadow, sky objects), a pipeline flag, and a
-new paxtest (`test_scale` is sketched in the master plan). The shadow pass
-must use the SAME depth formula.
+`enable_log_depth=True` (constructor or `set_enable_log_depth()`, a
+shader-recompile-class toggle). The PBR shader then writes fragment-level
+logarithmic depth:
+
+- vertex: `v_log_depth_w = 1.0 + gl_Position.w`
+- fragment: `gl_FragDepth = log2(max(v_log_depth_w, 1e-6)) *
+  u_log_depth_coef` where `u_log_depth_coef = 1 / log2(1 + far)`.
+
+The pipeline reads the camera lens' far plane EVERY FRAME for the
+coefficient — the caller owns the lens and should widen it when enabling
+(the point of log depth is a huge frustum, e.g. near 0.1 / far 1e9;
+depth resolution at 2500 IEU goes from ~1.9 IEU linear to ~0.003 IEU).
+Acceptance: `paxtest test_scale --log-depth` (the runner's
+`scale/pax3d_render @logdepth` row) — a 6-step sub-resolution sweep that
+must order two surfaces 1 IEU apart at 2500 IEU at every step. Verified
+under GLSL 120 + 330, stock + Pax3D engines.
+
+Notes:
+- Fragment-level (not vertex-level) so long triangles interpolate
+  correctly; costs early-Z for pax_pbr-shaded geometry — acceptable in
+  sparse space scenes.
+- The SHADOW pass deliberately does NOT use log depth: the sun shadow
+  camera is an orthographic lens, whose linear depth is already uniform —
+  applying the formula there (w≡1) would be wrong.
+- Sky-object shaders (game-side) don't compile with LOG_DEPTH; they render
+  in separate-DR passes today. They adopt the formula when the sky camera
+  retires (later R4).
+- Z-fight probing is sweep-based for a reason: a single frame can tie-break
+  uniformly in the correct surface's favor and mimic a working depth
+  buffer (observed in the harness).
+
+### R4.2 hooks (camera-relative / precision)
+
+`test_scale`'s `precision_off_origin` checks (0.24% pixel drift at 1.2e6
+IEU, 22% at 1.2e7, rotated camera required) are the acceptance tests.
+Candidate mechanisms: camera-relative rendering in the pipeline vs the
+game-side doubles-build spike (STDFLOAT_DOUBLE engine) being explored in
+the game repo — decision pending that spike's verdict.
 
 ### R5 hooks (atmosphere / env ambient)
 

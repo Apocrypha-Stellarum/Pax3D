@@ -116,6 +116,12 @@ varying vec3 v_world_normal;
 #ifdef ENABLE_SHADOWS
 varying vec4 v_shadow_pos[MAX_LIGHTS];
 #endif
+#ifdef LOG_DEPTH
+// Logarithmic depth (R4.1): u_log_depth_coef = 1.0 / log2(1.0 + far),
+// kept in sync with the camera lens by the pipeline's per-frame update.
+uniform float u_log_depth_coef;
+varying float v_log_depth_w;
+#endif
 
 #ifdef USE_330
 out vec4 o_color;
@@ -430,6 +436,14 @@ void main() {
         float ndl_float = clamp(dot(world_normal, float_sun), 0.0, 1.0);
         color = vec4(vec3(ndl_float), 1.0);  // Same as mode 2 but from floats
     }
+
+#ifdef LOG_DEPTH
+    // Window-space depth in [0,1], logarithmic in view distance: resolves
+    // ~mm at planetary range where a 24-bit linear buffer resolves ~2 IEU
+    // (paxtest test_scale zfight_at_range is the acceptance check).
+    // Costs early-Z for this shader — acceptable in sparse space scenes.
+    gl_FragDepth = log2(max(v_log_depth_w, 1e-6)) * u_log_depth_coef;
+#endif
 
 #ifdef USE_330
     o_color = color;
