@@ -46,6 +46,20 @@ Every observed failure from the March effort, its actual cause, and where this p
 > in isolation, F8 is confirmed, and a real DirectionalLight is proven to
 > work on all current mesh types (de-risking R2). Full analysis in
 > `PAXTEST_FINDINGS_SESSION_A.md`.
+>
+> **Session B update (2026-07-16):** R1 core landed — `pax3d_render/` is the
+> unified pipeline (merge of the game's pax_pbr + pax3d_simplepbr), verified
+> behavior-identical to pax_pbr by the harness (gamma/lighting match; bloom
+> shows the same known F3 defect), on both engines and both GL baselines.
+> New `register_scene_camera()` API fixes F4: paxtest `rebuild` shows the
+> old sky-camera pattern dying on bloom toggle in both legacy pipelines
+> while pax3d_render survives. Game side: opt-in
+> `planetary_shuttle_rendering.use_pax3d_render` flag (default false) routes
+> `graphics.pax_pbr` to the new package; sky_camera.py auto-uses the
+> registration API when available. Remaining R1: flip the flag in-game and
+> eyeball parity; sRGB texture linearization experiment
+> (`make_base_color_textures_srgb()` helper is ready); drop the GLSL 120
+> dual-path once the game sets gl-version 3 2.
 
 ### 1.3 The lesson
 

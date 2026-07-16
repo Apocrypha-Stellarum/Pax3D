@@ -1,0 +1,840 @@
+"""Pax3D Render Pipeline (Phase R1 of PAX3D_MASTER_PLAN.md).
+
+The unified first-party renderer for Pax3D — the merge of:
+  - sfb2/graphics/pax_pbr (the game's battle-tested fork of simplepbr 0.13.1:
+    custom sun uniforms, debug modes, Kawase bloom, multi-operator tonemap,
+    TAA), and
+  - pax3d_simplepbr (this repo's earlier fork — now retired).
+
+Behavior is intentionally byte-identical to the game's pax_pbr as of
+July 2026, plus the following R1 additions:
+
+  * register_scene_camera() / unregister_scene_camera() — auxiliary display
+    regions (e.g. the sky camera) are owned by the pipeline and re-created
+    automatically on every internal rebuild (bloom/TAA toggles). This
+    replaces the fragile pattern of external code searching for the
+    FilterManager buffer once at init (fixes failure F4).
+  * Legacy-GL warning — GLSL 120 mode still works but is deprecated;
+    the target baseline is `gl-version 3 2` (GLSL 330).
+  * debug output controlled by PAX3D_RENDER_DEBUG env var or debug=True.
+
+Sun lighting still uses the custom u_sun_dir_world / u_sun_color uniforms;
+switching to a real DirectionalLight is Phase R2.
+"""
+import builtins
+import os
+
+import panda3d.core as p3d
+from direct.filter.FilterManager import FilterManager
+
+from . import shaderutils
+
+_ENV_DEBUG = bool(os.environ.get('PAX3D_RENDER_DEBUG'))
+
+
+# Tonemap operator name -> uniform int mapping
+_TONEMAP_OPERATORS = {
+    'aces': 0,
+    'reinhard': 1,
+    'uncharted2': 2,
+    'hejl_dawson': 3,
+}
+
+# Per-mip bloom tints — warm/cool fringe for artistic bloom character
+_MIP_TINTS = [
+    p3d.LVecBase3(0.214, 0.429, 0.497),  # fine detail, cool
+    p3d.LVecBase3(0.964, 0.947, 0.991),  # near-white
+    p3d.LVecBase3(0.982, 0.542, 0.542),  # warm
+    p3d.LVecBase3(0.301, 0.493, 1.000),  # blue halo
+    p3d.LVecBase3(0.456, 0.209, 0.167),  # deep warm outer
+]
+
+
+def _load_brdf_lut(debug=False):
+    """Load the BRDF LUT texture for IBL specular.
+
+    Looks for <package>/textures/brdf_lut.txo; falls back to a 1x1 white
+    texture (matching the game's current behavior — the LUT only affects
+    IBL specular, and env maps are not used yet).
+    """
+    lut_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            'textures', 'brdf_lut.txo')
+    if os.path.exists(lut_path):
+        panda_path = p3d.Filename.from_os_specific(lut_path)
+        tex = p3d.TexturePool.load_texture(panda_path)
+        if tex:
+            tex.wrap_u = p3d.SamplerState.WM_clamp
+            tex.wrap_v = p3d.SamplerState.WM_clamp
+            tex.minfilter = p3d.SamplerState.FT_linear
+            tex.magfilter = p3d.SamplerState.FT_linear
+            return tex
+
+    if debug:
+        print('[Pax3DRender] No brdf_lut.txo — using white fallback')
+    tex = p3d.Texture('brdf_lut_fallback')
+    tex.setup_2d_texture(1, 1, p3d.Texture.T_unsigned_byte, p3d.Texture.F_rgb8)
+    tex.set_clear_color(p3d.LColor(1, 1, 1, 1))
+    tex.wrap_u = p3d.SamplerState.WM_clamp
+    tex.wrap_v = p3d.SamplerState.WM_clamp
+    return tex
+
+
+class _SceneCameraRegistration:
+    """Internal record of an auxiliary camera attached to the scene buffer."""
+
+    def __init__(self, camera_np, sort, clear_color, clear_depth, name):
+        self.camera_np = camera_np
+        self.sort = sort
+        self.clear_color = clear_color
+        self.clear_depth = clear_depth
+        self.name = name
+        self.display_region = None
+        self.buffer = None
+
+
+class Pipeline:
+    """Pax3D rendering pipeline.
+
+    Drop-in replacement for sfb2's graphics.pax_pbr.Pipeline (same
+    constructor signature and runtime API) with pipeline-owned auxiliary
+    cameras.
+    """
+
+    def __init__(self, render_node=None, window=None, camera_node=None,
+                 taskmgr=None, msaa_samples=4, max_lights=8,
+                 enable_shadows=False, use_normal_maps=False,
+                 use_emission_maps=True, use_occlusion_maps=False,
+                 enable_fog=False, exposure=0.0, shadow_bias=0.005,
+                 enable_hardware_skinning=True, calculate_normalmap_blue=True,
+                 enable_bloom=False, bloom_strength=1.0, bloom_intensity=1.0,
+                 bloom_levels=5, tonemap_operator='aces',
+                 enable_taa=False, debug=False,
+                 **_kwargs):
+        base = builtins.base
+
+        self.render_node = render_node or base.render
+        self.window = window or base.win
+        self.camera_node = camera_node or base.cam
+        self.taskmgr = taskmgr or base.task_mgr
+        self._debug = debug or _ENV_DEBUG
+
+        self.msaa_samples = msaa_samples
+        self.max_lights = max_lights
+        self.enable_shadows = enable_shadows
+        self.use_normal_maps = use_normal_maps
+        self.use_emission_maps = use_emission_maps
+        self.use_occlusion_maps = use_occlusion_maps
+        self.enable_fog = enable_fog
+        self.exposure = exposure
+        self.shadow_bias = shadow_bias
+        self.enable_hardware_skinning = enable_hardware_skinning
+        self.calculate_normalmap_blue = calculate_normalmap_blue
+
+        # Bloom and tonemapping parameters
+        self.enable_bloom = enable_bloom
+        self.bloom_strength = bloom_strength
+        self.bloom_intensity = bloom_intensity
+        self.bloom_levels = max(2, min(8, bloom_levels))
+        if tonemap_operator not in _TONEMAP_OPERATORS:
+            print(f'[Pax3DRender] Unknown tonemap operator '
+                  f'"{tonemap_operator}", falling back to "aces"')
+            tonemap_operator = 'aces'
+        self.tonemap_operator = tonemap_operator
+        self.enable_taa = enable_taa
+
+        self._is_webgl = 'WebGL' in self.window.type.name
+
+        # Detect GLSL 330 capability
+        cvar = p3d.ConfigVariableInt('gl-version')
+        gl_version = [cvar.get_word(i) for i in range(cvar.get_num_words())]
+        self._use_330 = (
+            len(gl_version) >= 2
+            and gl_version[0] >= 3
+            and gl_version[1] >= 2
+        )
+        if not self._use_330:
+            print('[Pax3DRender] WARNING: running legacy GLSL 120 path '
+                  '(gl-version not set to 3 2+). This path is deprecated — '
+                  'see PAX3D_MASTER_PLAN.md R1.4.')
+
+        # Load BRDF LUT for IBL
+        self._brdf_lut = _load_brdf_lut(self._debug)
+
+        # Empty SH coefficients (no env map by default)
+        self._empty_sh = p3d.PTA_LVecBase3f()
+        for _ in range(9):
+            self._empty_sh.push_back(p3d.LVecBase3f(0, 0, 0))
+
+        # Empty cubemap for filtered_env_map
+        self._empty_cubemap = p3d.Texture('empty_env')
+        self._empty_cubemap.setup_cube_map(1, p3d.Texture.T_unsigned_byte,
+                                           p3d.Texture.F_rgb8)
+
+        # Auxiliary scene cameras (survive rebuilds) — R1 addition
+        self._scene_cameras = []
+
+        # FilterManager for tonemapping
+        self._filtermgr = FilterManager(self.window, self.camera_node)
+        if self._filtermgr.nextsort == -1000:
+            self._filtermgr.nextsort = -9
+
+        # Don't force power-of-two textures
+        p3d.Texture.set_textures_power_2(p3d.ATS_none)
+
+        # AA
+        self.render_node.set_antialias(p3d.AntialiasAttrib.M_auto)
+
+        # Default/fallback material
+        fallback_material = p3d.Material('pax3d-render-fallback')
+        self.render_node.set_material(fallback_material)
+
+        # Compile and apply PBR shader
+        self._recompile_pbr()
+
+        # Tonemapping + bloom post-process
+        self._post_process_quad = None
+        self._bloom_extract_quad = None
+        self._bloom_down_quads = []
+        self._bloom_up_quads = []
+        self._setup_tonemapping()
+
+        # Set initial sun uniforms (safe defaults — +Y world direction)
+        self.render_node.set_shader_input('u_sun_dir_world', p3d.Vec3(0, 1, 0))
+        self.render_node.set_shader_input('u_sun_color', p3d.Vec3(1.2, 1.15, 1.0))
+        # Float components (bypass any Vec3 CS conversion in set_shader_input)
+        self.render_node.set_shader_input('u_sun_dir_x', 0.0)
+        self.render_node.set_shader_input('u_sun_dir_y', 1.0)
+        self.render_node.set_shader_input('u_sun_dir_z', 0.0)
+
+        # Limb darkening (0=off, only close sun renderer sets nonzero)
+        self.render_node.set_shader_input('u_limb_darkening', 0.0)
+
+        # Debug lighting mode (0=normal, 1=normals, 2=n_dot_l, 3=light dir)
+        self.render_node.set_shader_input('u_debug_lighting', 0.0)
+
+        # Coordinate system conversion for custom shader inputs
+        self._init_cs_conversion()
+
+        # Per-frame update task
+        self.taskmgr.add(self._update, 'pax3d_render_update', sort=49)
+
+        if self._debug:
+            bloom_str = (f"bloom=ON strength={self.bloom_strength} "
+                         f"intensity={self.bloom_intensity} "
+                         f"levels={self.bloom_levels}"
+                         if self.enable_bloom else "bloom=OFF")
+            print(f"[Pax3DRender] Pipeline initialized ({bloom_str}, "
+                  f"tonemap={self.tonemap_operator}, "
+                  f"glsl={'330' if self._use_330 else '120'})")
+
+    def _get_pbr_defines(self):
+        """Build the #define dict for the PBR shader."""
+        return {
+            'MAX_LIGHTS': self.max_lights,
+            'USE_NORMAL_MAP': self.use_normal_maps,
+            'USE_EMISSION_MAP': self.use_emission_maps,
+            'ENABLE_SHADOWS': self.enable_shadows,
+            'ENABLE_FOG': self.enable_fog,
+            'USE_OCCLUSION_MAP': self.use_occlusion_maps,
+            'USE_330': self._use_330,
+            'IS_WEBGL': self._is_webgl,
+            'ENABLE_SKINNING': self.enable_hardware_skinning,
+            'CALC_NORMAL_Z': self.calculate_normalmap_blue,
+        }
+
+    def _recompile_pbr(self):
+        """Compile and apply the PBR shader to the render node."""
+        defines = self._get_pbr_defines()
+        pbr_shader = shaderutils.make_shader(
+            'pax_pbr', 'pax_pbr.vert', 'pax_pbr.frag', defines
+        )
+        attr = p3d.ShaderAttrib.make(pbr_shader)
+        if self.enable_hardware_skinning:
+            attr = attr.set_flag(p3d.ShaderAttrib.F_hardware_skinning, True)
+        self.render_node.set_attrib(attr)
+        self.render_node.set_shader_input('global_shadow_bias', self.shadow_bias)
+        self._set_env_map_uniforms()
+
+    def _set_env_map_uniforms(self):
+        """Set IBL-related shader inputs."""
+        self.render_node.set_shader_input('sh_coeffs', self._empty_sh)
+        self.render_node.set_shader_input('brdf_lut', self._brdf_lut)
+        self.render_node.set_shader_input('filtered_env_map', self._empty_cubemap)
+        self.render_node.set_shader_input('max_reflection_lod', 0)
+
+    # ------------------------------------------------------------------
+    # Auxiliary scene cameras (R1 addition — replaces sky_camera's
+    # find-the-buffer-once pattern)
+    # ------------------------------------------------------------------
+
+    def register_scene_camera(self, camera_np, sort=-100,
+                              clear_color=(0, 0, 0, 1), clear_depth=True,
+                              name='aux_scene_camera'):
+        """Attach an auxiliary camera to the pipeline's scene buffer.
+
+        The display region is owned by the pipeline and is automatically
+        re-created whenever the internal FilterManager chain is rebuilt
+        (bloom toggle, bloom_levels/TAA change, etc.) — external code never
+        needs to locate the offscreen buffer itself.
+
+        Args:
+            camera_np: NodePath of a Camera node (caller owns lens, masks,
+                       scene root, and transform).
+            sort: display-region sort. Negative renders BEFORE the main
+                  scene (background, e.g. a sky camera).
+            clear_color: RGBA tuple to clear this region to, or None to
+                         not clear color.
+            clear_depth: whether this region clears depth before drawing.
+
+        For any background camera (sort < 0), the main scene region is set
+        to preserve background pixels: color clear off, depth clear on.
+
+        Returns an opaque registration handle for unregister_scene_camera().
+        """
+        reg = _SceneCameraRegistration(camera_np, sort, clear_color,
+                                       clear_depth, name)
+        self._scene_cameras.append(reg)
+        self._attach_scene_camera(reg)
+        return reg
+
+    def unregister_scene_camera(self, reg):
+        """Detach an auxiliary camera previously registered."""
+        if reg in self._scene_cameras:
+            self._scene_cameras.remove(reg)
+        if reg.display_region is not None and reg.buffer is not None:
+            reg.buffer.remove_display_region(reg.display_region)
+        reg.display_region = None
+        reg.buffer = None
+        self._update_main_region_clears()
+
+    def _scene_buffer(self):
+        buffers = getattr(self._filtermgr, 'buffers', None)
+        return buffers[0] if buffers else None
+
+    def _find_main_display_region(self):
+        """The display region where the main camera renders on the buffer."""
+        buf = self._scene_buffer()
+        if buf is None:
+            return None
+        for i in range(buf.get_num_display_regions()):
+            dr = buf.get_display_region(i)
+            if dr.get_camera() == self.camera_node:
+                return dr
+        return None
+
+    def _attach_scene_camera(self, reg):
+        buf = self._scene_buffer()
+        if buf is None:
+            print(f'[Pax3DRender] WARNING: no scene buffer for aux camera '
+                  f'"{reg.name}"')
+            return
+        dr = buf.make_display_region()
+        dr.set_sort(reg.sort)
+        dr.set_camera(reg.camera_np)
+        if reg.clear_color is not None:
+            dr.set_clear_color_active(True)
+            dr.set_clear_color(p3d.LColor(*reg.clear_color))
+        dr.set_clear_depth_active(reg.clear_depth)
+        reg.display_region = dr
+        reg.buffer = buf
+        self._update_main_region_clears()
+        if self._debug:
+            print(f'[Pax3DRender] aux camera "{reg.name}" attached '
+                  f'(sort={reg.sort})')
+
+    def _update_main_region_clears(self):
+        """With a background camera present, the main region must preserve
+        the background's color output but still clear depth."""
+        main_dr = self._find_main_display_region()
+        if main_dr is None:
+            return
+        has_background = any(r.sort < 0 for r in self._scene_cameras)
+        if has_background:
+            main_dr.set_clear_color_active(False)
+            main_dr.set_clear_depth_active(True)
+
+    def _reattach_scene_cameras(self):
+        """Called after every _setup_tonemapping(): old buffer (and its
+        display regions) are gone; re-create them on the new buffer."""
+        for reg in self._scene_cameras:
+            reg.display_region = None
+            reg.buffer = None
+            self._attach_scene_camera(reg)
+
+    # ------------------------------------------------------------------
+    # Coordinate system conversion
+    # ------------------------------------------------------------------
+
+    def _init_cs_conversion(self):
+        """Determine if custom shader inputs need coordinate system conversion.
+
+        Panda3D internally uses Z-up right-handed coordinates. The GSG
+        (OpenGL) uses Y-up right-handed. Built-in shader matrices like
+        p3d_ModelMatrix include this CS conversion, so normals/positions
+        in the shader are in GL Y-up space. Custom shader inputs (via
+        set_shader_input) are passed RAW in P3D Z-up space.
+        """
+        self._cs_mat4 = None  # None = no conversion needed
+        self._cs_diag_done = False
+
+        try:
+            gsg = self.window.get_gsg() if self.window else None
+            if not gsg:
+                return
+
+            default_cs = p3d.get_default_coordinate_system()
+            gsg_cs = gsg.get_coordinate_system()
+
+            if default_cs != gsg_cs:
+                self._cs_mat4 = p3d.LMatrix4f.convert_mat(default_cs, gsg_cs)
+                if self._debug:
+                    print('[Pax3DRender] CS conversion ACTIVE '
+                          '(P3D -> shader world space)')
+        except Exception as exc:
+            print(f'[Pax3DRender] CS detection failed ({exc}) — '
+                  f'no conversion applied')
+
+    def _convert_dir(self, v):
+        """Convert a Panda3D direction Vec3 to shader world space."""
+        if self._cs_mat4 is None:
+            return v
+        m = self._cs_mat4
+        x = v.x * m.get_cell(0, 0) + v.y * m.get_cell(1, 0) + v.z * m.get_cell(2, 0)
+        y = v.x * m.get_cell(0, 1) + v.y * m.get_cell(1, 1) + v.z * m.get_cell(2, 1)
+        z = v.x * m.get_cell(0, 2) + v.y * m.get_cell(1, 2) + v.z * m.get_cell(2, 2)
+        return p3d.Vec3(x, y, z)
+
+    def _convert_point(self, v):
+        return self._convert_dir(v)
+
+    # ------------------------------------------------------------------
+    # Post-processing chain
+    # ------------------------------------------------------------------
+
+    def _setup_tonemapping(self):
+        """Set up tonemapping and optional bloom chain.
+
+        Pipeline:
+        1. Scene renders to RGBA16F buffer (HDR)
+        2. If bloom enabled: extract -> N downsample -> N upsample passes
+        3. Tonemap pass composites bloom (if any) and maps HDR -> sRGB
+        """
+        # Reset bloom state
+        self._bloom_extract_quad = None
+        self._bloom_down_quads = []
+        self._bloom_up_quads = []
+
+        # 1. Scene -> RGBA16F buffer
+        fbprops = p3d.FrameBufferProperties()
+        fbprops.float_color = True
+        fbprops.srgb_color = False
+        fbprops.set_rgba_bits(16, 16, 16, 16)
+        fbprops.set_depth_bits(24)
+        fbprops.set_multisamples(self.msaa_samples)
+
+        scene_tex = p3d.Texture('scene_hdr')
+        scene_tex.set_format(p3d.Texture.F_rgba16)
+        scene_tex.set_component_type(p3d.Texture.T_float)
+
+        postquad = self._filtermgr.render_scene_into(
+            colortex=scene_tex, fbprops=fbprops
+        )
+
+        if postquad is None:
+            raise RuntimeError('[Pax3DRender] Failed to setup FilterManager')
+
+        defines = {
+            'USE_330': self._use_330,
+            'IS_WEBGL': self._is_webgl,
+            'ENABLE_BLOOM': self.enable_bloom,
+        }
+
+        bloom_result_tex = None
+
+        if self.enable_bloom:
+            win_x = self.window.get_x_size()
+            win_y = self.window.get_y_size()
+            num_levels = self.bloom_levels
+
+            bloom_defines = {
+                'USE_330': self._use_330,
+                'IS_WEBGL': self._is_webgl,
+            }
+
+            # 2. Bloom extract pass (full resolution)
+            bloom_extract_tex = p3d.Texture('bloom_extract')
+            bloom_extract_tex.set_format(p3d.Texture.F_rgba16)
+            bloom_extract_tex.set_component_type(p3d.Texture.T_float)
+            extract_quad = self._filtermgr.render_quad_into(
+                colortex=bloom_extract_tex)
+            extract_quad.set_shader(shaderutils.make_shader(
+                'bloom_extract', 'post.vert', 'bloom_extract.frag',
+                bloom_defines
+            ))
+            extract_quad.set_shader_input('scene_tex', scene_tex)
+            extract_quad.set_shader_input('bloom_strength',
+                                          self.bloom_strength)
+            self._bloom_extract_quad = extract_quad
+
+            # 3. Downsample chain (num_levels levels, each half the previous)
+            down_textures = [bloom_extract_tex]
+            for i in range(num_levels):
+                div = 2 ** (i + 1)
+                tex = p3d.Texture(f'bloom_down_{i}')
+                tex.set_format(p3d.Texture.F_rgba16)
+                tex.set_component_type(p3d.Texture.T_float)
+                quad = self._filtermgr.render_quad_into(
+                    colortex=tex, div=div)
+                quad.set_shader(shaderutils.make_shader(
+                    'bloom_down', 'post.vert', 'bloom_downsample.frag',
+                    bloom_defines
+                ))
+                quad.set_shader_input('src_tex', down_textures[-1])
+                # Texel size of the SOURCE texture we're reading from
+                src_w = max(1, win_x // (2 ** i))
+                src_h = max(1, win_y // (2 ** i))
+                quad.set_shader_input('texel_size', p3d.LVecBase2(
+                    1.0 / src_w, 1.0 / src_h
+                ))
+                down_textures.append(tex)
+                self._bloom_down_quads.append(quad)
+
+            # 4. Upsample chain (from smallest back to full resolution)
+            up_tex = down_textures[-1]  # start from smallest mip
+            for i in range(num_levels):
+                src_idx = len(down_textures) - 2 - i
+                remaining = num_levels - 1 - i
+                div = 2 ** remaining if remaining > 0 else 1
+
+                tex = p3d.Texture(f'bloom_up_{i}')
+                tex.set_format(p3d.Texture.F_rgba16)
+                tex.set_component_type(p3d.Texture.T_float)
+                if div > 1:
+                    quad = self._filtermgr.render_quad_into(
+                        colortex=tex, div=div)
+                else:
+                    quad = self._filtermgr.render_quad_into(colortex=tex)
+                quad.set_shader(shaderutils.make_shader(
+                    'bloom_up', 'post.vert', 'bloom_upsample.frag',
+                    bloom_defines
+                ))
+                quad.set_shader_input('src_tex', down_textures[src_idx])
+                quad.set_shader_input('bloom_accum_tex', up_tex)
+                # Texel size of the source texture for tent filter
+                src_w = max(1, win_x // (2 ** src_idx))
+                src_h = max(1, win_y // (2 ** src_idx))
+                quad.set_shader_input('texel_size', p3d.LVecBase2(
+                    1.0 / src_w, 1.0 / src_h
+                ))
+                # Per-mip tint (cycle if more levels than tints)
+                tint = _MIP_TINTS[i % len(_MIP_TINTS)]
+                quad.set_shader_input('mip_tint', tint)
+                up_tex = tex
+                self._bloom_up_quads.append(quad)
+
+            bloom_result_tex = up_tex
+
+        # 5. Final tonemap + composite pass
+        tonemap_shader = shaderutils.make_shader(
+            'tonemap', 'post.vert', 'tonemap.frag', defines
+        )
+
+        # TAA state (reset on every rebuild)
+        self._tonemap_quad = None
+        self._taa_resolve_quad = None
+        # Start at -1: first _update() increments to 0, so the first rendered
+        # frame sees u_taa_frame=0 -> blend=1.0 (100% current, no black flash).
+        self._taa_frame = -1
+        self._taa_jitter_index = 0
+
+        if self.enable_taa:
+            # --- TAA pipeline: tonemap -> resolve -> history copy -> display
+
+            # Tonemap to intermediate texture (LDR)
+            tonemap_tex = p3d.Texture('tonemap_output')
+            tonemap_tex.set_format(p3d.Texture.F_rgba8)
+            tonemap_quad = self._filtermgr.render_quad_into(
+                colortex=tonemap_tex)
+            tonemap_quad.set_shader(tonemap_shader)
+            tonemap_quad.set_shader_input('tex', scene_tex)
+            tonemap_quad.set_shader_input('exposure', 2 ** self.exposure)
+            tonemap_quad.set_shader_input(
+                'tonemap_operator',
+                _TONEMAP_OPERATORS.get(self.tonemap_operator, 0))
+            if bloom_result_tex is not None:
+                tonemap_quad.set_shader_input('bloom_tex', bloom_result_tex)
+                tonemap_quad.set_shader_input('bloom_intensity',
+                                              self.bloom_intensity)
+            self._tonemap_quad = tonemap_quad
+
+            # Resolved and history textures
+            resolved_tex = p3d.Texture('taa_resolved')
+            resolved_tex.set_format(p3d.Texture.F_rgba8)
+            resolved_tex.set_wrap_u(p3d.SamplerState.WM_clamp)
+            resolved_tex.set_wrap_v(p3d.SamplerState.WM_clamp)
+            resolved_tex.set_minfilter(p3d.SamplerState.FT_linear)
+            resolved_tex.set_magfilter(p3d.SamplerState.FT_linear)
+
+            history_tex = p3d.Texture('taa_history')
+            history_tex.set_format(p3d.Texture.F_rgba8)
+            history_tex.set_wrap_u(p3d.SamplerState.WM_clamp)
+            history_tex.set_wrap_v(p3d.SamplerState.WM_clamp)
+            history_tex.set_minfilter(p3d.SamplerState.FT_linear)
+            history_tex.set_magfilter(p3d.SamplerState.FT_linear)
+
+            taa_defines = {
+                'USE_330': self._use_330,
+                'IS_WEBGL': self._is_webgl,
+            }
+
+            # TAA resolve pass
+            winx = self.window.get_x_size()
+            winy = self.window.get_y_size()
+            taa_resolve_quad = self._filtermgr.render_quad_into(
+                colortex=resolved_tex)
+            taa_resolve_quad.set_shader(shaderutils.make_shader(
+                'taa_resolve', 'post.vert', 'taa_resolve.frag', taa_defines
+            ))
+            taa_resolve_quad.set_shader_input('current_frame', tonemap_tex)
+            taa_resolve_quad.set_shader_input('history', history_tex)
+            taa_resolve_quad.set_shader_input(
+                'u_resolution', p3d.Vec2(winx, winy))
+            taa_resolve_quad.set_shader_input('u_taa_frame', 0.0)
+            taa_resolve_quad.set_shader_input('u_debug_taa', 0.0)
+            self._taa_resolve_quad = taa_resolve_quad
+
+            # History copy pass (resolved -> history for next frame)
+            history_copy_quad = self._filtermgr.render_quad_into(
+                colortex=history_tex)
+            history_copy_quad.set_shader(shaderutils.make_shader(
+                'passthrough_copy', 'post.vert', 'passthrough.frag',
+                taa_defines
+            ))
+            history_copy_quad.set_shader_input('tex', resolved_tex)
+
+            # Final display (postquad -> window)
+            display_shader = shaderutils.make_shader(
+                'passthrough_display', 'post.vert', 'passthrough.frag',
+                taa_defines
+            )
+            postquad.set_shader(display_shader)
+            postquad.set_shader_input('tex', resolved_tex)
+
+        else:
+            # Original: tonemap directly on postquad (no TAA overhead)
+            postquad.set_shader(tonemap_shader)
+            postquad.set_shader_input('tex', scene_tex)
+            postquad.set_shader_input('exposure', 2 ** self.exposure)
+            postquad.set_shader_input(
+                'tonemap_operator',
+                _TONEMAP_OPERATORS.get(self.tonemap_operator, 0))
+            if bloom_result_tex is not None:
+                postquad.set_shader_input('bloom_tex', bloom_result_tex)
+                postquad.set_shader_input('bloom_intensity',
+                                          self.bloom_intensity)
+
+        self._post_process_quad = postquad
+
+        # R1: auxiliary cameras survive the rebuild
+        self._reattach_scene_cameras()
+
+    # ------------------------------------------------------------------
+    # Runtime parameter updates
+    # ------------------------------------------------------------------
+
+    def _rebuild_tonemapping(self):
+        """Tear down and recreate the tonemap + bloom chain.
+
+        Needed when structural parameters change (enable_bloom, bloom_levels,
+        enable_taa). Registered scene cameras are re-attached automatically.
+        """
+        self._filtermgr.cleanup()
+        self._filtermgr = FilterManager(self.window, self.camera_node)
+        if self._filtermgr.nextsort == -1000:
+            self._filtermgr.nextsort = -9
+        # Clear any residual TAA jitter before rebuilding
+        lens = self.camera_node.node().get_lens()
+        lens.set_film_offset(0, 0)
+        self._setup_tonemapping()
+
+    def set_bloom_strength(self, value):
+        """Update bloom extract strength (uniform-only, no rebuild)."""
+        self.bloom_strength = value
+        if self._bloom_extract_quad is not None:
+            self._bloom_extract_quad.set_shader_input(
+                'bloom_strength', self.bloom_strength)
+
+    def set_bloom_intensity(self, value):
+        """Update bloom composite intensity (uniform-only, no rebuild)."""
+        self.bloom_intensity = value
+        if self.enable_bloom:
+            target = self._tonemap_quad or self._post_process_quad
+            if target:
+                target.set_shader_input('bloom_intensity',
+                                        self.bloom_intensity)
+
+    def set_tonemap_operator(self, name):
+        """Switch tonemap operator at runtime (uniform-only, no rebuild)."""
+        if name not in _TONEMAP_OPERATORS:
+            print(f'[Pax3DRender] Unknown tonemap operator "{name}", ignoring')
+            return
+        self.tonemap_operator = name
+        target = self._tonemap_quad or self._post_process_quad
+        if target:
+            target.set_shader_input(
+                'tonemap_operator', _TONEMAP_OPERATORS[name])
+
+    def set_exposure(self, value):
+        """Update exposure (uniform-only, no rebuild)."""
+        self.exposure = value
+        target = self._tonemap_quad or self._post_process_quad
+        if target:
+            target.set_shader_input('exposure', 2 ** self.exposure)
+
+    def set_enable_bloom(self, enabled):
+        """Enable or disable bloom (requires buffer rebuild)."""
+        if enabled == self.enable_bloom:
+            return
+        self.enable_bloom = enabled
+        self._rebuild_tonemapping()
+
+    def set_enable_taa(self, enabled):
+        """Enable or disable Temporal Anti-Aliasing (requires rebuild)."""
+        if enabled == self.enable_taa:
+            return
+        self.enable_taa = enabled
+        if not enabled:
+            lens = self.camera_node.node().get_lens()
+            lens.set_film_offset(0, 0)
+        self._rebuild_tonemapping()
+
+    @staticmethod
+    def _halton(index, base):
+        """Halton low-discrepancy sequence for sub-pixel jitter."""
+        result = 0.0
+        f = 1.0
+        i = index
+        while i > 0:
+            f /= base
+            result += f * (i % base)
+            i //= base
+        return result
+
+    # ------------------------------------------------------------------
+    # Sun direction updates
+    # ------------------------------------------------------------------
+
+    def update_sun(self, sun_dir_world, sun_color):
+        """Update the custom sun directional light uniforms.
+
+        Args:
+            sun_dir_world: Vec3, world-space direction toward the sun
+                           (normalized). Passed raw in Panda3D Z-up space.
+            sun_color: Vec3, linear RGB color * intensity
+        """
+        self.render_node.set_shader_input('u_sun_dir_world', sun_dir_world)
+        self.render_node.set_shader_input('u_sun_color', sun_color)
+
+        # Float components (for debug mode 9) — also raw Z-up
+        self.render_node.set_shader_input('u_sun_dir_x', float(sun_dir_world.x))
+        self.render_node.set_shader_input('u_sun_dir_y', float(sun_dir_world.y))
+        self.render_node.set_shader_input('u_sun_dir_z', float(sun_dir_world.z))
+
+    def set_debug_lighting(self, mode):
+        """Set shader debug visualization mode (see pax_pbr.frag)."""
+        self.render_node.set_shader_input('u_debug_lighting', float(mode))
+
+    # ------------------------------------------------------------------
+    # Per-frame update
+    # ------------------------------------------------------------------
+
+    def _update(self, task):
+        """Per-frame maintenance: shadow shaders, camera position, clear color."""
+        # Handle shadow casters (same as simplepbr)
+        if self.enable_shadows:
+            for caster in self._get_all_casters():
+                if isinstance(caster, p3d.PointLight):
+                    caster.set_shadow_caster(False)
+                    continue
+                state = caster.get_initial_state()
+                if not state.has_attrib(p3d.ShaderAttrib):
+                    attr = self._create_shadow_shader_attrib()
+                    state = state.add_attrib(attr, 1)
+                    state = state.remove_attrib(p3d.CullFaceAttrib)
+                    caster.set_initial_state(state)
+
+        # Copy background color to offscreen buffer
+        if self._filtermgr.buffers:
+            self._filtermgr.buffers[0].set_clear_color(
+                self.window.get_clear_color())
+
+        # Camera world position for IBL reflections — raw Z-up, no CS conversion
+        cam_pos = self.camera_node.get_pos(self.render_node)
+        self.render_node.set_shader_input('camera_world_position', cam_pos)
+
+        # TAA per-frame jitter
+        if self.enable_taa and self._taa_resolve_quad is not None:
+            self._taa_jitter_index += 1
+            lens = self.camera_node.node().get_lens()
+            jx = self._halton(self._taa_jitter_index, 2) - 0.5
+            jy = self._halton(self._taa_jitter_index, 3) - 0.5
+            win_x = max(1, self.window.get_x_size())
+            win_y = max(1, self.window.get_y_size())
+            film_size = lens.get_film_size()
+            lens.set_film_offset(
+                jx * film_size.x / win_x,
+                jy * film_size.y / win_y
+            )
+            self._taa_frame += 1
+            self._taa_resolve_quad.set_shader_input(
+                'u_taa_frame', float(self._taa_frame))
+
+        return task.DS_cont
+
+    def _get_all_casters(self):
+        """Find all shadow-casting lights in the scene."""
+        engine = p3d.GraphicsEngine.get_global_ptr()
+        cameras = [
+            dr.camera
+            for win in engine.windows
+            for dr in win.active_display_regions
+        ]
+
+        result = []
+        for cam_np in cameras:
+            if cam_np.is_empty():
+                continue
+            node = cam_np.node()
+            if hasattr(node, 'is_shadow_caster') and node.is_shadow_caster():
+                result.append(node)
+        return result
+
+    def _create_shadow_shader_attrib(self):
+        """Create a shader attrib for shadow-casting geometry."""
+        defines = {
+            'USE_330': self._use_330,
+            'IS_WEBGL': self._is_webgl,
+            'ENABLE_SKINNING': self.enable_hardware_skinning,
+        }
+        shader = shaderutils.make_shader(
+            'shadow', 'shadow.vert', 'shadow.frag', defines
+        )
+        attr = p3d.ShaderAttrib.make(shader)
+        if self.enable_hardware_skinning:
+            attr = attr.set_flag(p3d.ShaderAttrib.F_hardware_skinning, True)
+        return attr
+
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
+
+    def cleanup(self):
+        """Remove the pipeline task, aux cameras, and FilterManager."""
+        self.taskmgr.remove('pax3d_render_update')
+        for reg in list(self._scene_cameras):
+            self.unregister_scene_camera(reg)
+        if self.enable_taa:
+            lens = self.camera_node.node().get_lens()
+            lens.set_film_offset(0, 0)
+        if self._filtermgr:
+            self._filtermgr.cleanup()

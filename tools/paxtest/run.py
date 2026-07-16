@@ -16,8 +16,9 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(HERE, 'output')
 
-ALL_TESTS = ['gamma', 'lighting', 'bloom']
-ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr']
+ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild']
+ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
+                 'pax3d_render']
 
 # Bloom runs twice: a size that divides evenly through the 1/32 mip chain,
 # and a game-like size that does not (localizes truncation bugs).

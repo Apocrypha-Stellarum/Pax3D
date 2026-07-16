@@ -102,6 +102,7 @@ class NoneAdapter:
     name = 'none'
     supports_bloom = False
     supports_sun_uniforms = False
+    supports_camera_registration = False
     consumes_directional_light = True   # fixed-function / auto-shader
     operators = ['linear']
 
@@ -170,6 +171,7 @@ class StockSimplepbrAdapter(_SimplepbrFamilyAdapter):
     extra_path = None
     supports_bloom = False
     supports_sun_uniforms = False
+    supports_camera_registration = False
     consumes_directional_light = True
     operators = ['stock']
 
@@ -180,8 +182,12 @@ class Pax3dSimplepbrAdapter(_SimplepbrFamilyAdapter):
     extra_path = PAX3D_ROOT
     supports_bloom = True
     supports_sun_uniforms = False
+    supports_camera_registration = False
     consumes_directional_light = True
     operators = ['aces', 'reinhard', 'uncharted2', 'hejl_dawson']
+
+    def set_bloom_enabled(self, enabled):
+        self.pipeline.enable_bloom = enabled
 
 
 class PaxPbrAdapter:
@@ -189,20 +195,24 @@ class PaxPbrAdapter:
     name = 'pax_pbr'
     supports_bloom = True
     supports_sun_uniforms = True
+    supports_camera_registration = False
     consumes_directional_light = False  # shader skips p3d_LightSource w==0
     operators = ['aces', 'reinhard', 'uncharted2', 'hejl_dawson']
 
-    def create(self, base, msaa=0, exposure=0.0, tonemap='hejl_dawson',
-               bloom=None):
+    def _import_init(self):
         if not os.path.isdir(SFB2_ROOT):
             raise AdapterError(f'game repo not found at {SFB2_ROOT}')
         if SFB2_ROOT not in sys.path:
             sys.path.insert(0, SFB2_ROOT)
         try:
-            from graphics.pax_pbr import init as pax_pbr_init
+            from graphics.pax_pbr import init as pipeline_init
         except ImportError as exc:
             raise AdapterError(f'graphics.pax_pbr not importable: {exc}') from exc
+        return pipeline_init
 
+    def create(self, base, msaa=0, exposure=0.0, tonemap='hejl_dawson',
+               bloom=None):
+        pipeline_init = self._import_init()
         self.base = base
         kwargs = dict(
             msaa_samples=msaa,
@@ -217,7 +227,7 @@ class PaxPbrAdapter:
                 bloom_intensity=bloom.get('intensity', 1.0),
                 bloom_levels=bloom.get('levels', 5),
             )
-        self.pipeline = pax_pbr_init(**kwargs)
+        self.pipeline = pipeline_init(**kwargs)
         # The game's init manager seeds this before the first frame; the
         # pipeline's per-frame task keeps it updated afterwards.
         base.render.set_shader_input('camera_world_position',
@@ -229,9 +239,27 @@ class PaxPbrAdapter:
     def set_exposure(self, ev):
         self.pipeline.set_exposure(ev)
 
+    def set_bloom_enabled(self, enabled):
+        self.pipeline.set_enable_bloom(enabled)
+
     def update_sun(self, toward_sun, color):
         self.pipeline.update_sun(p3d.Vec3(*toward_sun), p3d.Vec3(*color))
         return True
+
+
+class Pax3dRenderAdapter(PaxPbrAdapter):
+    """The unified pipeline in this repo (pax3d_render, Phase R1)."""
+    name = 'pax3d_render'
+    supports_camera_registration = True
+
+    def _import_init(self):
+        if PAX3D_ROOT not in sys.path:
+            sys.path.insert(0, PAX3D_ROOT)
+        try:
+            from pax3d_render import init as pipeline_init
+        except ImportError as exc:
+            raise AdapterError(f'pax3d_render not importable: {exc}') from exc
+        return pipeline_init
 
 
 ADAPTERS = {
@@ -239,6 +267,7 @@ ADAPTERS = {
     'simplepbr': StockSimplepbrAdapter,
     'pax3d_simplepbr': Pax3dSimplepbrAdapter,
     'pax_pbr': PaxPbrAdapter,
+    'pax3d_render': Pax3dRenderAdapter,
 }
 
 

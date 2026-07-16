@@ -31,8 +31,9 @@ pictures when a check fails.
 |---|---|
 | `none` | Raw Panda3D, no post-processing. Control — validates the harness itself. |
 | `simplepbr` | Stock pip simplepbr. Known-good reference for PBR conventions. |
-| `pax3d_simplepbr` | The fork in this repo (bloom + tonemap operators). Unused by the game today. |
-| `pax_pbr` | The game's actual pipeline, imported from `C:/python/sfb2`. What ships. |
+| `pax3d_simplepbr` | The old fork in this repo. Retired — superseded by pax3d_render. |
+| `pax_pbr` | The game's local pipeline, imported from `C:/python/sfb2`. |
+| `pax3d_render` | **The unified R1 pipeline in this repo** — the successor both of the above merge into. |
 
 `--baseline game` (default) mimics sfb2/plan.py PRC (no `gl-version` →
 GLSL 120). `--baseline modern` sets `gl-version 3 2` — the R1 target.
@@ -57,6 +58,12 @@ DirectionalLight is consumed at all.
 Asserts a halo exists and decays smoothly (max adjacent-pixel step, outward
 brightness jumps, symmetry). Runs at 512x512 (divides evenly through the 1/32
 mip chain) and 960x540 (doesn't) to localize truncation bugs.
+
+**`test_rebuild.py`** — auxiliary background camera (the sky-camera pattern)
+plus a bloom toggle, which rebuilds the FilterManager chain. Asserts the
+auxiliary region still renders afterwards. Legacy pipelines attach the
+sky_camera.py way and FAIL (that's F4); pax3d_render attaches through
+`register_scene_camera()` and passes.
 
 ## Goldens
 
