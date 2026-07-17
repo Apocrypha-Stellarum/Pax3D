@@ -270,3 +270,35 @@ green through the game's routed `pax_pbr` import path. Field handover:
 `PLANETSIDE_LOOK_GUIDE.md` (API + Mars starting values for the openworld
 dev). Open: in-app tuning, sh_from_cubemap horizontal-orientation check
 on a real skybox, orbital scattering (the spaceflight half of R5).
+
+**Session K update (2026-07-18):** The **glass package** — first slice
+of asset enablement for walkable ships (§4.8 of the master plan, new):
+the game is integrating the CGTrader Phobos Starhopper (fully modelled
+interior), and its cockpit canopy is the motivating asset. The defect,
+measured before fixing: standard M_alpha blending multiplies the ENTIRE
+shaded result by alpha, so a canopy at alpha 0.15 keeps 15% of its
+specular highlight — test_glass puts the loss at 2.07× at the analytic
+highlight. The fix, opt-in per the byte-identical contract:
+`pipeline.set_glass(np)` composes a GLASS-defined compile of the SAME
+PBR shader onto the node (the render-root compile is textually
+unchanged — default byte-identity by construction) plus
+TransparencyAttrib M_premultiplied_alpha at override 1 (outranks the
+geom-level M_alpha panda3d-gltf stamps on BLEND materials). In the
+variant, alpha attenuates only transmission-class terms (diffuse,
+flat+SH ambient; fog/atmosphere inscatter coverage-weighted); specular
+— sun, local lights, IBL — and emission add at full strength (the
+glTF-viewer BLEND semantic). The variant is compiled lazily, re-pushed
+after every recompile-class toggle (`_reapply_glass_shaders` — the §3
+input-preservation invariant extended to per-node variants), and
+opt-out restores the node's saved blend state exactly. The depth pass
+is untouched (the shadow camera's override-1 initial state outranks the
+node shader) — glass casts an opaque shadow unless paired with
+`exclude_from_shadows(np)`, which is the documented intent for
+canopies. Evidence: test_glass 6 checks, analytics exact on the first
+run (legacy 0.289 vs analytic 0.290, glass 0.599 vs 0.599, transmission
+0.753 vs 0.753), green both engines × both baselines × both sun modes
+(@directional exercises the light-loop split) and through the routed
+pax_pbr path; full 15-test suite green on both engines, documented
+baselines unchanged. Queued next in §4.8: gl_FrontFacing double-sided
+fix, specular IBL first slice (canopy reflections + the sh_from_cubemap
+orientation check), per-node ambient scale for hull interiors.

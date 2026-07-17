@@ -329,6 +329,16 @@ void main() {
 #endif
 
     vec4 color = vec4(vec3(0.0), base_color.a);
+#ifdef GLASS
+    // Glass contract (pipeline.set_glass): specular reflections must
+    // survive low alpha. Transmission-class terms (diffuse, ambient)
+    // accumulate in color.rgb and are scaled by alpha at the compose
+    // point below; reflection-class terms accumulate here and add at
+    // full strength. The pipeline pairs this variant with
+    // M_premultiplied_alpha blending, so color.rgb leaves this shader
+    // already coverage-weighted.
+    vec3 glass_spec = vec3(0.0);
+#endif
 
     float n_dot_v = clamp(abs(dot(n, v)), 0.0, 1.0);
 
@@ -359,7 +369,12 @@ void main() {
 
         vec3 diffuse_contrib = diffuse_color * diffuse_function();
         vec3 spec_contrib = vec3(F * V * D);
+#ifdef GLASS
+        color.rgb += func_params.n_dot_l * u_sun_color * diffuse_contrib;
+        glass_spec += func_params.n_dot_l * u_sun_color * spec_contrib;
+#else
         color.rgb += func_params.n_dot_l * u_sun_color * (diffuse_contrib + spec_contrib);
+#endif
     }
 #endif
 
@@ -420,7 +435,12 @@ void main() {
 
         vec3 diffuse_contrib = diffuse_color * diffuse_function();
         vec3 spec_contrib = vec3(F * V * D);
+#ifdef GLASS
+        color.rgb += func_params.n_dot_l * lightcol * diffuse_contrib * shadow;
+        glass_spec += func_params.n_dot_l * lightcol * spec_contrib * shadow;
+#else
         color.rgb += func_params.n_dot_l * lightcol * (diffuse_contrib + spec_contrib) * shadow;
+#endif
     }
 
     // Indirect diffuse + specular (IBL)
@@ -432,10 +452,29 @@ void main() {
     vec2 env_brdf = texture2D(brdf_lut, vec2(n_dot_v, perceptual_roughness)).rg;
     vec3 ibl_spec_color = textureCubeLod(filtered_env_map, ibl_r, perceptual_roughness * max_reflection_lod).rgb;
     vec3 ibl_spec = ibl_spec_color * (ibl_f * env_brdf.x + env_brdf.y);
+#ifdef GLASS
+    color.rgb += ibl_kd * ibl_diff * ambient_occlusion;
+    glass_spec += ibl_spec * ambient_occlusion;
+#else
     color.rgb += (ibl_kd * ibl_diff  + ibl_spec) * ambient_occlusion;
+#endif
 
     // Indirect diffuse (ambient light)
+#ifdef GLASS
+    color.rgb += diffuse_color * p3d_LightModel.ambient.rgb * ambient_occlusion;
+    glass_spec += spec_color * p3d_LightModel.ambient.rgb * ambient_occlusion;
+#else
     color.rgb += (diffuse_color + spec_color) * p3d_LightModel.ambient.rgb * ambient_occlusion;
+#endif
+
+#ifdef GLASS
+    // Glass compose: everything above is transmission-class and gets
+    // coverage-weighted; reflections ride on top at full strength.
+    // Emission (below) intentionally lands AFTER this point, also
+    // unattenuated — an emissive element on glass is a light source,
+    // not a filter.
+    color.rgb = color.rgb * base_color.a + glass_spec;
+#endif
 
     // Emission with optional limb darkening (Solar mode)
     // Eddington approximation: I(θ) = I₀ · (1 - u·(1 - cosθ))
@@ -450,7 +489,13 @@ void main() {
     // Exponential fog
     float fog_distance = length(v_view_position);
     float fog_factor = clamp(1.0 / exp(fog_distance * p3d_Fog.density), 0.0, 1.0);
+#ifdef GLASS
+    // Premultiplied surface: weight the fog color by coverage so clear
+    // glass does not ADD opaque fog over the (already fogged) background.
+    color.rgb = mix(p3d_Fog.color.rgb * color.a, color.rgb, fog_factor);
+#else
     color = mix(p3d_Fog.color, color, fog_factor);
+#endif
 #endif
 
 #ifdef ENABLE_ATMOSPHERE
@@ -482,7 +527,14 @@ void main() {
         vec3 atmo_inscatter = mix(u_atmo_haze_color, u_atmo_sun_haze_color,
                                   pow(atmo_mu, u_atmo_sun_power));
         // Alpha deliberately untouched (unlike the legacy fog mix).
+#ifdef GLASS
+        // Coverage-weighted inscatter, same reasoning as the fog path:
+        // the background behind the glass already carries its own.
+        color.rgb = color.rgb * atmo_trans
+                    + atmo_inscatter * (1.0 - atmo_trans) * color.a;
+#else
         color.rgb = color.rgb * atmo_trans + atmo_inscatter * (1.0 - atmo_trans);
+#endif
     }
 #endif
 

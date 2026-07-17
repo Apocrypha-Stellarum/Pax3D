@@ -331,6 +331,13 @@ class Pipeline:
         # behavior). Set via set_hemisphere_ambient()/set_ambient_sh().
         self._ambient_sh = None
 
+        # Glass nodes (set_glass): premultiplied-alpha PBR variant so
+        # specular reflections survive low alpha. Entries are
+        # (nodepath, saved node-local TransparencyAttrib or None, override)
+        # so opt-out restores the node's prior blend state exactly.
+        self._glass_nodes = []
+        self._glass_shader = None
+
         # Sun light mode (R2)
         if sun_light_mode not in ('uniforms', 'directional'):
             print(f'[Pax3DRender] Unknown sun_light_mode "{sun_light_mode}", '
@@ -482,6 +489,11 @@ class Pipeline:
         self._push_shadow_bias()
         self._set_env_map_uniforms()
         self._push_atmosphere_uniforms()
+        # Glass nodes carry a per-node variant of the PBR shader — it must
+        # track every recompile (same defines + GLASS) or a runtime toggle
+        # would leave glass rendering with stale defines.
+        self._glass_shader = None
+        self._reapply_glass_shaders()
 
     def _set_env_map_uniforms(self):
         """Set IBL-related shader inputs.
@@ -1253,6 +1265,91 @@ class Pipeline:
         if self.shadow_caster_mask is None:
             raise ValueError('shadow_caster_mask is not configured')
         nodepath.show(self.shadow_caster_mask)
+
+    # ------------------------------------------------------------------
+    # Glass (specular-preserving transparency)
+    # ------------------------------------------------------------------
+
+    def _get_glass_shader(self):
+        """The GLASS-defined PBR variant for the CURRENT pipeline defines
+        (compiled lazily, invalidated by _recompile_pbr)."""
+        if self._glass_shader is None:
+            defines = self._get_pbr_defines()
+            defines['GLASS'] = True
+            self._glass_shader = shaderutils.make_shader(
+                'pax_pbr_glass', 'pax_pbr.vert', 'pax_pbr.frag', defines)
+        return self._glass_shader
+
+    def _apply_glass_shader(self, nodepath):
+        """Compose the glass shader onto the node WITHOUT wiping its other
+        shader state (same discipline as _recompile_pbr): flags and inputs
+        on the node's existing attrib survive, and root-level flags/inputs
+        keep composing through. No override — the shadow camera's
+        initial-state attrib (override 1) still wins for the depth pass,
+        so glass renders into the shadow map exactly as before."""
+        prev = nodepath.get_attrib(p3d.ShaderAttrib)
+        if prev is None:
+            prev = p3d.ShaderAttrib.make()
+        nodepath.set_attrib(prev.set_shader(self._get_glass_shader()))
+
+    def _reapply_glass_shaders(self):
+        """Re-push the (freshly invalidated) glass variant onto every
+        registered glass node after a pipeline shader recompile."""
+        self._glass_nodes = [entry for entry in self._glass_nodes
+                             if not entry[0].is_empty()]
+        for entry in self._glass_nodes:
+            self._apply_glass_shader(entry[0])
+
+    def set_glass(self, nodepath, enabled=True):
+        """Mark `nodepath` (and its subtree) as glass: transparency that
+        keeps its specular reflections.
+
+        The standard M_alpha path multiplies the ENTIRE shaded result by
+        alpha at the blend stage, so a canopy at alpha 0.1 loses 90% of
+        the highlights and reflections that make glass read as glass.
+        This switches the subtree to a premultiplied-alpha PBR variant:
+        alpha attenuates only the transmission-class terms (diffuse,
+        ambient); specular — sun, local lights, IBL — and emission add at
+        full strength, which is the glTF/PBR-viewer semantic for BLEND
+        materials.
+
+        Mechanism: a GLASS-defined compile of the same PBR shader is
+        composed onto the node, plus TransparencyAttrib
+        M_premultiplied_alpha at override 1 (outranks the geom-level
+        M_alpha that panda3d-gltf stamps on BLEND materials). Tracks
+        pipeline shader recompiles automatically. `enabled=False` undoes
+        everything, restoring the node's previous blend state exactly
+        (byte-identical opt-out — paxtest test_glass).
+
+        Apply it to the glass geometry only (e.g. the canopy GeomNode),
+        not a parent it shares with opaque meshes. You almost always want
+        `exclude_from_shadows(nodepath)` too — the depth pass is opaque,
+        so un-excluded glass casts a solid shadow. Multi-layer glass
+        should be separate geoms so the transparent bin can sort them.
+        """
+        idx = next((i for i, entry in enumerate(self._glass_nodes)
+                    if entry[0] == nodepath), None)
+        if enabled:
+            if idx is None:
+                node = nodepath.node()
+                prev_trans = node.get_attrib(p3d.TransparencyAttrib)
+                prev_override = (
+                    node.get_state().get_override(p3d.TransparencyAttrib)
+                    if prev_trans is not None else 0)
+                self._glass_nodes.append((nodepath, prev_trans,
+                                          prev_override))
+            self._apply_glass_shader(nodepath)
+            nodepath.set_transparency(
+                p3d.TransparencyAttrib.M_premultiplied_alpha, 1)
+        else:
+            if idx is None:
+                return
+            _np, prev_trans, prev_override = self._glass_nodes.pop(idx)
+            nodepath.clear_shader()
+            if prev_trans is not None:
+                nodepath.set_attrib(prev_trans, prev_override)
+            else:
+                nodepath.clear_transparency()
 
     def set_hardware_skinning(self, nodepath, enabled):
         """Per-node override of the pipeline-wide enable_hardware_skinning

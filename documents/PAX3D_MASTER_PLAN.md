@@ -36,7 +36,7 @@ Identical paxtest results on both engines = the defect is Python/GLSL, not C++.
 
 | Phase | What | Status (evidence) |
 |---|---|---|
-| R0 harness | `tools/paxtest/` — 14 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; +2 Session G, +1 Session I, +3 Session J) |
+| R0 harness | `tools/paxtest/` — 15 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; +2 Session G, +1 Session I, +3 Session J, +1 Session K) |
 | R1 unified renderer | `pax3d_render/` (pax_pbr ⊕ pax3d_simplepbr merge), color contract, `register_scene_camera()` | **Core done** (Sessions B, D — game flag flipped, boots clean). Open: in-game parity eyeball (user), sRGB linearization experiment, GLSL-120 path removal (needs game `gl-version 3 2`) |
 | R2 directional sun + shadows | Pipeline-owned DirectionalLight, HPR-driven; shadows with world-space extent center; **hardened Session E**: world-unit bias, 3×3 PCF, no-cast API, skinned casters proven; **hardened Session G**: glTF caster darkening is a hard assertion, glTF caster+receiver test (angled sun), per-node `set_hardware_skinning()` opt-out; **Session I**: slope-scaled bias (`shadow_normal_bias_world`, opt-in) kills grazing-angle acne (fact 14) | **Core done + hardened** (test_shadows 13+13, test_shadow_quality 9, test_shadows_gltf 6, test_shadow_grazing 6, test_skinning 12). Open: in-game validation — set `shadow_bias_world` (~0.5 IEU) first; openworld dev A/Bs `shadow_normal_bias_world` at az 240 low sun |
 | R3 bloom + HDR | F3 root-caused (8-bit intermediate FBOs) and fixed; float fbprops everywhere | **Core done** (Session D; test_bloom green both sizes). Open: content retune, light units, auto-exposure stretch |
@@ -201,6 +201,30 @@ Evaluate ONLY when it can run the paxtest suite. No cadence; check when curious.
 | Planet analytic tangents | sfb2 `planet_factory.py` | When normal-mapped planets arrive |
 | GLSL-120 dual-path removal (R1.4) | pax3d_render | The game sets `gl-version 3 2` |
 | R2.3 DirectionalLight C++ conveniences | engine | Window 4+, if ever — the pipeline owns orientation |
+
+### 4.8 Asset enablement — walkable ships (Session K+, user-directed)
+
+Trigger (2026-07-18): the game is integrating the CGTrader Phobos
+Starhopper (fully modelled interior, animated doors/ramp/gear, PBR
+texture sets) as a walkable grounded ship. Scoping what imported assets
+of this class need from the engine produced a four-item queue. Same
+contract as the planetside package: opt-in, default-off, byte-identical
+when off, paxtest-gated.
+
+| Item | Status |
+|---|---|
+| ~~Specular-preserving glass~~ (`set_glass(np)`) — premultiplied-alpha PBR variant: alpha attenuates transmission terms only; specular (sun/local/IBL) and emission at full strength | **DONE Session K** — test_glass, analytics exact, green both engines × both baselines × both sun modes + the routed pax_pbr path; arch doc §9. Pair with `exclude_from_shadows()` on canopies (depth pass is opaque by design) |
+| `gl_FrontFacing` normal flip for doubleSided glTF materials (backfaces currently lit from the wrong side — thin panels, decals, seat fabric) | Queued — few-line shader fix + test; broad payoff for every imported asset |
+| Specular IBL first slice (`set_env_map()`, static prefiltered cubemap + `max_reflection_lod`) — canopy/hull reflections; also settles the sh_from_cubemap horizontal-orientation question (Session J open item) | Queued — promotes the existing R5 remainder; glass is its motivating consumer |
+| Per-node ambient scale — keep the global SH sky ambient out of hull interiors (this asset splits exterior/interior/cockpit meshes, so a subtree scale is enough) | Queued — one uniform |
+
+Established while scoping (needs NO engine work): interior point/spot
+lights (the p3d_LightSource loop is the known-correct path; lights scope
+per-node), emissive cockpit screens (emission maps default-on, feed
+bloom), animated doors/ramp/gear (node animations, no skinning). Config
+only, game side: `use_normal_maps=True`, `use_occlusion_maps=True` for
+this asset class; multi-layer glass stays separate geoms (per-geom
+transparent-bin sorting).
 
 ---
 

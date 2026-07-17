@@ -110,6 +110,7 @@ post pass). A structural change (`enable_bloom`, `bloom_levels`,
 | `SUN_FROM_LIGHTSOURCE` | `sun_light_mode == 'directional'` | **R2**: sun via `p3d_LightSource` loop (§4) |
 | `LOG_DEPTH` | `enable_log_depth` | **R4.1**: fragment-level logarithmic depth (§9) |
 | `ENABLE_ATMOSPHERE` | `enable_atmosphere` | **R5.1**: aerial perspective / height haze (§9) — planetside, off for space |
+| `GLASS` | `set_glass(np)` — per-NODE variant, never in the render-root compile | **Session K**: specular-preserving glass (§9) — alpha attenuates transmission terms only, premultiplied output |
 
 Notable shader features already present (inherited from the game's fork):
 geometric specular anti-aliasing (Kaplanyan-Hill), Eddington limb darkening
@@ -403,7 +404,7 @@ Three cost classes — keep new parameters within this taxonomy:
 
 | Class | Cost | Parameters / methods |
 |---|---|---|
-| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2) |
+| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles) |
 | Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere` |
 | FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, (`bloom_levels`, `msaa_samples` at init) |
 
@@ -603,14 +604,52 @@ Measured record: `test_ambient_sh` (per-channel analytics exact through
 the tonemap curve; recompile survival; cubemap projection matches the
 analytic hemisphere at 0.0%).
 
+### Session K — Specular-preserving glass: `set_glass(np)` (LANDED, opt-in)
+
+First slice of the walkable-ship asset-enablement queue (master plan
+§4.8; motivating asset: the Phobos Starhopper cockpit canopy). The
+defect, measured: standard `M_alpha` blending multiplies the ENTIRE
+shaded result by alpha, so a canopy at alpha 0.15 keeps 15% of the
+specular highlight that makes glass read as glass (test_glass: 2.07×
+luminance loss at the analytic highlight).
+
+`pipeline.set_glass(np)` switches the subtree to:
+
+- a `GLASS`-defined compile of the SAME PBR shader — the render-root
+  compile is textually unchanged, so default rendering is byte-identical
+  by construction. In the variant, alpha attenuates only
+  transmission-class terms (diffuse, flat + SH ambient; fog and
+  atmosphere inscatter are coverage-weighted); specular — sun, local
+  lights, IBL — and emission add at full strength (the glTF-viewer
+  semantic for BLEND materials). Output is premultiplied.
+- `TransparencyAttrib.M_premultiplied_alpha` at override 1, outranking
+  the geom-level `M_alpha` that panda3d-gltf stamps on BLEND materials.
+
+Mechanics worth knowing: the variant is compiled lazily (one hitch on
+first `set_glass`) and re-pushed after every recompile-class toggle
+(`_reapply_glass_shaders` — the §3 invariant extended to per-node
+variants); the node's prior TransparencyAttrib (+override) is saved so
+`set_glass(np, False)` is a byte-identical restore; the shadow camera's
+override-1 initial state outranks the node-level shader, so the depth
+pass is untouched — glass still casts an OPAQUE shadow unless you pair
+with `exclude_from_shadows(np)` (you almost always should, or the
+canopy blacks out the cockpit). Apply to the glass geoms only, never a
+parent shared with opaque meshes; keep multi-layer glass as separate
+geoms so the transparent bin can sort them.
+
+Measured record: `test_glass` (both-path analytics exact through the
+tonemap curve — legacy 0.289/0.290, glass 0.599/0.599, transmission
+through to a known background 0.753/0.753; recompile survival rms 0;
+opt-out rms 0; @directional variant covers the light-loop split).
+
 ---
 
 ## 10. Testing Contract
 
 - Every feature has (at least) one paxtest: gamma, lighting (×sun-modes),
   bloom, rebuild, the shadow suite (shadows/gltf/quality/grazing/snap),
-  skinning, ftl_blur, scale (+@logdepth), atmosphere, ambient_sh. Run
-  `tools/paxtest/run.py` before and after.
+  skinning, ftl_blur, scale (+@logdepth), atmosphere, ambient_sh, glass
+  (×sun-modes). Run `tools/paxtest/run.py` before and after.
 - Add a test WITH the feature, not after. Analytic checks > goldens;
   goldens (`--golden` / `--check-golden`) are a refactor safety net.
 - The testbed (`sfb2/test3d_pax.py`) is the eyeball companion — its

@@ -135,6 +135,18 @@ restores the baseline byte-identically, and that the EXPERIMENTAL
 `sh_from_cubemap()` reproduces the analytic hemisphere coefficients from
 a synthetic cubemap (math-only check, no rendering).
 
+**`test_glass.py`** (Session K) — specular-preserving glass
+(`set_glass()`). A flat card with the sun exactly on the view axis makes
+every BRDF dot product 1, so both transparency paths are analytic:
+measures the M_alpha defect (the whole result × alpha — the highlight
+loses 2.07× at alpha 0.15), asserts the glass path keeps specular at
+full strength and matches its curve exactly, that a known-value
+background transmits at exactly (1−a) through the premultiplied blend,
+that the per-node variant survives a recompile-class toggle, and that
+`set_glass(np, False)` restores the M_alpha capture byte-identically.
+The `@directional` variant covers the GLASS split in the
+p3d_LightSource loop (uniforms mode never enters it).
+
 **`test_skinning.py`** (Session G, openworld P1) — hardware vs CPU
 skinning correctness plus the per-node opt-out API. Three layers: the
 egg sheet posed and rendered GPU vs `set_hardware_skinning(np, False)`
@@ -173,7 +185,7 @@ the correct surface's favor and mimic a working depth buffer.
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Results snapshot (post Session J, 2026-07-18)
+## Results snapshot (post Session K, 2026-07-18)
 
 Same results on stock 1.10.16 and Pax3D 1.11.0 (Window-3 wheel), both
 baselines. Note: with the game's `use_pax3d_render` flag flipped
@@ -192,8 +204,9 @@ attach pattern, which fails by design).
 | shadow_quality | skip | skip | skip | **PASS** |
 | shadow_grazing | skip | skip | skip | **PASS (grazing acne cleared by slope-scaled bias, umbra kept)** |
 | shadow_snap | skip | skip | skip | **PASS (sub-texel sweep depth+screen stable; teeth measured)** |
-| atmosphere | skip | skip | skip | **PASS (analytic transmittance exact; opt-out byte-identical)** |
-| ambient_sh | skip | skip | skip | **PASS (hemisphere analytics exact; SH survives recompile)** |
+| atmosphere | skip | skip | PASS | **PASS (analytic transmittance exact; opt-out byte-identical)** |
+| ambient_sh | skip | skip | PASS | **PASS (hemisphere analytics exact; SH survives recompile)** |
+| glass | skip | skip | PASS | **PASS (spec survives alpha, 2.07× vs M_alpha; both sun modes; opt-out byte-identical)** |
 | ftl_blur | skip | skip | PASS | PASS |
 | scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)**; **@logdepth PASS (R4.1)** |
 | skinning | skip | skip | skip | **PASS (opt-out API + both openworld packs)** |
