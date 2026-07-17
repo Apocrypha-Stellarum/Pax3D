@@ -220,6 +220,7 @@ class Pipeline:
                  sun_light_mode='uniforms', shadow_map_size=2048,
                  enable_log_depth=False,
                  shadow_texel_snap=False,
+                 double_sided_lighting=False,
                  enable_atmosphere=False,
                  atmo_haze_color=(0.60, 0.71, 0.85),
                  atmo_sun_haze_color=None,
@@ -274,6 +275,12 @@ class Pipeline:
             shadow_caster_mask)
         self.enable_hardware_skinning = enable_hardware_skinning
         self.calculate_normalmap_blue = calculate_normalmap_blue
+        # Double-sided lighting (Session K, asset enablement): shade
+        # backfaces with the inverted normal (the glTF doubleSided /
+        # Khronos sample-viewer semantic). Default off = byte-identical:
+        # existing two-sided content (foliage cards, FX quads) keeps its
+        # shipped look until the game opts in and signs off.
+        self.double_sided_lighting = bool(double_sided_lighting)
 
         # Bloom and tonemapping parameters
         self.enable_bloom = enable_bloom
@@ -464,6 +471,7 @@ class Pipeline:
             'LOG_DEPTH': self.enable_log_depth,
             'SHADOW_FILTER_SIZE': self.shadow_filter_size,
             'ENABLE_ATMOSPHERE': self.enable_atmosphere,
+            'DOUBLE_SIDED_LIGHTING': self.double_sided_lighting,
         }
 
     def _recompile_pbr(self):
@@ -1419,6 +1427,23 @@ class Pipeline:
         if enabled == self.enable_log_depth:
             return
         self.enable_log_depth = enabled
+        self._recompile_pbr()
+
+    def set_double_sided_lighting(self, enabled):
+        """Toggle double-sided lighting at runtime (Session K).
+        Recompiles the PBR shader (glass variants track it too).
+
+        When on, backfaces of two-sided geometry are shaded with the
+        inverted normal — the glTF `doubleSided` semantic — so a thin
+        panel, decal, or interior wall seen from behind lights from the
+        side actually facing the sun instead of rendering near-black.
+        Front faces are untouched (the flip is a per-triangle-facing
+        branch), so single-sided content cannot change. Off (default)
+        is byte-identical to the shipped shader."""
+        enabled = bool(enabled)
+        if enabled == self.double_sided_lighting:
+            return
+        self.double_sided_lighting = enabled
         self._recompile_pbr()
 
     def update_sun(self, sun_dir_world, sun_color):

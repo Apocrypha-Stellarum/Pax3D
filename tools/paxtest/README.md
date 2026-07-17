@@ -147,6 +147,18 @@ that the per-node variant survives a recompile-class toggle, and that
 The `@directional` variant covers the GLASS split in the
 p3d_LightSource loop (uniforms mode never enters it).
 
+**`test_doublesided.py`** (Session K) — double-sided lighting
+(`double_sided_lighting` / `set_double_sided_lighting()`). The same
+analytic sun-on-view-axis card as test_glass, opaque and two-sided,
+shown to the camera back-first: measures the defect (backface renders
+ambient-only 0.108 where the lit answer is 0.705 — backfaces shaded
+with the front normal), asserts the gl_FrontFacing flip lights the
+backface to the exact front-face analytic, that front faces are
+BIT-identical with the flag on vs off (rms 0 — single-sided content
+cannot change), and that toggling off restores the default capture
+byte-identically. `@directional` covers the view-space flip consumed by
+the p3d_LightSource loop.
+
 **`test_skinning.py`** (Session G, openworld P1) — hardware vs CPU
 skinning correctness plus the per-node opt-out API. Three layers: the
 egg sheet posed and rendered GPU vs `set_hardware_skinning(np, False)`
@@ -207,6 +219,7 @@ attach pattern, which fails by design).
 | atmosphere | skip | skip | PASS | **PASS (analytic transmittance exact; opt-out byte-identical)** |
 | ambient_sh | skip | skip | PASS | **PASS (hemisphere analytics exact; SH survives recompile)** |
 | glass | skip | skip | PASS | **PASS (spec survives alpha, 2.07× vs M_alpha; both sun modes; opt-out byte-identical)** |
+| doublesided | skip | skip | PASS | **PASS (backface 0.108→0.705 analytic; front faces bit-identical; opt-out byte-identical)** |
 | ftl_blur | skip | skip | PASS | PASS |
 | scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)**; **@logdepth PASS (R4.1)** |
 | skinning | skip | skip | skip | **PASS (opt-out API + both openworld packs)** |

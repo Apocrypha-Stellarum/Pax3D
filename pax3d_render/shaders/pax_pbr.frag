@@ -299,6 +299,18 @@ void main() {
     vec3 world_normal = normalize(v_world_normal);
 #endif
 
+#ifdef DOUBLE_SIDED_LIGHTING
+    // glTF doubleSided semantic (Khronos sample-viewer behavior): shade
+    // backfaces with the inverted normal, so two-sided geometry seen
+    // from behind lights from the side actually facing the light.
+    // gl_FrontFacing is uniform per triangle — front faces take the
+    // no-op path and are bit-identical to the flag-off compile.
+    if (!gl_FrontFacing) {
+        n = -n;
+        world_normal = -world_normal;
+    }
+#endif
+
     // Geometric Specular Anti-Aliasing (Kaplanyan & Hill, JCGT 2016)
     // When normals vary faster than the pixel rate (distant geometry,
     // normal maps, hard edges), specular highlights alias/shimmer.

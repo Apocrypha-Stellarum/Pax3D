@@ -19,7 +19,7 @@ OUTPUT_DIR = os.path.join(HERE, 'output')
 ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows',
              'shadows_gltf', 'shadow_quality', 'shadow_grazing',
              'shadow_snap', 'ftl_blur', 'scale', 'skinning',
-             'atmosphere', 'ambient_sh', 'glass']
+             'atmosphere', 'ambient_sh', 'glass', 'doublesided']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 
@@ -98,10 +98,10 @@ def main():
                 # R2: also verify the real-DirectionalLight sun mode
                 jobs.append((test, pipeline,
                              passthrough + ['--sun-mode', 'directional']))
-            if test == 'glass' and pipeline == 'pax3d_render':
-                # Session K: the directional variant exercises the GLASS
-                # split in the p3d_LightSource loop (uniforms mode never
-                # enters it)
+            if test in ('glass', 'doublesided') and pipeline == 'pax3d_render':
+                # Session K: the directional variants exercise the GLASS
+                # split / normal flip in the p3d_LightSource loop
+                # (uniforms mode never enters it)
                 jobs.append((test, pipeline,
                              passthrough + ['--sun-mode', 'directional']))
             if test == 'scale' and pipeline == 'pax3d_render':

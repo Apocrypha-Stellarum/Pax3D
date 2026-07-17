@@ -302,3 +302,22 @@ pax_pbr path; full 15-test suite green on both engines, documented
 baselines unchanged. Queued next in §4.8: gl_FrontFacing double-sided
 fix, specular IBL first slice (canopy reflections + the sh_from_cubemap
 orientation check), per-node ambient scale for hull interiors.
+
+**Session K update 2 (2026-07-18):** **Double-sided lighting** — second
+slice of the §4.8 walkable-ship queue. The defect, measured: the shader
+shaded backfaces with the FRONT face's normal, so glTF doubleSided
+materials seen from behind rendered ambient-only (test_doublesided:
+0.108 where the lit answer is 0.705). Fix: `double_sided_lighting`
+(init kwarg) / `set_double_sided_lighting()` (recompile-class) compiles
+in the Khronos sample-viewer semantic — `if (!gl_FrontFacing) flip
+n/world_normal` right after normal derivation, so both sun paths, the
+light loop, IBL, and the slope-scaled shadow bias all see the flipped
+normal; glass variants inherit the define automatically. Front faces
+take the no-op path and are BIT-identical to the flag-off compile
+(asserted, rms 0). Deliberately opt-in rather than always-on: existing
+two-sided content with visible backfaces (foliage cards, FX quads)
+WOULD change appearance, so the games eyeball first. Evidence:
+test_doublesided 6 checks, analytics exact on first run, green both
+engines × both baselines × both sun modes + the routed pax_pbr path;
+full 16-test suite green both engines, documented baselines unchanged.
+Remaining in §4.8: specular IBL first slice, per-node ambient scale.

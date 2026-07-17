@@ -111,6 +111,7 @@ post pass). A structural change (`enable_bloom`, `bloom_levels`,
 | `LOG_DEPTH` | `enable_log_depth` | **R4.1**: fragment-level logarithmic depth (§9) |
 | `ENABLE_ATMOSPHERE` | `enable_atmosphere` | **R5.1**: aerial perspective / height haze (§9) — planetside, off for space |
 | `GLASS` | `set_glass(np)` — per-NODE variant, never in the render-root compile | **Session K**: specular-preserving glass (§9) — alpha attenuates transmission terms only, premultiplied output |
+| `DOUBLE_SIDED_LIGHTING` | `double_sided_lighting` | **Session K**: backfaces shade with the inverted normal (glTF doubleSided semantic, §9) — front faces bit-identical |
 
 Notable shader features already present (inherited from the game's fork):
 geometric specular anti-aliasing (Kaplanyan-Hill), Eddington limb darkening
@@ -405,7 +406,7 @@ Three cost classes — keep new parameters within this taxonomy:
 | Class | Cost | Parameters / methods |
 |---|---|---|
 | Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles) |
-| Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere` |
+| Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere`, `set_double_sided_lighting` (§9 Session K) |
 | FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, (`bloom_levels`, `msaa_samples` at init) |
 
 Constructor parameters (all keyword): `render_node, window, camera_node,
@@ -642,6 +643,31 @@ tonemap curve — legacy 0.289/0.290, glass 0.599/0.599, transmission
 through to a known background 0.753/0.753; recompile survival rms 0;
 opt-out rms 0; @directional variant covers the light-loop split).
 
+### Session K — Double-sided lighting: `double_sided_lighting` (LANDED, opt-in)
+
+Second slice of the walkable-ship queue (master plan §4.8). The shader
+historically shaded backfaces with the FRONT face's normal, so glTF
+`doubleSided` materials (thin panels, decals, seat fabric, interior
+walls) seen from behind lit from the wrong side — ambient-only black
+under direct sun (test_doublesided measures 0.108 vs the correct
+0.705 at the analytic scene).
+
+`double_sided_lighting=True` (init kwarg) / `set_double_sided_lighting()`
+(runtime, recompile-class) compiles in the Khronos sample-viewer
+semantic: `if (!gl_FrontFacing) { n = -n; world_normal = -world_normal; }`
+right after normal derivation, so every consumer — both sun paths, the
+light loop, IBL, the slope-scaled shadow bias — sees the flipped
+normal. Front faces take the no-op path and are BIT-identical to the
+flag-off compile (asserted), so single-sided content cannot change;
+default off is byte-identical for everything, because existing
+two-sided content with visible backfaces (foliage cards, FX quads)
+WOULD change appearance — the games opt in after eyeballing. Glass
+variants inherit the define automatically (shared `_get_pbr_defines`).
+
+Measured record: `test_doublesided` (front/back analytics exact both
+flag states; flag-on front vs flag-off front rms 0; opt-out rms 0;
+@directional variant covers the view-space flip in the light loop).
+
 ---
 
 ## 10. Testing Contract
@@ -649,7 +675,8 @@ opt-out rms 0; @directional variant covers the light-loop split).
 - Every feature has (at least) one paxtest: gamma, lighting (×sun-modes),
   bloom, rebuild, the shadow suite (shadows/gltf/quality/grazing/snap),
   skinning, ftl_blur, scale (+@logdepth), atmosphere, ambient_sh, glass
-  (×sun-modes). Run `tools/paxtest/run.py` before and after.
+  (×sun-modes), doublesided (×sun-modes). Run `tools/paxtest/run.py`
+  before and after.
 - Add a test WITH the feature, not after. Analytic checks > goldens;
   goldens (`--golden` / `--check-golden`) are a refactor safety net.
 - The testbed (`sfb2/test3d_pax.py`) is the eyeball companion — its
