@@ -6,11 +6,15 @@ superseded — check the banner at the top of each file.
 
 | Document | Status | What it is |
 |---|---|---|
-| `PAX3D_MASTER_PLAN.md` | **CURRENT** | The phased rendering program (R0–R6), root-cause register, session updates. Start here. |
-| `PAX3D_RENDER_ARCHITECTURE.md` | **CURRENT** | Maintainer's guide to the pax3d_render pipeline: passes, sun modes, shadows, invariants, defect analysis, API. |
+| `PAX3D_MASTER_PLAN.md` | **CURRENT** | **v3 (2026-07-17):** verified state, policies in force (sovereignty, Language Canon, build windows), established facts, the road forward. Start here. |
+| `SESSION_LOG.md` | **CURRENT** | Session-by-session narrative (extracted from Master Plan v2), newest at the bottom. |
+| `PAX3D_RENDER_ARCHITECTURE.md` | **CURRENT** | Maintainer's guide to the pax3d_render pipeline: passes, sun modes, shadows (incl. the bias trap §5.1), invariants, defect analysis, API. |
+| `ENGINE_SURGERY_PLAN.md` | **CURRENT** | The deletion program (DX9, dead backends, Cg verdicts) sequenced into build windows 2+. |
+| `BUILD_WINDOW_1_CATCHUP.md` | **CURRENT — active window** | B-computer procedure for the Route A catch-up-merge build (+ optional doubles wheel), validation plan, rollback. |
+| `OPENWORLD_FEEDBACK_RESPONSE.md` | **CURRENT** | Point-by-point reply to the openworld build's engine feedback: P0 root cause (bias trap + contaminated instrument), landed APIs, backlog. |
 | `PAXTEST_FINDINGS_SESSION_A.md` | **CURRENT** | The harness findings that rebooted the program (double-gamma disproven, DirectionalLight exonerated, bloom defect cornered). |
 | `../tools/paxtest/README.md` | **CURRENT** | Test harness usage and results snapshot. |
-| `BUILDING_PAX3D.md` | REFERENCE | Building the engine wheel from source — thirdparty setup, every pitfall. |
+| `BUILDING_PAX3D.md` | REFERENCE | Building the engine wheel from source — thirdparty setup, every pitfall, build-window policy note. |
 | `SWITCHING_ENGINES.md` | REFERENCE | The two-environment setup (stock Panda3D vs Pax3D venv). |
 | `TOBSPR_SHADER_CATALOGUE.md` | REFERENCE | Salvageable shaders from tobspr's RenderPipeline (feeds R3–R5). |
 | `RENDERING_ROADMAP.md` | HISTORICAL | The Feb 2026 five-phase plan. Superseded by the master plan. |

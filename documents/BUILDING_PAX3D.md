@@ -2,6 +2,18 @@
 
 This guide is for AI developers building Pax3D. It documents every pitfall we hit so you don't have to rediscover them.
 
+> **Policy note (2026-07-17):** builds run only in **user-scheduled build
+> windows** (see CLAUDE.md "Language Canon"), typically on the B computer —
+> the active window's procedure lives in `BUILD_WINDOW_1_CATCHUP.md`.
+> Post-catch-up-merge (`eb685fd003`) facts: the tree compiles as **C++17**
+> (any VS 2022 toolchain is fine), and makepanda **pip-installs
+> `panda3d-interrogate==0.11.2` from PyPI at build time** — the build
+> machine needs internet, or pre-seed
+> `built_x64/tmp/interrogate` with `pip install -t <that dir>
+> panda3d-interrogate==0.11.2` beforehand. Convention: segregate wheels
+> into per-window folders (`wheels_window1/float/`, `.../double/`) —
+> float and doubles builds emit the SAME filename.
+
 ---
 
 ## Prerequisites
