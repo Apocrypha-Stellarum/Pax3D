@@ -291,6 +291,16 @@ class Pipeline:
         # Debug lighting mode (0=normal, 1=normals, 2=n_dot_l, 3=light dir)
         self.render_node.set_shader_input('u_debug_lighting', 0.0)
 
+        # World -> light-0 shadow-UV matrix for debug modes 12/13
+        # (fragment-recomputed shadow coords). Identity until a
+        # directional sun exists; refreshed by update_sun and
+        # set_shadow_extent.
+        self.render_node.set_shader_input('u_probe_shadow_world_mat',
+                                          p3d.LMatrix4.ident_mat())
+        # Fixed (u, v, ref) sample point for debug mode 15.
+        self.render_node.set_shader_input('u_probe_uvref',
+                                          p3d.Vec3(0.5, 0.5, 0.5))
+
         # Coordinate system conversion for custom shader inputs
         self._init_cs_conversion()
 
@@ -939,6 +949,25 @@ class Pipeline:
         lens = self.sun_light_np.node().get_lens()
         lens.set_film_size(2 * radius, 2 * radius)
         lens.set_near_far(-self._shadow_depth / 2, self._shadow_depth / 2)
+        self._push_shadow_probe_matrix()
+
+    def _push_shadow_probe_matrix(self):
+        """Refresh the world -> light-0 shadow-UV matrix consumed by debug
+        modes 12/13 (fragment-recomputed shadow coords). Mirrors the
+        engine's shadowViewMatrix chain (graphicsStateGuardian.cxx) from
+        world space: world -> light node -> light clip -> [0,1]^3."""
+        if self.sun_light_np is None:
+            return
+        world_to_light = p3d.LMatrix4(
+            self.sun_light_np.get_net_transform().get_mat())
+        world_to_light.invert_in_place()
+        bias = p3d.LMatrix4(0.5, 0, 0, 0,
+                            0, 0.5, 0, 0,
+                            0, 0, 0.5, 0,
+                            0.5, 0.5, 0.5, 1)
+        lens = self.sun_light_np.node().get_lens()
+        mat = world_to_light * lens.get_projection_mat() * bias
+        self.render_node.set_shader_input('u_probe_shadow_world_mat', mat)
 
     def _push_shadow_bias(self):
         """Push the shadow depth-bias and texel-size shader inputs.
@@ -1130,6 +1159,7 @@ class Pipeline:
                 self.sun_light_np.set_hpr(heading, pitch, 0)
             self.sun_light_np.node().set_color(
                 p3d.LColor(sun_color[0], sun_color[1], sun_color[2], 1))
+            self._push_shadow_probe_matrix()
 
         # Uniforms are always updated: the legacy sun block reads them, and
         # the shader debug modes (V key) visualize them in both modes.

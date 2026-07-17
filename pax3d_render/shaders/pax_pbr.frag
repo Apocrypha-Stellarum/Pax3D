@@ -103,6 +103,12 @@ uniform float max_reflection_lod;
 // upload. u_shadow_texel = 1/shadow_map_size, for the multi-tap filter.
 uniform float global_shadow_bias;
 uniform float u_shadow_texel;
+// world -> light-0 shadow-UV matrix, pushed by the pipeline (debug
+// modes 12/13: fragment-recomputed shadow coords vs the interpolated
+// v_shadow_pos varying).
+uniform mat4 u_probe_shadow_world_mat;
+// fixed (u, v, ref) for debug mode 15's constant-sample probe.
+uniform vec3 u_probe_uvref;
 #endif
 #ifndef SHADOW_FILTER_SIZE
     #define SHADOW_FILTER_SIZE 1
@@ -473,6 +479,64 @@ void main() {
         float s = shadow_caster_contrib(p3d_LightSource[0].shadowMap,
                                         v_shadow_pos[0]);
         color = vec4(vec3(s), 1.0);
+    } else if (u_debug_lighting > 11.5 && u_debug_lighting < 12.5) {
+        // Mode 12: |interpolated - recomputed| shadow coord of light 0.
+        // v_shadow_pos is vertex-computed + interpolated; s2 is recomputed
+        // per-fragment from v_world_position and the CPU-pushed world->UV
+        // matrix. R/G = UV error x200 (0.005 UV = full red/green),
+        // B = depth-ref error x2000 (0.0005 = full blue). Black = agree.
+        vec4 s2 = u_probe_shadow_world_mat * vec4(v_world_position, 1.0);
+        vec3 a = v_shadow_pos[0].xyz / max(abs(v_shadow_pos[0].w), 1e-6);
+        vec3 b = s2.xyz / max(abs(s2.w), 1e-6);
+        vec3 err = abs(a - b);
+        color = vec4(err.x * 200.0, err.y * 200.0, err.z * 2000.0, 1.0);
+    } else if (u_debug_lighting > 12.5 && u_debug_lighting < 13.5) {
+        // Mode 13: shadow term of light 0 via the RECOMPUTED coord (the
+        // candidate fix path). Compare with mode 11: if 13 is correct
+        // where 11 is corrupted, the varying interpolation is the defect.
+        vec4 s2 = u_probe_shadow_world_mat * vec4(v_world_position, 1.0);
+        float s = shadow_caster_contrib(p3d_LightSource[0].shadowMap, s2);
+        color = vec4(vec3(s), 1.0);
+    } else if (u_debug_lighting > 13.5 && u_debug_lighting < 14.5) {
+        // Mode 14: 3-level probe of the GPU-BOUND depth texture at this
+        // fragment's shadow UV. R = compare passes with ref pulled 2 m
+        // toward the light, G = at ref (raw, no bias), B = ref pushed
+        // 2 m deeper. Encodes which depth bucket the bound texel is in —
+        // readable even if RAM extraction disagrees with the GPU.
+        vec3 lsc = v_shadow_pos[0].xyz / v_shadow_pos[0].w;
+        float dm = 0.5 / 600.0;
+#ifdef USE_330
+        float r = texture(p3d_LightSource[0].shadowMap,
+                          vec3(lsc.xy, lsc.z - dm));
+        float g = texture(p3d_LightSource[0].shadowMap, lsc);
+        float b = texture(p3d_LightSource[0].shadowMap,
+                          vec3(lsc.xy, lsc.z + dm));
+#else
+        float r = shadow2D(p3d_LightSource[0].shadowMap,
+                           vec3(lsc.xy, lsc.z - dm)).r;
+        float g = shadow2D(p3d_LightSource[0].shadowMap, lsc).r;
+        float b = shadow2D(p3d_LightSource[0].shadowMap,
+                           vec3(lsc.xy, lsc.z + dm)).r;
+#endif
+        color = vec4(r, g, b, 1.0);
+    } else if (u_debug_lighting > 14.5 && u_debug_lighting < 15.5) {
+        // Mode 15: sample the shadow map at ONE fixed uniform-supplied
+        // (u, v, ref) — identical for every fragment. A healthy frame is
+        // one flat color; per-geom color differences mean the bound
+        // texture or sampler state differs between draws.
+#ifdef USE_330
+        float s = texture(p3d_LightSource[0].shadowMap, u_probe_uvref);
+#else
+        float s = shadow2D(p3d_LightSource[0].shadowMap, u_probe_uvref).r;
+#endif
+        color = vec4(vec3(s), 1.0);
+    } else if (u_debug_lighting > 15.5 && u_debug_lighting < 16.5) {
+        // Mode 16: distance of THIS fragment's shadow coord (signed-w
+        // divide, the real sampling path) from the uniform probe point.
+        // R/G = |du,dv| x100 (0.01 UV = 2.8 m saturates), B = |dref| x100.
+        vec3 lsc = v_shadow_pos[0].xyz / v_shadow_pos[0].w;
+        vec3 d = abs(lsc - u_probe_uvref);
+        color = vec4(d.x * 100.0, d.y * 100.0, d.z * 100.0, 1.0);
     }
 #endif
 
