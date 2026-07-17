@@ -225,11 +225,21 @@ def main():
         actor = None
 
     if actor is not None:
-        anims = actor.get_anim_names()
+        # Deterministic pose: get_anim_names() ordering varies run-to-run,
+        # and a looping animation makes captures time-dependent — pin both.
+        anims = sorted(actor.get_anim_names())
         if anims:
-            actor.loop(anims[0])
+            actor.pose(anims[0], 5)
         actor.set_scale(3)                       # ~5m tall: a fat blob
-        actor.set_pos(cluster + p3d.Vec3(0, 0, 2))   # feet on the pole
+        # The camera sees the sphere's FRONT surface: the "pole" sample
+        # pixel is the surface point at world y=-0.76 (z=1.85 on r=2), NOT
+        # the top point at y=0. A thin standing pose only shadows a column
+        # y in [-0.45, +0.56] around its origin (probe 2026-07-17), so the
+        # actor is shifted -0.76 in y to put its trunk's shadow column over
+        # the sampled point. Without this the check reports NO SHADOW on a
+        # perfectly healthy pipeline — the same trap class as the angled-sun
+        # case in PAX3D_FEEDBACK P2.
+        actor.set_pos(cluster + p3d.Vec3(0, -0.76, 2))
         actor.reparent_to(base.render)
         h.step(6)
         map_gltf = depth_map()
@@ -241,9 +251,14 @@ def main():
                            f'{gltf_texels} depth texels from a panda3d-gltf '
                            f'Actor ({os.path.basename(glb)}, '
                            f'anims={anims[:1]})')
-        h.report.info('gltf_caster_ground_lum',
-                      f'pole lum {gltf_pole:.3f} under the actor '
-                      f'(no-caster baseline {lit_pole:.3f})')
+        # Promoted from [info] 2026-07-17 (openworld ask #1): a glTF Actor
+        # that writes depth texels MUST also darken the lit pass. On a clean
+        # engine this reads 0.800 -> ~0.086; the contaminated-tree incident
+        # read 0.800 -> 0.800 and the info line could not fail the gate.
+        h.report.check('gltf_caster_darkens_ground',
+                       gltf_pole < 0.5 * max(lit_pole, 1e-4),
+                       f'pole lum {lit_pole:.3f} (no caster) -> '
+                       f'{gltf_pole:.3f} under the actor')
         actor.detach_node()
 
     h.report.finish()

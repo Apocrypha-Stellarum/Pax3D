@@ -1033,6 +1033,41 @@ class Pipeline:
             raise ValueError('shadow_caster_mask is not configured')
         nodepath.show(self.shadow_caster_mask)
 
+    def set_hardware_skinning(self, nodepath, enabled):
+        """Per-node override of the pipeline-wide enable_hardware_skinning
+        flag: pin a problem rig to the CPU-skinning path (or force a node
+        back to the GPU path) while the rest of the scene is unaffected.
+
+        The blessed interim for rigs the GPU palette mis-skins (openworld
+        P1: 94-joint Rigify exports) — global CPU skinning costs 112->8 fps
+        at their NPC counts; per-node costs only the affected characters.
+
+        Mechanism: a flag-only ShaderAttrib is composed onto the node. The
+        shader itself is inherited unchanged (ShaderAttrib flags compose
+        per-bit), only F_hardware_skinning flips, and the attrib rides at
+        override 2 so it also outranks the shadow camera's initial-state
+        attrib (override 1) — the depth pass follows the same skinning
+        path and shadows keep matching the visible pose. The PBR/shadow
+        shaders' skinning block degrades to identity for CPU-skinned
+        vertex data (no transform_index/weight columns, identity palette),
+        so one shader serves both paths.
+        """
+        prev = nodepath.get_attrib(p3d.ShaderAttrib)
+        if prev is None:
+            prev = p3d.ShaderAttrib.make()
+        attr = prev.set_flag(p3d.ShaderAttrib.F_hardware_skinning,
+                             bool(enabled))
+        nodepath.set_attrib(attr, 2)
+
+    def clear_hardware_skinning(self, nodepath):
+        """Undo set_hardware_skinning(): the node reverts to the
+        pipeline-wide enable_hardware_skinning flag. Other shader state on
+        the node (e.g. its shader inputs) is preserved."""
+        prev = nodepath.get_attrib(p3d.ShaderAttrib)
+        if prev is not None:
+            nodepath.set_attrib(
+                prev.clear_flag(p3d.ShaderAttrib.F_hardware_skinning), 2)
+
     def set_sun_light_mode(self, mode):
         """Switch between 'uniforms' (legacy) and 'directional' (real
         DirectionalLight) at runtime. Recompiles the PBR shader."""
