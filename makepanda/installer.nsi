@@ -73,7 +73,6 @@ InstType "Light"
 
 LangString DESC_SecCore ${LANG_ENGLISH} "The Panda3D core libraries, configuration files and models/textures that are needed to use Panda3D."
 LangString DESC_SecOpenGL ${LANG_ENGLISH} "The OpenGL graphics back-end is the most well-supported renderer."
-LangString DESC_SecDirect3D9 ${LANG_ENGLISH} "The optional Direct3D 9 renderer."
 LangString DESC_SecOpenAL ${LANG_ENGLISH} "Support for playing audio via the OpenAL library.  You need either OpenAL or FMOD to be able to play audio."
 LangString DESC_SecFMOD ${LANG_ENGLISH} "Support for decoding and playing audio via the FMOD Ex library.  You need either OpenAL or FMOD to be able to play audio."
 LangString DESC_SecFFMpeg ${LANG_ENGLISH} "Support for decoding video and audio via the FFMpeg library.  Without this option, Panda3D will only be able to play .wav and .ogg audio files."
@@ -106,7 +105,6 @@ var READABLE
 !macroend
 
 !insertmacro !defineifexist HAVE_GL "${BUILT}\bin\libpandagl.dll"
-!insertmacro !defineifexist HAVE_DX9 "${BUILT}\bin\libpandadx9.dll"
 !insertmacro !defineifexist HAVE_OPENAL "${BUILT}\bin\libp3openal_audio.dll"
 !insertmacro !defineifexist HAVE_FMOD "${BUILT}\bin\libp3fmod_audio.dll"
 !insertmacro !defineifexist HAVE_FFMPEG "${BUILT}\bin\libp3ffmpeg.dll"
@@ -210,7 +208,7 @@ SectionGroup "Panda3D Libraries"
         File /r "${BUILT}\etc\*"
 
         SetOutPath $INSTDIR\bin
-        File /r /x api-ms-win-*.dll /x ucrtbase.dll /x libpandagl.dll /x libpandadx9.dll /x cgD3D*.dll /x python*.dll /x libpandaode.dll /x libp3fmod_audio.dll /x fmodex*.dll /x libp3ffmpeg.dll /x av*.dll /x postproc*.dll /x swscale*.dll /x swresample*.dll /x NxCharacter*.dll /x cudart*.dll /x PhysX*.dll /x libpandaphysx.dll /x libp3rocket.dll /x boost_python*.dll /x Rocket*.dll /x _rocket*.pyd /x libpandabullet.dll /x OpenAL32.dll /x *_oal.dll /x libp3openal_audio.dll "${BUILT}\bin\*.dll"
+        File /r /x api-ms-win-*.dll /x ucrtbase.dll /x libpandagl.dll /x python*.dll /x libpandaode.dll /x libp3fmod_audio.dll /x fmodex*.dll /x libp3ffmpeg.dll /x av*.dll /x postproc*.dll /x swscale*.dll /x swresample*.dll /x NxCharacter*.dll /x cudart*.dll /x PhysX*.dll /x libpandaphysx.dll /x libp3rocket.dll /x boost_python*.dll /x Rocket*.dll /x _rocket*.pyd /x libpandabullet.dll /x OpenAL32.dll /x *_oal.dll /x libp3openal_audio.dll "${BUILT}\bin\*.dll"
         File /nonfatal /r "${BUILT}\bin\Microsoft.*.manifest"
 
         ; Before Windows 10, we need these stubs for the UCRT as well.
@@ -242,16 +240,6 @@ SectionGroup "Panda3D Libraries"
 
         SetOutPath "$INSTDIR\bin"
         File "${BUILT}\bin\libpandagl.dll"
-    SectionEnd
-    !endif
-
-    !ifdef HAVE_DX9
-    Section "Direct3D 9" SecDirect3D9
-        SectionIn 1 2
-
-        SetOutPath "$INSTDIR\bin"
-        File "${BUILT}\bin\libpandadx9.dll"
-        File /nonfatal /r "${BUILT}\bin\cgD3D9.dll"
     SectionEnd
     !endif
 
@@ -911,9 +899,6 @@ SectionEnd
   !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} $(DESC_SecCore)
   !ifdef HAVE_GL
     !insertmacro MUI_DESCRIPTION_TEXT ${SecOpenGL} $(DESC_SecOpenGL)
-  !endif
-  !ifdef HAVE_DX9
-    !insertmacro MUI_DESCRIPTION_TEXT ${SecDirect3D9} $(DESC_SecDirect3D9)
   !endif
   !ifdef HAVE_OPENAL
     !insertmacro MUI_DESCRIPTION_TEXT ${SecOpenAL} $(DESC_SecOpenAL)

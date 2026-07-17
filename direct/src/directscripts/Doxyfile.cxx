@@ -803,7 +803,6 @@ EXCLUDE                = dtool/src/parser-inc \
                          panda/src/iphone \
                          panda/src/tinydisplay \
                          panda/src/movies/dr_flac.h \
-                         panda/src/windisplay/winDetectDx.h \
                          panda/src/wgldisplay/wglext.h \
                          panda/src/glxdisplay/panda_glxext.h \
                          pandatool/src/gtk-stats \

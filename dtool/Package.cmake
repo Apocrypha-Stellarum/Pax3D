@@ -798,15 +798,6 @@ package_option(GLES2
 
 package_status(GLES2 "OpenGL ES 2.x")
 
-# Direct3D 9
-find_package(Direct3D9 QUIET COMPONENTS dxguid dxerr d3dx9)
-
-package_option(DX9
-  "Enable support for DirectX 9.  This is typically only viable on Windows."
-  FOUND_AS Direct3D9)
-
-package_status(DX9 "Direct3D 9.x")
-
 # Nvidia Cg
 find_package(Cg QUIET)
 
@@ -816,16 +807,9 @@ package_option(CG
 package_option(CGGL
   "Enable support for Nvidia Cg's OpenGL API."
   LICENSE "Nvidia")
-package_option(CGD3D9
-  "Enable support for Nvidia Cg's Direct3D 9 API."
-  LICENSE "Nvidia")
 
-if(HAVE_CGGL AND HAVE_CGD3D9)
-  set(cg_apis "supporting OpenGL and Direct3D 9")
-elseif(HAVE_CGGL)
+if(HAVE_CGGL)
   set(cg_apis "supporting OpenGL")
-elseif(HAVE_CGDX9)
-  set(cg_apis "supporting Direct3D 9")
 else()
   set(cg_apis "WITHOUT rendering backend support")
 endif()

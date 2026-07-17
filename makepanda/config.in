@@ -5,7 +5,7 @@
 ###########################################################
 
 # Uncomment one of the following lines to choose whether you should
-# run using OpenGL, DirectX or TinyPanda (software) rendering.
+# run using OpenGL or TinyPanda (software) rendering.
 # There can only be one load-display line, but you can use
 # multiple aux-display lines to specify fallback modules.
 # When the module indicated by load-display fails, it will fall
@@ -13,7 +13,6 @@
 # when that fails, the next aux-display line, and so on.
 
 load-display pandagl
-#load-display pandadx9
 #load-display pandagles
 #load-display pandagles2
 #load-display p3tinydisplay

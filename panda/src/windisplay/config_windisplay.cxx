@@ -42,15 +42,6 @@ ConfigVariableBool ime_hide
 ("ime-hide", false,
  PRC_DESC("Set this true to hide ime windows."));
 
-ConfigVariableBool request_dxdisplay_information
-("request-dxdisplay-information", false,
- PRC_DESC("Setting this to true enables lumberingly slow and evil code at "
-          "start-up that creates a Direct3D window and subsequently fills up "
-          "up the video memory with dummy textures in order to find out how "
-          "much video memory there actually is.  Leave this disabled unless "
-          "you have a specific need for this information and don't mind "
-          "having a slow start-up."));
-
 ConfigVariableBool dpi_aware
 ("dpi-aware", true,
  PRC_DESC("The default behavior is for Panda3D to disable DPI-virtualization "

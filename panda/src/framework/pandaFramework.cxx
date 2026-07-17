@@ -111,9 +111,6 @@ open_framework() {
   #if defined(HAVE_GL)
   extern void init_libpandagl();
   init_libpandagl();
-  #elif defined(HAVE_DX9)
-  extern EXPCL_PANDADX void init_libpandadx9();
-  init_libpandadx9();
   #elif defined(HAVE_TINYDISPLAY)
   extern EXPCL_TINYDISPLAY void init_libtinydisplay();
   init_libtinydisplay();

@@ -10,10 +10,6 @@ if(HAVE_GL AND HAVE_EGL AND HAVE_GLX)
   set(AUX_DISPLAYS "${AUX_DISPLAYS}\naux-display p3headlessgl")
 endif()
 
-if(HAVE_DX9)
-  set(AUX_DISPLAYS "${AUX_DISPLAYS}\naux-display pandadx9")
-endif()
-
 if(HAVE_TINYDISPLAY)
   set(AUX_DISPLAYS "${AUX_DISPLAYS}\naux-display p3tinydisplay")
 endif()

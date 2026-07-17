@@ -17,8 +17,6 @@ if(NOT BUILD_SHARED_LIBS)
   # at least one of the available renderers.
   if(HAVE_GL)
     list(APPEND P3FRAMEWORK_LINK_TARGETS pandagl)
-  elseif(HAVE_DX9)
-    list(APPEND P3FRAMEWORK_LINK_TARGETS pandadx9)
   elseif(HAVE_TINYDISPLAY)
     list(APPEND P3FRAMEWORK_LINK_TARGETS p3tinydisplay)
   else()
@@ -41,7 +39,6 @@ target_link_libraries(p3framework ${P3FRAMEWORK_LINK_TARGETS})
 foreach(var
     HAVE_GL
     HAVE_TINYDISPLAY
-    HAVE_DX9
     HAVE_EGG
 )
 

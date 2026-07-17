@@ -69,7 +69,6 @@ RPMRELEASE="1"
 GIT_COMMIT=None
 MAJOR_VERSION=None
 OSX_ARCHS=[]
-STRDXSDKVERSION = 'default'
 WINDOWS_SDK = None
 MSVC_VERSION = None
 BOOUSEINTELCOMPILER = False
@@ -154,7 +153,6 @@ def usage(problem):
     print("")
     print("  --nothing         (disable every third-party lib)")
     print("  --everything      (enable every third-party lib)")
-    print("  --directx-sdk=X   (specify version of DirectX SDK to use: jun2010, aug2009)")
     print("  --windows-sdk=X   (specify Windows SDK version, eg. 7.1, 8.1, 10 or 11.  Default is 8.1)")
     print("  --msvc-version=X  (specify Visual C++ version, eg. 14.1, 14.2, 14.3, 14.5.  Default is 14.1)")
     print("  --use-icl         (experimental setting to use an intel compiler instead of MSVC on Windows)")
@@ -169,7 +167,7 @@ def parseopts(args):
     global INSTALLER,WHEEL,RUNTESTS,GENMAN,DISTRIBUTOR,VERSION
     global COMPRESSOR,THREADCOUNT,OSX_ARCHS
     global DEBVERSION,WHLVERSION,RPMVERSION,RPMRELEASE,GIT_COMMIT
-    global STRDXSDKVERSION, WINDOWS_SDK, MSVC_VERSION, BOOUSEINTELCOMPILER
+    global WINDOWS_SDK, MSVC_VERSION, BOOUSEINTELCOMPILER
     global COPY_PYTHON
 
     # Options for which to display a deprecation warning.
@@ -191,7 +189,7 @@ def parseopts(args):
         "optimize=","everything","nothing","installer","wheel","rtdist","nocolor",
         "version=","lzma","no-python","threads=","outputdir=","override=",
         "static","debversion=","rpmversion=","rpmrelease=","p3dsuffix=","rtdist-version=",
-        "directx-sdk=", "windows-sdk=", "msvc-version=", "clean", "use-icl",
+        "windows-sdk=", "msvc-version=", "clean", "use-icl",
         "universal", "target=", "arch=", "git-commit=", "no-copy-python",
         "cggl-incdir=", "cggl-libdir=",
         ] + removedopts
@@ -243,11 +241,6 @@ def parseopts(args):
             # Backward compatibility, OPENGL was renamed to GL
             elif (option=="--use-opengl"): PkgEnable("GL")
             elif (option=="--no-opengl"): PkgDisable("GL")
-            elif (option=="--directx-sdk"):
-                STRDXSDKVERSION = value.strip().lower()
-                if STRDXSDKVERSION == '':
-                    print("No DirectX SDK version specified. Using 'default' DirectX SDK search")
-                    STRDXSDKVERSION = 'default'
             elif (option=="--windows-sdk"):
                 WINDOWS_SDK = value.strip().lower()
             elif (option=="--msvc-version"):
@@ -528,7 +521,6 @@ LoadDependencyCache()
 
 MakeBuildTree()
 
-SdkLocateDirectX(STRDXSDKVERSION)
 SdkLocateMacOSX(OSX_ARCHS)
 SdkLocatePython(False)
 SdkLocateWindows(WINDOWS_SDK)
@@ -710,7 +702,6 @@ if (COMPILER == "MSVC"):
     if (PkgSkip("VRPN")==0):     LibName("VRPN",     GetThirdpartyDir() + "vrpn/lib/vrpn.lib")
     if (PkgSkip("VRPN")==0):     LibName("VRPN",     GetThirdpartyDir() + "vrpn/lib/quat.lib")
     if (PkgSkip("NVIDIACG")==0): LibName("CGGL",     GetThirdpartyDir() + "nvidiacg/lib/cgGL.lib")
-    if (PkgSkip("NVIDIACG")==0): LibName("CGDX9",    GetThirdpartyDir() + "nvidiacg/lib/cgD3D9.lib")
     if (PkgSkip("NVIDIACG")==0): LibName("NVIDIACG", GetThirdpartyDir() + "nvidiacg/lib/cg.lib")
     if (PkgSkip("FREETYPE")==0): LibName("FREETYPE", GetThirdpartyDir() + "freetype/lib/freetype.lib")
     if (PkgSkip("HARFBUZZ")==0):
@@ -2387,7 +2378,6 @@ DTOOL_CONFIG=[
     ("USE_DELETED_CHAIN",              '1',                      '1'),
     ("HAVE_MIMALLOC",                  'UNDEF',                  'UNDEF'),
     ("HAVE_WGL",                       '1',                      'UNDEF'),
-    ("HAVE_DX9",                       'UNDEF',                  'UNDEF'),
     ("HAVE_THREADS",                   '1',                      '1'),
     ("SIMPLE_THREADS",                 'UNDEF',                  'UNDEF'),
     ("OS_SIMPLE_THREADS",              '1',                      '1'),
@@ -2473,7 +2463,6 @@ DTOOL_CONFIG=[
     ("SIMULATE_NETWORK_DELAY",         'UNDEF',                  'UNDEF'),
     ("HAVE_CG",                        'UNDEF',                  'UNDEF'),
     ("HAVE_CGGL",                      'UNDEF',                  'UNDEF'),
-    ("HAVE_CGDX9",                     'UNDEF',                  'UNDEF'),
     ("HAVE_ARTOOLKIT",                 'UNDEF',                  'UNDEF'),
     ("HAVE_DIRECTCAM",                 'UNDEF',                  'UNDEF'),
     ("HAVE_SQUISH",                    'UNDEF',                  'UNDEF'),
@@ -2543,7 +2532,6 @@ def WriteConfigSettings():
     if (PkgSkip("NVIDIACG")==0):
         dtool_config["HAVE_CG"] = '1'
         dtool_config["HAVE_CGGL"] = '1'
-        dtool_config["HAVE_CGDX9"] = '1'
 
     if GetTarget() not in ("linux", "android"):
         dtool_config["HAVE_PROC_SELF_EXE"] = 'UNDEF'
@@ -2656,7 +2644,7 @@ def WriteConfigSettings():
     for key in sorted(dtool_config.keys()):
         val = OverrideValue(key, dtool_config[key])
 
-        if key in ('HAVE_CG', 'HAVE_CGGL', 'HAVE_CGDX9') and val != 'UNDEF':
+        if key in ('HAVE_CG', 'HAVE_CGGL') and val != 'UNDEF':
             # These are not available for ARM, period.
             conf = conf + "#ifdef __aarch64__\n"
             conf = conf + "#undef " + key + "\n"
@@ -3023,9 +3011,7 @@ configprc = configprc.replace('\r\n', '\n')
 if (GetTarget() == 'windows'):
     configprc = configprc.replace("$XDG_CACHE_HOME/panda3d", "$USER_APPDATA/Panda3D-%s" % MAJOR_VERSION)
 elif not PkgSkip("X11") and not PkgSkip("GL") and not PkgSkip("EGL") and not GetLinkAllStatic():
-    configprc = configprc.replace("#load-display pandadx9", "aux-display p3headlessgl")
-else:
-    configprc = configprc.replace("aux-display pandadx9", "")
+    configprc = configprc.replace("\nload-display pandagl\n", "\nload-display pandagl\naux-display p3headlessgl\n")
 
 if (GetTarget() == 'darwin'):
     configprc = configprc.replace("$XDG_CACHE_HOME/panda3d", "$HOME/Library/Caches/Panda3D-%s" % MAJOR_VERSION)
@@ -3040,9 +3026,6 @@ if PkgSkip("GL") and not PkgSkip("GLES2") and not GetLinkAllStatic():
     configprc = configprc.replace("\n#load-display pandagles2", "\nload-display pandagles2")
 elif PkgSkip("GLES2") or GetLinkAllStatic():
     configprc = configprc.replace("\n#load-display pandagles2", "")
-
-if PkgSkip("DX9") or GetLinkAllStatic():
-    configprc = configprc.replace("\n#load-display pandadx9", "")
 
 if PkgSkip("TINYDISPLAY") or GetLinkAllStatic():
     configprc = configprc.replace("\n#load-display p3tinydisplay", "")
@@ -3341,8 +3324,6 @@ CopyAllHeaders('panda/src/audiotraits')
 CopyAllHeaders('panda/src/distort')
 CopyAllHeaders('panda/src/downloadertools')
 CopyAllHeaders('panda/src/windisplay')
-CopyAllHeaders('panda/src/dxgsg9')
-CopyAllHeaders('panda/metalibs/pandadx9')
 if not PkgSkip("EGG"):
     CopyAllHeaders('panda/src/egg')
     CopyAllHeaders('panda/src/egg2pg')
@@ -4272,7 +4253,7 @@ if not PkgSkip("VISION"):
         if OPENCV_VER_23:
             DefSymbol("OPENCV", "OPENCV_VER_23")
 
-    OPTS=['DIR:panda/src/vision', 'BUILDING:VISION', 'ARTOOLKIT', 'OPENCV', 'DX9', 'DIRECTCAM', 'JPEG', 'EXCEPTIONS']
+    OPTS=['DIR:panda/src/vision', 'BUILDING:VISION', 'ARTOOLKIT', 'OPENCV', 'DIRECTCAM', 'JPEG', 'EXCEPTIONS']
     TargetAdd('p3vision_composite1.obj', opts=OPTS, input='p3vision_composite1.cxx', dep=[
         'dtool_have_ffmpeg.dat',
         'dtool_have_opencv.dat',
@@ -4283,7 +4264,7 @@ if not PkgSkip("VISION"):
     TargetAdd('libp3vision.dll', input=COMMON_PANDA_LIBS)
     TargetAdd('libp3vision.dll', opts=OPTS)
 
-    OPTS=['DIR:panda/src/vision', 'ARTOOLKIT', 'OPENCV', 'DX9', 'DIRECTCAM', 'JPEG', 'EXCEPTIONS']
+    OPTS=['DIR:panda/src/vision', 'ARTOOLKIT', 'OPENCV', 'DIRECTCAM', 'JPEG', 'EXCEPTIONS']
     IGATEFILES=GetDirectoryContents('panda/src/vision', ["*.h", "*_composite*.cxx"])
     TargetAdd('libp3vision.in', opts=OPTS, input=IGATEFILES)
     TargetAdd('libp3vision.in', opts=['IMOD:panda3d.vision', 'ILIB:libp3vision', 'SRCDIR:panda/src/vision'])
@@ -4470,28 +4451,9 @@ if not PkgSkip("ZLIB") and not PkgSkip("DEPLOYTOOLS"):
 if GetTarget() == 'windows':
     OPTS=['DIR:panda/src/windisplay', 'BUILDING:PANDAWIN']
     TargetAdd('p3windisplay_composite1.obj', opts=OPTS+["BIGOBJ"], input='p3windisplay_composite1.cxx')
-    TargetAdd('p3windisplay_windetectdx9.obj', opts=OPTS + ["DX9"], input='winDetectDx9.cxx')
     TargetAdd('libp3windisplay.dll', input='p3windisplay_composite1.obj')
-    TargetAdd('libp3windisplay.dll', input='p3windisplay_windetectdx9.obj')
     TargetAdd('libp3windisplay.dll', input=COMMON_PANDA_LIBS)
     TargetAdd('libp3windisplay.dll', opts=['WINIMM', 'WINGDI', 'WINKERNEL', 'WINOLDNAMES', 'WINUSER', 'WINMM',"BIGOBJ"])
-
-#
-# DIRECTORY: panda/metalibs/pandadx9/
-#
-
-if GetTarget() == 'windows' and not PkgSkip("DX9"):
-    OPTS=['DIR:panda/src/dxgsg9', 'BUILDING:PANDADX', 'DX9', 'NVIDIACG', 'CGDX9']
-    TargetAdd('p3dxgsg9_dxGraphicsStateGuardian9.obj', opts=OPTS, input='dxGraphicsStateGuardian9.cxx')
-    TargetAdd('p3dxgsg9_composite1.obj', opts=OPTS, input='p3dxgsg9_composite1.cxx')
-    OPTS=['DIR:panda/metalibs/pandadx9', 'BUILDING:PANDADX', 'DX9', 'NVIDIACG', 'CGDX9']
-    TargetAdd('pandadx9_pandadx9.obj', opts=OPTS, input='pandadx9.cxx')
-    TargetAdd('libpandadx9.dll', input='pandadx9_pandadx9.obj')
-    TargetAdd('libpandadx9.dll', input='p3dxgsg9_dxGraphicsStateGuardian9.obj')
-    TargetAdd('libpandadx9.dll', input='p3dxgsg9_composite1.obj')
-    TargetAdd('libpandadx9.dll', input='libp3windisplay.dll')
-    TargetAdd('libpandadx9.dll', input=COMMON_PANDA_LIBS)
-    TargetAdd('libpandadx9.dll', opts=['MODULE', 'ADVAPI', 'WINGDI', 'WINKERNEL', 'WINUSER', 'WINMM', 'DX9', 'NVIDIACG', 'CGDX9'])
 
 #
 # DIRECTORY: panda/src/egg/
@@ -4927,8 +4889,6 @@ if not PkgSkip("SPEEDTREE"):
     TargetAdd('libpandaspeedtree.dll', opts=['SPEEDTREE'])
     if SDK["SPEEDTREEAPI"] == 'OpenGL':
         TargetAdd('libpandaspeedtree.dll', opts=['GL', 'NVIDIACG', 'CGGL'])
-    elif SDK["SPEEDTREEAPI"] == 'DirectX9':
-        TargetAdd('libpandaspeedtree.dll', opts=['DX9', 'NVIDIACG', 'CGDX9'])
 
 #
 # DIRECTORY: panda/src/testbed/

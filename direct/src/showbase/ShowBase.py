@@ -768,7 +768,7 @@ class ShowBase(DirectObject.DirectObject):
     def makeModulePipe(self, moduleName):
         """
         Returns a GraphicsPipe from the indicated module,
-        e.g. 'pandagl' or 'pandadx9'.  Does not affect base.pipe or
+        e.g. 'pandagl' or 'p3tinydisplay'.  Does not affect base.pipe or
         base.pipeList.
 
         :rtype: panda3d.core.GraphicsPipe

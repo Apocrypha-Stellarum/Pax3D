@@ -13,7 +13,6 @@
 
 #include "winGraphicsPipe.h"
 #include "config_windisplay.h"
-#include "displaySearchParameters.h"
 #include "displayInformation.h"
 #include "dtool_config.h"
 #include "pbitops.h"
@@ -312,17 +311,6 @@ WinGraphicsPipe() {
       0);
   }
 
-#ifdef HAVE_DX9
-  // Use D3D to get display info.  This is disabled by default as it is slow.
-  if (request_dxdisplay_information) {
-    if (windisplay_cat.is_debug()) {
-      windisplay_cat.debug() << "Using Direct3D 9 to fetch display information.\n";
-    }
-    DisplaySearchParameters display_search_parameters_dx9;
-    int dx9_display_information (DisplaySearchParameters &display_search_parameters_dx9, DisplayInformation *display_information);
-    dx9_display_information(display_search_parameters_dx9, _display_information);
-  } else
-#endif
   {
     // Use the Win32 API to query the available display modes.
     if (windisplay_cat.is_debug()) {

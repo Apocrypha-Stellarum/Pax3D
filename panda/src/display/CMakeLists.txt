@@ -29,7 +29,6 @@ set(P3DISPLAY_HEADERS
   renderBuffer.h
   screenshotRequest.I screenshotRequest.h
   stereoDisplayRegion.I stereoDisplayRegion.h
-  displaySearchParameters.h
   displayInformation.h
   subprocessWindow.h subprocessWindow.I
   touchInfo.h
@@ -43,7 +42,6 @@ set(P3DISPLAY_SOURCES
   displayRegion.cxx
   displayRegionCullCallbackData.cxx
   displayRegionDrawCallbackData.cxx
-  displaySearchParameters.cxx
   displayInformation.cxx
   frameBufferProperties.cxx
   graphicsEngine.cxx

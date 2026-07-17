@@ -24,7 +24,6 @@ NotifyCategoryDecl(windisplay, EXPCL_PANDAWIN, EXPTP_PANDAWIN);
 extern ConfigVariableBool do_vidmemsize_check;
 extern ConfigVariableBool auto_cpu_data;
 extern ConfigVariableBool ime_hide;
-extern ConfigVariableBool request_dxdisplay_information;
 extern ConfigVariableBool dpi_aware;
 extern ConfigVariableBool dpi_window_resize;
 extern ConfigVariableBool paste_emit_keystrokes;
