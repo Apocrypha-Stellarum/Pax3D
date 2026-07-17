@@ -63,6 +63,9 @@ def main():
     ap.add_argument('--no-village', action='store_true')
     ap.add_argument('--pcf', type=int, default=3)
     ap.add_argument('--bias-world', type=float, default=0.18)
+    ap.add_argument('--normal-bias', type=float, default=0.0,
+                    help='slope-scaled (grazing) shadow bias in world units '
+                         '(0 = off; the Session I acne fix)')
     ap.add_argument('--max-lights', type=int, default=10)
     ap.add_argument('--alts', default='34')
     ap.add_argument('--azs', default='120,240')
@@ -133,6 +136,8 @@ def main():
             'enable_fog': True,
         })
     pipeline = h.adapter.pipeline
+    if args_probe.normal_bias:
+        pipeline.set_shadow_normal_bias(args_probe.normal_bias)
     base = h.base
 
     import gltf as gltf_mod

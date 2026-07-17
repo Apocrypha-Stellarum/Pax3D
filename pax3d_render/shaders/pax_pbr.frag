@@ -102,6 +102,14 @@ uniform float max_reflection_lod;
 // shadow-extent depth); the pipeline rescales world-unit biases before
 // upload. u_shadow_texel = 1/shadow_map_size, for the multi-tap filter.
 uniform float global_shadow_bias;
+// Slope-scaled (grazing-angle) shadow bias, also in NORMALIZED light-space
+// depth per unit tan(theta): the pipeline uploads world_units/extent_depth.
+// Added to global_shadow_bias scaled by tan(theta) between the receiver
+// normal and the light, so grazing receivers (where one shadow texel spans
+// a large depth and a constant bias self-shadows into acne bands) get just
+// enough extra bias while normal-incidence receivers are untouched.
+// Default 0 => byte-identical to the constant-bias-only path (opt-in).
+uniform float u_shadow_normal_bias;
 uniform float u_shadow_texel;
 // world -> light-0 shadow-UV matrix, pushed by the pipeline (debug
 // modes 12/13: fragment-recomputed shadow coords vs the interpolated
@@ -186,9 +194,23 @@ float diffuse_function() {
 }
 
 #ifdef ENABLE_SHADOWS
-float shadow_caster_contrib(sampler2DShadow shadowmap, vec4 shadowpos) {
+// tan(theta) between the receiver normal and the light, from NdotL, clamped
+// so a near-perpendicular receiver (ndl->0) does not blow the bias up. The
+// full grazing bias = global_shadow_bias + u_shadow_normal_bias * slope.
+float shadow_slope_from_ndl(float ndl) {
+    float c = clamp(ndl, 0.0, 1.0);
+    float slope = sqrt(max(1.0 - c * c, 0.0)) / max(c, 0.15);  // tan(theta)
+    return min(slope, 8.0);
+}
+
+float slope_scaled_bias(float ndl) {
+    return global_shadow_bias + u_shadow_normal_bias * shadow_slope_from_ndl(ndl);
+}
+
+float shadow_caster_contrib_biased(sampler2DShadow shadowmap, vec4 shadowpos,
+                                   float bias) {
     vec3 light_space_coords = shadowpos.xyz / shadowpos.w;
-    light_space_coords.z -= global_shadow_bias;
+    light_space_coords.z -= bias;
 #if SHADOW_FILTER_SIZE == 3
     // 3x3 multi-tap PCF: 9 hardware-filtered taps, one texel apart.
     float shadow = 0.0;
@@ -352,7 +374,13 @@ void main() {
         float spotcutoff = p3d_LightSource[i].spotCosCutoff;
         float shadowSpot = (spotcutoff > SPOTSMOOTH) ? smoothstep(spotcutoff-SPOTSMOOTH, spotcutoff+SPOTSMOOTH, spotcos) : 1.0;
 #ifdef ENABLE_SHADOWS
-        float shadow_caster = shadow_caster_contrib(p3d_LightSource[i].shadowMap, v_shadow_pos[i]);
+        // Slope-scaled bias: view-space NdotL == world-space NdotL (the
+        // receiver/light angle is frame-invariant), so dot(n, l) here is the
+        // grazing measure. With u_shadow_normal_bias=0 this is exactly the
+        // constant-bias path (opt-in, byte-identical when off).
+        float shadow_caster = shadow_caster_contrib_biased(
+            p3d_LightSource[i].shadowMap, v_shadow_pos[i],
+            slope_scaled_bias(dot(n, l)));
 #else
         float shadow_caster = 1.0;
 #endif
@@ -476,8 +504,14 @@ void main() {
         color = vec4(suv, 1.0);
     } else if (u_debug_lighting > 10.5 && u_debug_lighting < 11.5) {
         // Mode 11: shadow term of light 0 (white=lit, black=shadowed).
-        float s = shadow_caster_contrib(p3d_LightSource[0].shadowMap,
-                                        v_shadow_pos[0]);
+        // Uses the SAME slope-scaled bias as the lit pass, so this
+        // instrument shows exactly what the shaded frame samples (grazing
+        // acne visible with u_shadow_normal_bias=0, cleared when it is set).
+        vec3 l0 = normalize(p3d_LightSource[0].position.xyz
+                            - v_view_position * p3d_LightSource[0].position.w);
+        float s = shadow_caster_contrib_biased(p3d_LightSource[0].shadowMap,
+                                               v_shadow_pos[0],
+                                               slope_scaled_bias(dot(n, l0)));
         color = vec4(vec3(s), 1.0);
     } else if (u_debug_lighting > 11.5 && u_debug_lighting < 12.5) {
         // Mode 12: |interpolated - recomputed| shadow coord of light 0.
@@ -494,8 +528,12 @@ void main() {
         // Mode 13: shadow term of light 0 via the RECOMPUTED coord (the
         // candidate fix path). Compare with mode 11: if 13 is correct
         // where 11 is corrupted, the varying interpolation is the defect.
+        // Same slope-scaled bias as mode 11 / the lit pass.
+        vec3 l0 = normalize(p3d_LightSource[0].position.xyz
+                            - v_view_position * p3d_LightSource[0].position.w);
         vec4 s2 = u_probe_shadow_world_mat * vec4(v_world_position, 1.0);
-        float s = shadow_caster_contrib(p3d_LightSource[0].shadowMap, s2);
+        float s = shadow_caster_contrib_biased(p3d_LightSource[0].shadowMap,
+                                               s2, slope_scaled_bias(dot(n, l0)));
         color = vec4(vec3(s), 1.0);
     } else if (u_debug_lighting > 13.5 && u_debug_lighting < 14.5) {
         // Mode 14: 3-level probe of the GPU-BOUND depth texture at this

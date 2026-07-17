@@ -235,7 +235,45 @@ pipeline divides by the *current* extent depth and rescales on every
 paxtest `shadow_quality` `bias_trap_at_scale` (erasure at defaults) /
 `bias_world_units_restores` / `bias_world_extent_invariant`.
 
-### 5.2 Filtering: `shadow_filter_size` (1 | 3)
+### 5.2 Grazing-angle acne & slope-scaled bias (`shadow_normal_bias_world`)
+
+**The problem.** A *constant* depth bias (§5.1) is right for a receiver
+facing the sun but wrong for one grazing it. On a receiver at angle θ to
+the light, one shadow-map texel spans a receiver depth of
+`texel_world × tan(θ)`, so a fragment can sit that far below the stored
+depth and **self-shadow**. As the sun drops, `tan(θ)` grows — the open
+ground breaks into fine terracing/acne bands whose severity scales like
+**1/tan(alt)**. Because the acne darkens open ground, real cast shadows
+lose contrast and read as *vanishing* — the exact openworld western-low-
+sun signature (P0 addendum), reproduced byte-identically on stock 1.10.16
+and Pax3D (so: GLSL, not C++). A bigger *constant* bias can't rescue it:
+the value needed to clear the grazing acne is large enough to lift real
+shadows off their casters everywhere else (peter-panning) — on varied
+terrain no constant bias threads both.
+
+**The fix.** `shadow_normal_bias_world=<units>` (init) or
+`set_shadow_normal_bias(units)` (runtime, uniform-only) adds a bias term
+proportional to `tan(θ)` — from `dot(n, l)` at the light-loop call site —
+so it grows exactly where the receiver grazes and contributes ~nothing at
+normal incidence. World-unit, rescaled by extent depth like
+`shadow_bias_world`. **Default 0.0 = OFF = byte-identical** to the
+constant-only path (opt-in; view-space NdotL == world-space NdotL, so the
+angle is frame-invariant). The shader clamps `tan(θ)` at 8 so a near-
+perpendicular receiver can't blow the bias up.
+
+**Sizing.** To clear acne the slope term must exceed the half-texel
+offset: `N × tan(θ) > 0.5 × texel_world × tan(θ)` — the `tan(θ)` cancels,
+so **`N ≈ 0.5–1.0 × texel_world` clears acne at any angle**, while a real
+shadow's depth gap (`caster_height / sin(alt)`, metres) is far larger and
+survives. On sloped terrain the projected texel is larger than the flat
+`texel_world`, so start at ~2–4× texel and tune up until the terracing is
+gone, backing off if short/contact shadows start lifting. Measured record:
+paxtest `shadow_grazing` (acne 0.13 → 0.00 with the real umbra kept, and
+`over_bias_erodes_shadow` proves the umbra check has teeth); real-terrain
+proof: `probe_openworld_scale.py --normal-bias` over the village GLB at
+az 240 (terracing gone, building/tree shadows kept).
+
+### 5.3 Filtering: `shadow_filter_size` (1 | 3)
 
 Default 1 = the original single hardware-PCF tap (byte-identical).
 3 = 3×3 multi-tap PCF (9 hardware taps one texel apart via
@@ -245,10 +283,11 @@ edge transition 6 px → 16 px with interior/lit luminance unchanged
 `set_shadow_filter_size(n)` (recompile-class). Interaction to know:
 multi-tap sampling on a sloped receiver needs
 `bias_world ≥ texel_world × tan(slope-vs-light)` or open surfaces can
-self-shadow; at real map densities (e.g. 4096² over 280 m ⇒ 0.068 m
-texels) any sane world bias clears this comfortably.
+self-shadow. At real map densities a large constant bias "clears" this
+only by erasing real shadows — the correct lever at grazing angles is the
+slope-scaled bias (§5.2), not a bigger constant one.
 
-### 5.3 Opting out of casting: `exclude_from_shadows(np)`
+### 5.4 Opting out of casting: `exclude_from_shadows(np)`
 
 Configure a dedicated camera-mask bit for the sun's shadow camera
 (`shadow_caster_mask=<bit index or BitMask32>`, or
@@ -261,7 +300,7 @@ cloud crossing the sun ray shadows the whole map). Assigning the mask
 alone changes nothing; nodes cast by default. Proven by
 `nocast_excluded_ground_lit` / `nocast_still_visible_to_camera`.
 
-### 5.4 Skinned casters — proven working (Session E)
+### 5.5 Skinned casters — proven working (Session E)
 
 The depth pass renders skinned Characters correctly: hardware AND CPU
 skinning, egg- and glTF-loaded (`panda3d-gltf` + `Actor`), GLSL 120 and
@@ -277,10 +316,12 @@ erases short casters — characters — while sparing tall ones) and
 measurement contamination by co-located proxy geometry.
 
 Shader debug modes for shadow work: `set_debug_lighting(10)` = light-0
-shadow-map UV + depth ref, `11` = raw shadow term (openworld
-contribution, permanent).
+shadow-map UV + depth ref, `11` = shadow term (openworld contribution,
+permanent) — now sampled with the same slope-scaled bias as the lit pass,
+so grazing acne shows at `shadow_normal_bias_world=0` and clears as it is
+raised. Modes 12–16 are the Session H probe instruments.
 
-### 5.5 Per-node skinning path: `set_hardware_skinning(np, enabled)` (Session G)
+### 5.6 Per-node skinning path: `set_hardware_skinning(np, enabled)` (Session G)
 
 `pipeline.set_hardware_skinning(np, False)` pins a subtree to the
 CPU-skinning path while the rest of the scene stays on the GPU;
@@ -343,7 +384,7 @@ Three cost classes — keep new parameters within this taxonomy:
 
 | Class | Cost | Parameters / methods |
 |---|---|---|
-| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_caster_mask`, `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile) |
+| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile) |
 | Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size` |
 | FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, (`bloom_levels`, `msaa_samples` at init) |
 
@@ -351,7 +392,8 @@ Constructor parameters (all keyword): `render_node, window, camera_node,
 taskmgr, msaa_samples=4, max_lights=8, enable_shadows=False,
 use_normal_maps=False, use_emission_maps=True, use_occlusion_maps=False,
 enable_fog=False, exposure=0.0, shadow_bias=0.005,
-shadow_bias_world=None, shadow_filter_size=1, shadow_caster_mask=None,
+shadow_bias_world=None, shadow_normal_bias_world=0.0,
+shadow_filter_size=1, shadow_caster_mask=None,
 enable_hardware_skinning=True, calculate_normalmap_blue=True,
 enable_bloom=False, bloom_strength=1.0, bloom_intensity=1.0,
 bloom_levels=5, tonemap_operator='aces', enable_taa=False, debug=False,

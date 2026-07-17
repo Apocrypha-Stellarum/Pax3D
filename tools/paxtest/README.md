@@ -100,6 +100,15 @@ placement, the normalized-bias trap (measured record), `shadow_bias_world`,
 3×3 PCF widening, and `exclude_from_shadows()` — top-down over a ground
 plane so every expected shadow position is computable.
 
+**`test_shadow_grazing.py`** (Session I, openworld P0 addendum) —
+grazing-angle self-shadow acne and the slope-scaled bias fix
+(`shadow_normal_bias_world`). Low sun over flat ground so grazing is set
+purely by altitude; measures the pure shadow term (mode 11) as a
+black-fraction. Asserts acne present at `normal_bias=0`, cleared when set,
+a real caster's umbra retained (no peter-pan), and — with teeth — that a
+too-large value erodes the real umbra. The mechanism gate; the varied-
+terrain proof is `probe_openworld_scale.py --normal-bias`.
+
 **`test_skinning.py`** (Session G, openworld P1) — hardware vs CPU
 skinning correctness plus the per-node opt-out API. Three layers: the
 egg sheet posed and rendered GPU vs `set_hardware_skinning(np, False)`
@@ -155,6 +164,7 @@ to pax3d_render — its column now mirrors pax3d_render except for `rebuild`
 | shadows | skip | skip | skip | **PASS (incl. off-origin extent, skinned + glTF casters, @softskin)** |
 | shadows_gltf | skip | skip | skip | **PASS (glTF caster AND receiver, 45° sun)** |
 | shadow_quality | skip | skip | skip | **PASS** |
+| shadow_grazing | skip | skip | skip | **PASS (grazing acne cleared by slope-scaled bias, umbra kept)** |
 | ftl_blur | skip | skip | PASS | PASS |
 | scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)**; **@logdepth PASS (R4.1)** |
 | skinning | skip | skip | skip | **PASS (opt-out API + both openworld packs)** |

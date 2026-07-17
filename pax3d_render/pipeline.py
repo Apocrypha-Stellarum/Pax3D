@@ -132,7 +132,8 @@ class Pipeline:
                  enable_shadows=False, use_normal_maps=False,
                  use_emission_maps=True, use_occlusion_maps=False,
                  enable_fog=False, exposure=0.0, shadow_bias=0.005,
-                 shadow_bias_world=None, shadow_filter_size=1,
+                 shadow_bias_world=None, shadow_normal_bias_world=0.0,
+                 shadow_filter_size=1,
                  shadow_caster_mask=None,
                  enable_hardware_skinning=True, calculate_normalmap_blue=True,
                  enable_bloom=False, bloom_strength=1.0, bloom_intensity=1.0,
@@ -170,6 +171,14 @@ class Pipeline:
         # set; rescaled automatically when the extent depth changes).
         self.shadow_bias = shadow_bias
         self.shadow_bias_world = shadow_bias_world
+        # Slope-scaled (grazing-angle) bias, in WORLD units, same rescaling
+        # discipline as shadow_bias_world (divided by the extent depth before
+        # upload so it stays physically constant across extent changes). 0.0
+        # = OFF = byte-identical to the constant-bias-only path (opt-in until
+        # proven — the openworld dev A/Bs it at az 240 low sun). It adds
+        # bias only where the receiver grazes the sun, so it clears open-
+        # ground acne without peter-panning normal-incidence shadows.
+        self.shadow_normal_bias_world = float(shadow_normal_bias_world)
         if shadow_filter_size not in (1, 3):
             print(f'[Pax3DRender] Unsupported shadow_filter_size '
                   f'{shadow_filter_size!r}, falling back to 1')
@@ -985,6 +994,12 @@ class Pipeline:
         else:
             bias = self.shadow_bias
         self.render_node.set_shader_input('global_shadow_bias', bias)
+        # Slope-scaled bias: same world->normalized rescaling so the world
+        # offset stays constant as the extent depth changes. 0.0 => the
+        # slope term contributes nothing (byte-identical opt-out).
+        self.render_node.set_shader_input(
+            'u_shadow_normal_bias',
+            self.shadow_normal_bias_world / max(self._shadow_depth, 1e-6))
         self.render_node.set_shader_input(
             'u_shadow_texel', 1.0 / max(self.shadow_map_size, 1))
 
@@ -1003,6 +1018,25 @@ class Pipeline:
         else:
             self.shadow_bias = float(value)
             self.shadow_bias_world = None
+        self._push_shadow_bias()
+
+    def set_shadow_normal_bias(self, world_units):
+        """Set the slope-scaled (grazing-angle) shadow bias at runtime, in
+        WORLD units (uniform-only, no rebuild).
+
+        The value is the extra depth bias applied per unit tan(theta) of the
+        angle between a receiver and the sun, so it targets exactly the
+        grazing surfaces that self-shadow into acne bands at low sun while
+        leaving normal-incidence shadows untouched (unlike a bigger constant
+        bias, which peter-pans everything). Stays physically constant across
+        set_shadow_extent changes. 0.0 disables the slope term (byte-
+        identical to the constant-bias-only path).
+
+        Start around 0.5-1.0x the shadow texel's world size at the worst
+        grazing angle and tune with the mode-11 acne fraction; see
+        tools/paxtest/test_shadow_grazing.py.
+        """
+        self.shadow_normal_bias_world = float(world_units)
         self._push_shadow_bias()
 
     def set_shadow_filter_size(self, size):
