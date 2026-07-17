@@ -73,8 +73,45 @@ toggle-on (the toggle exercises the runtime shader-recompile path, which
 once wiped all shader inputs — guarded here). Session D adds the off-origin
 extent checks: geometry outside the frustum samples LIT,
 `set_shadow_extent(center=...)` recenters onto a far cluster, and
-positioning the light node leaves lighting bit-identical. Skips pipelines
-without the directional sun mode.
+positioning the light node leaves lighting bit-identical. Session E adds
+the skinned casters (egg-synthesized sheet: depth texels, ground darkening,
+shadow-follows-pose), and a real panda3d-gltf Actor as caster — whose
+ground-darkening line was promoted from `[info]` to the hard assertion
+`gltf_caster_darkens_ground` in Session G (openworld ask #1). Two traps
+are encoded there: `get_anim_names()` ordering is nondeterministic (the
+anim is now sorted and the pose pinned), and the "pole" sample pixel is
+the sphere's FRONT surface (world y=-0.76), which a thin standing caster
+does not shadow — the actor is y-shifted to put its trunk's shadow column
+over the sampled point. The `--soft-skin` variant reruns everything on the
+CPU-skinning path. Skips pipelines without the directional sun mode.
+
+**`test_shadows_gltf.py`** (Session G, openworld ask #2) — lit-pass
+shadows with glTF-material geometry as BOTH caster and receiver, under a
+45-degree ANGLED sun. Synthesizes a .gltf scene in-code (textured ground
+plane + box, real `baseColorTexture` sampling through panda3d-gltf — the
+flat-color scenes demonstrably cannot catch this class), asserts the box
+darkens the textured ground, and repeats with the pack-1 openworld
+character as caster when the asset is present. Guards
+`receiver_is_gltf_material` so the test can't silently degrade to the
+flat-color path.
+
+**`test_shadow_quality.py`** (Session E) — angled-sun analytic shadow
+placement, the normalized-bias trap (measured record), `shadow_bias_world`,
+3×3 PCF widening, and `exclude_from_shadows()` — top-down over a ground
+plane so every expected shadow position is computable.
+
+**`test_skinning.py`** (Session G, openworld P1) — hardware vs CPU
+skinning correctness plus the per-node opt-out API. Three layers: the
+egg sheet posed and rendered GPU vs `set_hardware_skinning(np, False)`
+(images must match, the depth pass must follow the per-node path,
+`clear_hardware_skinning()` must restore); a pure-Python simulation of
+the GPU palette math (top-4 weighted blend-matrix sum on bind-pose
+vertices) against `animate_vertices()` (the CPU truth); and a rendered
+GPU/CPU A/B per openworld character pack (the 94-joint Rigify pack 2
+included). Session G verdict: the reported concertina does NOT reproduce
+on a clean engine — pack 1 pixel-exact across all 50 Walk frames, pack 2
+≤0.25% (shading-level), palette math exact, net Rigify compensating-scale
+chains compose to 1.000.
 
 **`test_ftl_blur.py`** — the FTL warp distortion pass (radial blur +
 chromatic aberration in tonemap); asserts zero-strength passthrough and
@@ -101,9 +138,10 @@ the correct surface's favor and mimic a working depth buffer.
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Results snapshot (post Session D, 2026-07-17)
+## Results snapshot (post Session G, 2026-07-17)
 
-Same results on stock 1.10.16 and Pax3D 1.11.0. Note: with the game's
+Same results on stock 1.10.16 and Pax3D 1.11.0 (Window-3 wheel), both
+baselines — 58 jobs per matrix, 4 matrices. Note: with the game's
 `use_pax3d_render` flag flipped (Session D), the `pax_pbr` adapter routes
 to pax3d_render — its column now mirrors pax3d_render except for `rebuild`
 (the test exercises the old attach pattern, which fails by design).
@@ -111,12 +149,15 @@ to pax3d_render — its column now mirrors pax3d_render except for `rebuild`
 | Test | none | simplepbr | pax_pbr (routed) | pax3d_render |
 |---|---|---|---|---|
 | gamma | PASS | PASS | PASS | PASS |
-| lighting | PASS | PASS | PASS | PASS (both sun modes) |
+| lighting | PASS (game); FAIL @modern (fixed-function control under gl 3 2 — identical both engines, pre-existing) | PASS | PASS | PASS (both sun modes) |
 | bloom | skip | skip | PASS | **PASS (F3 fixed, Session D)** |
 | rebuild | skip | skip | FAIL (F4, by design of the old pattern) | **PASS** |
-| shadows | skip | skip | skip | **PASS (incl. off-origin extent)** |
+| shadows | skip | skip | skip | **PASS (incl. off-origin extent, skinned + glTF casters, @softskin)** |
+| shadows_gltf | skip | skip | skip | **PASS (glTF caster AND receiver, 45° sun)** |
+| shadow_quality | skip | skip | skip | **PASS** |
 | ftl_blur | skip | skip | PASS | PASS |
 | scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)**; **@logdepth PASS (R4.1)** |
+| skinning | skip | skip | skip | **PASS (opt-out API + both openworld packs)** |
 
 `pax3d_simplepbr` (retired) keeps its historical bloom/rebuild failures.
 `scale` failing is the DOCUMENTED baseline until R4 lands — see its entry
@@ -138,3 +179,14 @@ Key established facts (full analysis:
 - **Scale defects (R4) are reproduced** — depth resolution ~1.9 IEU at
   2500 IEU under the game frustum; float32 view-matrix precision loss
   needs a rotated camera to manifest.
+- **A luminance check is only as good as its sample geometry (Session G)**
+  — the glTF-caster assertion initially FAILED on a healthy engine because
+  the sampled "pole" pixel is the sphere's front surface, outside a thin
+  caster's shadow column, and because the nondeterministic anim pick had
+  been silently choosing wide poses. Pin poses; verify the sample point is
+  inside the caster's shadow volume (the depth-map diff bbox tells you).
+- **The 94-joint Rigify concertina (openworld P1) does not reproduce on a
+  clean engine (Session G)** — GPU palette == CPU truth at every layer
+  measured (math sim exact, renders ≤0.25% shading-level across the full
+  Walk, net compensating-scale chains = 1.000). Guarded permanently by
+  test_skinning; field re-verification requested.

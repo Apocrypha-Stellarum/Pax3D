@@ -280,6 +280,29 @@ Shader debug modes for shadow work: `set_debug_lighting(10)` = light-0
 shadow-map UV + depth ref, `11` = raw shadow term (openworld
 contribution, permanent).
 
+### 5.5 Per-node skinning path: `set_hardware_skinning(np, enabled)` (Session G)
+
+`pipeline.set_hardware_skinning(np, False)` pins a subtree to the
+CPU-skinning path while the rest of the scene stays on the GPU;
+`clear_hardware_skinning(np)` reverts to the pipeline-wide flag. Built as
+the openworld P1 safety valve (global CPU skinning cost them 112→8 fps;
+per-node costs only the affected characters).
+
+Mechanism (all engine-native, zero cost when unused): a **flag-only**
+`ShaderAttrib` is composed onto the node — `ShaderAttrib` flags compose
+per-bit (`_has_flags` masking), so the shader and its inputs are inherited
+unchanged and only `F_hardware_skinning` flips. `StandardMunger` reads the
+flag from the NET composed state per Geom, so the opted-out node's
+vertices are CPU-animated while its neighbors keep the GPU palette. The
+attrib rides at **override 2**, outranking the shadow camera's
+initial-state attrib (override 1) — the depth pass follows the same
+per-node path, so shadows keep matching the visible pose. The always-on
+`ENABLE_SKINNING` shader block degrades to identity for CPU-skinned data
+(no transform_index/weight columns → GL default attribs + identity
+palette), so one compiled shader serves both paths. Proven by
+test_skinning: pixel-exact vs the GPU path on the same pose, shadow
+follows pose while opted out, round-trip restores exactly.
+
 ---
 
 ## 6. Auxiliary Scene Cameras (R1 — the skybox-death fix)
@@ -320,7 +343,7 @@ Three cost classes — keep new parameters within this taxonomy:
 
 | Class | Cost | Parameters / methods |
 |---|---|---|
-| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_caster_mask`, `exclude_from_shadows`/`include_in_shadows` |
+| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_caster_mask`, `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile) |
 | Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size` |
 | FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, (`bloom_levels`, `msaa_samples` at init) |
 

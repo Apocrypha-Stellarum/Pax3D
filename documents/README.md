@@ -13,7 +13,9 @@ superseded — check the banner at the top of each file.
 | `BUILD_WINDOW_1_CATCHUP.md` | HISTORICAL — completed | Window 1 procedure. Built, fully validated and signed off 2026-07-17; kept for reference. |
 | `OPENWORLD_FEEDBACK_RESPONSE.md` | **CURRENT** | Round 1 (Session E): P0 root cause (bias trap + contaminated instrument), landed APIs, backlog. |
 | `OPENWORLD_FEEDBACK_RESPONSE_2.md` | **CURRENT** | Round 2 (Session F): the evening P0 verdict (contaminated engine tree, not a regression), the real skinning P1 queued, planetary-track policy. |
-| `HANDOVERS/handover_session_f_windows_1-3.md` | **CURRENT** | Session F handover: what was built/validated/deleted, machine migration, next-session priorities. |
+| `OPENWORLD_FEEDBACK_RESPONSE_3.md` | **CURRENT** | Round 3 (Session G): both asks landed (assertion + glTF caster/receiver test), P1 concertina not reproducible on the clean engine (re-measurement requested), per-node `set_hardware_skinning()` delivered. |
+| `HANDOVERS/handover_session_f_windows_1-3.md` | HISTORICAL — superseded | Session F handover: builds/validation/deletions, machine migration. |
+| `HANDOVERS/handover_session_g_hardening_skinning.md` | **CURRENT** | Session G handover: paxtest hardening, the P1 verdict, per-node skinning API, next-session priorities. |
 | `PAXTEST_FINDINGS_SESSION_A.md` | **CURRENT** | The harness findings that rebooted the program (double-gamma disproven, DirectionalLight exonerated, bloom defect cornered). |
 | `../tools/paxtest/README.md` | **CURRENT** | Test harness usage and results snapshot. |
 | `BUILDING_PAX3D.md` | REFERENCE | Building the engine wheel from source — thirdparty setup, every pitfall, build-window policy note. |

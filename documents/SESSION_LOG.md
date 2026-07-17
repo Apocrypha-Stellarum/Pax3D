@@ -183,3 +183,40 @@ one audio load (reproduces on stock 1.10.16 — pre-existing). Docs
 refreshed this session; next-session priorities: paxtest hardening
 (openworld asks), the REAL new P1 (94-joint Rigify hardware-skinning
 deformation), then the game-side adoption queue.
+
+**Session G update (2026-07-17 evening, harness hardening + the P1
+verdict):** Both openworld asks landed. (1) `gltf_caster_ground_lum`
+promoted to the hard assertion `gltf_caster_darkens_ground` — and the
+promotion immediately earned its keep by FAILING on a healthy engine,
+exposing two test-geometry traps: `get_anim_names()` ordering is
+nondeterministic (every historical 0.086 reading from this probe was
+pose luck — 'Dance' covers the sample point, 'A-poses' doesn't), and
+the sampled "pole" pixel is the receiver sphere's FRONT surface
+(y=−0.76), outside a thin caster's shadow column (depth maps proved the
+caster was written correctly on both engines — 1 texel difference
+between stock and Pax3D out of 2,803). Anim sorted + pose pinned +
+actor y-shifted; 0.800→0.086 deterministic on both engines. Established
+fact #12. (2) New `test_shadows_gltf.py`: synthesized textured-glTF
+scene (real baseColorTexture materials through panda3d-gltf), glTF
+caster AND receiver, 45° angled sun, optional real-character caster —
+green everywhere. **The P1 (94-joint Rigify concertina) does not
+reproduce on the clean engine** (fact #13): palette-math simulation ==
+`animate_vertices` exactly; rendered GPU/CPU A/B across all 50 Walk
+frames — pack 1 0.00% every frame, pack 2 ≤0.25% shading-level only
+(worst frames eyeballed side-by-side: identical silhouettes); the
+DEF-spine compensating-scale chains compose to net 1.000; the palette
+cap was [100] in every shader era. Verdict mirrors the P0:
+contaminated-era measurement suspected; re-measurement requested
+(`OPENWORLD_FEEDBACK_RESPONSE_3.md`, copied to the openworld root).
+**Per-node skinning API landed regardless** (the P1 ask):
+`pipeline.set_hardware_skinning(np, enabled)` /
+`clear_hardware_skinning(np)` — flag-only ShaderAttrib at override 2,
+inherits the shader per-bit, munger CPU-skins the subtree in every pass
+including the shadow pass; harness-proven pixel-exact round-trip
+(`test_skinning.py`, which also carries the pack probes as permanent
+gate coverage). Full gate: 58 jobs × both engines × both baselines,
+green in the documented pattern (the only new row-level note:
+`lighting/none @modern` fails identically on stock — pre-existing
+fixed-function-under-gl3.2 control-pipeline artifact, not ours). Engine
+C++ untouched; everything this session is Python/GLSL/tests/docs, per
+the Language Canon.

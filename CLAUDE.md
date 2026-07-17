@@ -75,6 +75,17 @@ full analysis in `documents/PAXTEST_FINDINGS_SESSION_A.md`):
   darkening ground 0.800→0.086. Before chasing any externally-reported
   rendering regression: `git status`, then reproduce on a pristine
   checkout + current wheel.
+- **Pin poses and prove sample points (Session G, 2026-07-17).** A
+  luminance check is only as good as its sample geometry:
+  `get_anim_names()` ordering is nondeterministic (historical shadow
+  readings from the glTF probe were pose luck), and the shadow test's
+  "pole" pixel is the sphere's FRONT surface — outside a thin caster's
+  shadow column. The promoted assertion failed on a HEALTHY engine until
+  both were fixed (master plan fact #12). Also: the 94-joint Rigify
+  hardware-skinning "concertina" (openworld P1) does not reproduce on a
+  clean engine — GPU==CPU at every measurable layer (fact #13,
+  test_skinning guards it); per-node opt-out exists:
+  `pipeline.set_hardware_skinning(np, False)`.
 
 ---
 
