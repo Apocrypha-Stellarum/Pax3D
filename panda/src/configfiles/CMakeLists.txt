@@ -5,11 +5,6 @@ if(HAVE_GL)
   set(AUX_DISPLAYS "${AUX_DISPLAYS}\naux-display pandagl")
 endif()
 
-if(HAVE_GL AND HAVE_EGL AND HAVE_GLX)
-  # Fallback for headless systems.
-  set(AUX_DISPLAYS "${AUX_DISPLAYS}\naux-display p3headlessgl")
-endif()
-
 if(HAVE_TINYDISPLAY)
   set(AUX_DISPLAYS "${AUX_DISPLAYS}\naux-display p3tinydisplay")
 endif()

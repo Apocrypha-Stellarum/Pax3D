@@ -77,8 +77,7 @@ PLATFORM = None
 COPY_PYTHON = True
 
 PkgListSet(["PYTHON", "DIRECT",                        # Python support
-  "GL", "GLES", "GLES2"] + DXVERSIONS + ["TINYDISPLAY", "NVIDIACG", # 3D graphics
-  "EGL",                                               # OpenGL (ES) integration
+  "GL", "TINYDISPLAY", "NVIDIACG",                     # 3D graphics
   "EIGEN",                                             # Linear algebra acceleration
   "OPENAL", "FMODEX",                                  # Audio playback
   "VORBIS", "OPUS", "FFMPEG", "SWSCALE", "SWRESAMPLE", # Audio decoding
@@ -92,7 +91,6 @@ PkgListSet(["PYTHON", "DIRECT",                        # Python support
   "ARTOOLKIT", "OPENCV", "DIRECTCAM", "VISION",        # Augmented Reality
   "GTK3",                                              # GTK3 is used for PStats on Unix
   "MFC", "WX", "FLTK",                                 # Used for web plug-in only
-  "COCOA",                                             # macOS toolkits
   "X11",                                               # Unix platform support
   "PANDATOOL", "PVIEW", "DEPLOYTOOLS",                 # Toolchain
   "SKEL",                                              # Example SKEL project
@@ -572,10 +570,6 @@ IncDirectory("ALWAYS", GetOutputDir()+"/include")
 
 if (COMPILER == "MSVC"):
     PkgDisable("X11")
-    PkgDisable("GLES")
-    PkgDisable("GLES2")
-    PkgDisable("EGL")
-    PkgDisable("COCOA")
     DefSymbol("FLEX", "YY_NO_UNISTD_H")
     if not PkgSkip("PYTHON"):
         IncDirectory("ALWAYS", SDK["PYTHON"] + "/include")
@@ -583,29 +577,8 @@ if (COMPILER == "MSVC"):
     SmartPkgEnable("EIGEN",     "eigen3",     (), ("Eigen/Dense",), target_pkg = 'ALWAYS')
     for pkg in PkgListGet():
         if not PkgSkip(pkg):
-            if (pkg[:2]=="DX"):
-                IncDirectory(pkg, SDK[pkg]      + "/include")
-            elif GetThirdpartyDir() is not None:
+            if GetThirdpartyDir() is not None:
                 IncDirectory(pkg, GetThirdpartyDir() + pkg.lower() + "/include")
-    for pkg in DXVERSIONS:
-        if not PkgSkip(pkg):
-            vnum=pkg[2:]
-
-            if GetTargetArch() == 'x64':
-                LibDirectory(pkg, SDK[pkg] + '/lib/x64')
-            else:
-                LibDirectory(pkg, SDK[pkg] + '/lib/x86')
-                LibDirectory(pkg, SDK[pkg] + '/lib')
-
-            LibName(pkg, 'd3dVNUM.lib'.replace("VNUM", vnum))
-            LibName(pkg, 'd3dxVNUM.lib'.replace("VNUM", vnum))
-            LibName(pkg, 'dxerr.lib')
-            #LibName(pkg, 'ddraw.lib')
-            LibName(pkg, 'dxguid.lib')
-
-            if SDK.get("VISUALSTUDIO_VERSION") >= (14,0):
-                # dxerr needs this for __vsnwprintf definition.
-                LibName(pkg, 'legacy_stdio_definitions.lib')
 
     if not PkgSkip("FREETYPE") and os.path.isdir(GetThirdpartyDir() + "freetype/include/freetype2"):
         IncDirectory("FREETYPE", GetThirdpartyDir() + "freetype/include/freetype2")
@@ -630,9 +603,6 @@ if (COMPILER == "MSVC"):
     LibName("IPHLPAPI", "iphlpapi.lib")
     LibName("SETUPAPI", "setupapi.lib")
     LibName("GL", "opengl32.lib")
-    LibName("GLES", "libgles_cm.lib")
-    LibName("GLES2", "libGLESv2.lib")
-    LibName("EGL", "libEGL.lib")
     LibName("MSIMG", "msimg32.lib")
     if (PkgSkip("DIRECTCAM")==0): LibName("DIRECTCAM", "strmiids.lib")
     if (PkgSkip("DIRECTCAM")==0): LibName("DIRECTCAM", "quartz.lib")
@@ -790,9 +760,6 @@ if (COMPILER == "MSVC"):
         LibName("BULLET", GetThirdpartyDir() + "bullet/lib/BulletSoftBody" + suffix)
 
 if (COMPILER=="GCC"):
-    if GetTarget() != "darwin":
-        PkgDisable("COCOA")
-
     if GetTarget() == 'darwin':
         if OSX_ARCHS and 'x86_64' not in OSX_ARCHS and 'i386' not in OSX_ARCHS:
             # These support only these archs, so don't build them if we're not
@@ -863,9 +830,6 @@ if (COMPILER=="GCC"):
         SmartPkgEnable("HARFBUZZ", "harfbuzz",  ("harfbuzz"), ("harfbuzz", "harfbuzz/hb-ft.h"))
         SmartPkgEnable("PNG",      "libpng",    ("png"), "png.h", tool = "libpng-config")
         SmartPkgEnable("GL",       "gl",        ("GL"), ("GL/gl.h"), framework = "OpenGL")
-        SmartPkgEnable("GLES",     "glesv1_cm", ("GLESv1_CM"), ("GLES/gl.h"), framework = "OpenGLES")
-        SmartPkgEnable("GLES2",    "glesv2",    ("GLESv2"), ("GLES2/gl2.h")) #framework = "OpenGLES"?
-        SmartPkgEnable("EGL",      "egl",       ("EGL"), ("EGL/egl.h"))
 
         # Copy freetype libraries to be specified after harfbuzz libraries as well,
         # because there's a circular dependency between the two libraries.
@@ -877,7 +841,6 @@ if (COMPILER=="GCC"):
         PkgDisable("EIGEN")
         PkgDisable("X11")
         PkgDisable("GL")
-        PkgDisable("GLES")
         PkgDisable("TINYDISPLAY")
         for pkg, empkg in {
             'VORBIS': 'VORBIS',
@@ -1113,11 +1076,6 @@ if not PkgSkip("EIGEN"):
             # Only do this if EIGEN_NO_DEBUG is also set, otherwise it
             # will turn them into runtime assertions.
             DefSymbol("ALWAYS", "EIGEN_NO_STATIC_ASSERT")
-
-if not PkgSkip("EGL"):
-    DefSymbol('EGL', 'HAVE_EGL', '')
-    if PkgSkip("X11"):
-        DefSymbol('EGL', 'EGL_NO_X11', '')
 
 if not PkgSkip("X11"):
     DefSymbol('X11', 'USE_X11', '')
@@ -2466,7 +2424,6 @@ DTOOL_CONFIG=[
     ("HAVE_ARTOOLKIT",                 'UNDEF',                  'UNDEF'),
     ("HAVE_DIRECTCAM",                 'UNDEF',                  'UNDEF'),
     ("HAVE_SQUISH",                    'UNDEF',                  'UNDEF'),
-    ("HAVE_COCOA",                     'UNDEF',                  'UNDEF'),
     ("HAVE_OPENAL_FRAMEWORK",          'UNDEF',                  'UNDEF'),
     ("USE_TAU",                        'UNDEF',                  'UNDEF'),
     ("PRC_SAVE_DESCRIPTIONS",          '1',                      '1'),
@@ -3010,22 +2967,12 @@ configprc = configprc.replace('\r\n', '\n')
 
 if (GetTarget() == 'windows'):
     configprc = configprc.replace("$XDG_CACHE_HOME/panda3d", "$USER_APPDATA/Panda3D-%s" % MAJOR_VERSION)
-elif not PkgSkip("X11") and not PkgSkip("GL") and not PkgSkip("EGL") and not GetLinkAllStatic():
-    configprc = configprc.replace("\nload-display pandagl\n", "\nload-display pandagl\naux-display p3headlessgl\n")
 
 if (GetTarget() == 'darwin'):
     configprc = configprc.replace("$XDG_CACHE_HOME/panda3d", "$HOME/Library/Caches/Panda3D-%s" % MAJOR_VERSION)
 
 if PkgSkip("GL") or GetLinkAllStatic():
     configprc = configprc.replace("\nload-display pandagl", "\n#load-display pandagl")
-
-if PkgSkip("GLES") or GetLinkAllStatic():
-    configprc = configprc.replace("\n#load-display pandagles\n", "\n")
-
-if PkgSkip("GL") and not PkgSkip("GLES2") and not GetLinkAllStatic():
-    configprc = configprc.replace("\n#load-display pandagles2", "\nload-display pandagles2")
-elif PkgSkip("GLES2") or GetLinkAllStatic():
-    configprc = configprc.replace("\n#load-display pandagles2", "")
 
 if PkgSkip("TINYDISPLAY") or GetLinkAllStatic():
     configprc = configprc.replace("\n#load-display p3tinydisplay", "")
@@ -3331,27 +3278,17 @@ CopyAllHeaders('panda/src/framework')
 CopyAllHeaders('panda/metalibs/pandafx')
 CopyAllHeaders('panda/src/glstuff')
 CopyAllHeaders('panda/src/glgsg')
-CopyAllHeaders('panda/src/glesgsg')
-CopyAllHeaders('panda/src/gles2gsg')
 if not PkgSkip("EGG"):
     CopyAllHeaders('panda/metalibs/pandaegg')
 if GetTarget() == 'windows':
     CopyAllHeaders('panda/src/wgldisplay')
-elif GetTarget() == 'darwin':
-    CopyAllHeaders('panda/src/cocoadisplay')
-    if not PkgSkip('GL'):
-        CopyAllHeaders('panda/src/cocoagldisplay')
 elif GetTarget() == 'android':
     CopyAllHeaders('panda/src/android')
-    CopyAllHeaders('panda/src/androiddisplay')
 if not PkgSkip('X11'):
     CopyAllHeaders('panda/src/x11display')
     if not PkgSkip('GL'):
         CopyAllHeaders('panda/src/glxdisplay')
-CopyAllHeaders('panda/src/egldisplay')
 CopyAllHeaders('panda/metalibs/pandagl')
-CopyAllHeaders('panda/metalibs/pandagles')
-CopyAllHeaders('panda/metalibs/pandagles2')
 
 CopyAllHeaders('panda/metalibs/pandaphysics')
 CopyAllHeaders('panda/src/testbed')
@@ -4521,24 +4458,6 @@ if not PkgSkip("GL"):
     TargetAdd('p3glgsg_glgsg.obj', opts=OPTS, input='glgsg.cxx')
 
 #
-# DIRECTORY: panda/src/glesgsg/
-#
-
-if not PkgSkip("GLES"):
-    OPTS=['DIR:panda/src/glesgsg', 'DIR:panda/src/glstuff', 'BUILDING:PANDAGLES', 'GLES']
-    TargetAdd('p3glesgsg_config_glesgsg.obj', opts=OPTS, input='config_glesgsg.cxx')
-    TargetAdd('p3glesgsg_glesgsg.obj', opts=OPTS, input='glesgsg.cxx')
-
-#
-# DIRECTORY: panda/src/gles2gsg/
-#
-
-if not PkgSkip("GLES2"):
-    OPTS=['DIR:panda/src/gles2gsg', 'DIR:panda/src/glstuff', 'BUILDING:PANDAGLES2', 'GLES2']
-    TargetAdd('p3gles2gsg_config_gles2gsg.obj', opts=OPTS, input='config_gles2gsg.cxx')
-    TargetAdd('p3gles2gsg_gles2gsg.obj', opts=OPTS, input='gles2gsg.cxx')
-
-#
 # DIRECTORY: panda/metalibs/pandaegg/
 #
 
@@ -4596,33 +4515,6 @@ if GetTarget() not in ['windows', 'darwin', 'emscripten'] and not PkgSkip("GL") 
     TargetAdd('libpandagl.dll', opts=['MODULE', 'GL', 'NVIDIACG', 'CGGL', 'X11'])
 
 #
-# DIRECTORY: panda/src/cocoadisplay/
-#
-
-if GetTarget() == 'darwin' and not PkgSkip("COCOA"):
-    OPTS=['DIR:panda/src/cocoadisplay', 'BUILDING:PANDAGL', 'COCOA']
-    TargetAdd('p3cocoadisplay_composite1.obj', opts=OPTS, input='p3cocoadisplay_composite1.mm')
-
-#
-# DIRECTORY: panda/src/cocoagldisplay/
-#
-
-if GetTarget() == 'darwin' and not PkgSkip("COCOA") and not PkgSkip("GL"):
-    OPTS=['DIR:panda/src/cocoagldisplay', 'BUILDING:PANDAGL', 'GL', 'NVIDIACG', 'CGGL']
-    TargetAdd('p3cocoagldisplay_composite1.obj', opts=OPTS, input='p3cocoagldisplay_composite1.mm')
-    OPTS=['DIR:panda/metalibs/pandagl', 'BUILDING:PANDAGL', 'GL', 'NVIDIACG', 'CGGL']
-    TargetAdd('pandagl_pandagl.obj', opts=OPTS, input='pandagl.cxx')
-    TargetAdd('libpandagl.dll', input='pandagl_pandagl.obj')
-    TargetAdd('libpandagl.dll', input='p3glgsg_config_glgsg.obj')
-    TargetAdd('libpandagl.dll', input='p3glgsg_glgsg.obj')
-    TargetAdd('libpandagl.dll', input='p3cocoadisplay_composite1.obj')
-    TargetAdd('libpandagl.dll', input='p3cocoagldisplay_composite1.obj')
-    if not PkgSkip('PANDAFX'):
-        TargetAdd('libpandagl.dll', input='libpandafx.dll')
-    TargetAdd('libpandagl.dll', input=COMMON_PANDA_LIBS)
-    TargetAdd('libpandagl.dll', opts=['MODULE', 'GL', 'NVIDIACG', 'CGGL', 'COCOA', 'CARBON', 'QUARTZ'])
-
-#
 # DIRECTORY: panda/src/wgldisplay/
 #
 
@@ -4640,91 +4532,6 @@ if GetTarget() == 'windows' and not PkgSkip("GL"):
         TargetAdd('libpandagl.dll', input='libpandafx.dll')
     TargetAdd('libpandagl.dll', input=COMMON_PANDA_LIBS)
     TargetAdd('libpandagl.dll', opts=['MODULE', 'WINGDI', 'GL', 'WINKERNEL', 'WINOLDNAMES', 'WINUSER', 'WINMM', 'NVIDIACG', 'CGGL'])
-
-#
-# DIRECTORY: panda/src/egldisplay/
-#
-
-# If we're not compiling with any windowing system at all, but we do have EGL,
-# we can use that to create a headless libpandagl instead.
-if not PkgSkip("EGL") and not PkgSkip("GL") and PkgSkip("X11") and GetTarget() not in ('windows', 'darwin'):
-    OPTS=['DIR:panda/src/egldisplay', 'DIR:panda/src/glstuff', 'BUILDING:PANDAGL', 'GL', 'EGL']
-    TargetAdd('pandagl_egldisplay_composite1.obj', opts=OPTS, input='p3egldisplay_composite1.cxx')
-    OPTS=['DIR:panda/metalibs/pandagl', 'BUILDING:PANDAGL', 'GL', 'EGL']
-    TargetAdd('pandagl_pandagl.obj', opts=OPTS, input='pandagl.cxx')
-    TargetAdd('libpandagl.dll', input='pandagl_pandagl.obj')
-    TargetAdd('libpandagl.dll', input='p3glgsg_config_glgsg.obj')
-    TargetAdd('libpandagl.dll', input='p3glgsg_glgsg.obj')
-    TargetAdd('libpandagl.dll', input='pandagl_egldisplay_composite1.obj')
-    TargetAdd('libpandagl.dll', input=COMMON_PANDA_LIBS)
-    TargetAdd('libpandagl.dll', opts=['MODULE', 'GL', 'EGL', 'CGGL'])
-
-elif not PkgSkip("EGL") and not PkgSkip("GL") and GetTarget() not in ('windows', 'darwin'):
-    # As a temporary solution for #1086, build this module, which we can use as a
-    # fallback to OpenGL for headless systems.
-    OPTS=['DIR:panda/src/egldisplay', 'DIR:panda/src/glstuff', 'BUILDING:PANDAGL', 'GL', 'EGL']
-    TargetAdd('p3headlessgl_egldisplay_composite1.obj', opts=OPTS, input='p3egldisplay_composite1.cxx')
-    OPTS=['DIR:panda/metalibs/pandagl', 'BUILDING:PANDAGL', 'GL', 'EGL']
-    TargetAdd('p3headlessgl_pandagl.obj', opts=OPTS, input='pandagl.cxx')
-    TargetAdd('libp3headlessgl.dll', input='p3headlessgl_pandagl.obj')
-    TargetAdd('libp3headlessgl.dll', input='p3glgsg_config_glgsg.obj')
-    TargetAdd('libp3headlessgl.dll', input='p3glgsg_glgsg.obj')
-    TargetAdd('libp3headlessgl.dll', input='p3headlessgl_egldisplay_composite1.obj')
-    TargetAdd('libp3headlessgl.dll', input=COMMON_PANDA_LIBS)
-    TargetAdd('libp3headlessgl.dll', opts=['MODULE', 'GL', 'EGL', 'CGGL'])
-
-#
-# DIRECTORY: panda/src/egldisplay/
-#
-
-if GetTarget() != 'android' and not PkgSkip("EGL") and not PkgSkip("GLES"):
-    DefSymbol('GLES', 'OPENGLES_1', '')
-    OPTS=['DIR:panda/src/egldisplay', 'DIR:panda/src/glstuff', 'BUILDING:PANDAGLES', 'GLES', 'EGL', 'X11']
-    TargetAdd('pandagles_egldisplay_composite1.obj', opts=OPTS, input='p3egldisplay_composite1.cxx')
-    OPTS=['DIR:panda/metalibs/pandagles', 'BUILDING:PANDAGLES', 'GLES', 'EGL']
-    TargetAdd('pandagles_pandagles.obj', opts=OPTS, input='pandagles.cxx')
-    if not PkgSkip("X11"):
-        TargetAdd('libpandagles.dll', input='p3x11display_composite1.obj')
-    TargetAdd('libpandagles.dll', input='pandagles_pandagles.obj')
-    TargetAdd('libpandagles.dll', input='p3glesgsg_config_glesgsg.obj')
-    TargetAdd('libpandagles.dll', input='p3glesgsg_glesgsg.obj')
-    TargetAdd('libpandagles.dll', input='pandagles_egldisplay_composite1.obj')
-    TargetAdd('libpandagles.dll', input=COMMON_PANDA_LIBS)
-    TargetAdd('libpandagles.dll', opts=['MODULE', 'GLES', 'EGL', 'X11'])
-
-#
-# DIRECTORY: panda/src/egldisplay/
-#
-
-if GetTarget() != 'android' and not PkgSkip("EGL") and not PkgSkip("GLES2"):
-    DefSymbol('GLES2', 'OPENGLES_2', '')
-    OPTS=['DIR:panda/src/egldisplay', 'DIR:panda/src/glstuff', 'BUILDING:PANDAGLES2', 'GLES2', 'EGL', 'X11']
-    TargetAdd('pandagles2_egldisplay_composite1.obj', opts=OPTS, input='p3egldisplay_composite1.cxx')
-    OPTS=['DIR:panda/metalibs/pandagles2', 'BUILDING:PANDAGLES2', 'GLES2', 'EGL']
-    TargetAdd('pandagles2_pandagles2.obj', opts=OPTS, input='pandagles2.cxx')
-    if not PkgSkip("X11"):
-        TargetAdd('libpandagles2.dll', input='p3x11display_composite1.obj')
-    TargetAdd('libpandagles2.dll', input='pandagles2_pandagles2.obj')
-    TargetAdd('libpandagles2.dll', input='p3gles2gsg_config_gles2gsg.obj')
-    TargetAdd('libpandagles2.dll', input='p3gles2gsg_gles2gsg.obj')
-    TargetAdd('libpandagles2.dll', input='pandagles2_egldisplay_composite1.obj')
-    TargetAdd('libpandagles2.dll', input=COMMON_PANDA_LIBS)
-    TargetAdd('libpandagles2.dll', opts=['MODULE', 'GLES2', 'EGL', 'X11'])
-
-#
-# DIRECTORY: panda/src/webgldisplay/
-#
-
-if GetTarget() == 'emscripten' and not PkgSkip("GLES2"):
-  DefSymbol('GLES2', 'OPENGLES_2', '')
-  LinkFlag('GLES2', '-s GL_ENABLE_GET_PROC_ADDRESS=1')
-  OPTS=['DIR:panda/src/webgldisplay', 'DIR:panda/src/glstuff', 'BUILDING:PANDAGLES2',  'GLES2', 'WEBGL']
-  TargetAdd('p3webgldisplay_webgldisplay_composite1.obj', opts=OPTS, input='p3webgldisplay_composite1.cxx')
-  TargetAdd('libp3webgldisplay.dll', input='p3gles2gsg_config_gles2gsg.obj')
-  TargetAdd('libp3webgldisplay.dll', input='p3gles2gsg_gles2gsg.obj')
-  TargetAdd('libp3webgldisplay.dll', input='p3webgldisplay_webgldisplay_composite1.obj')
-  TargetAdd('libp3webgldisplay.dll', input=COMMON_PANDA_LIBS)
-  TargetAdd('libp3webgldisplay.dll', opts=['MODULE', 'GLES2', 'WEBGL'])
 
 #
 # DIRECTORY: panda/src/ode/
@@ -4906,8 +4713,6 @@ if not PkgSkip("PVIEW"):
 
     if GetLinkAllStatic() and not PkgSkip("GL"):
         TargetAdd('pview.exe', input='libpandagl.dll')
-    if GetTarget() == "emscripten" and not PkgSkip("GLES2"):
-        TargetAdd('pview.exe', input='libp3webgldisplay.dll')
 
 #
 # DIRECTORY: panda/src/android/
@@ -4963,38 +4768,6 @@ if GetTarget() == 'android':
         TargetAdd('libppython.dll', opts=['MODULE', 'ANDROID', 'PYTHON'])
 
 #
-# DIRECTORY: panda/src/androiddisplay/
-#
-
-if GetTarget() == 'android' and not PkgSkip("EGL") and not PkgSkip("GLES"):
-    DefSymbol('GLES', 'OPENGLES_1', '')
-    OPTS=['DIR:panda/src/androiddisplay', 'DIR:panda/src/glstuff', 'BUILDING:PANDAGLES', 'GLES', 'EGL']
-    TargetAdd('pandagles_androiddisplay_composite1.obj', opts=OPTS, input='p3androiddisplay_composite1.cxx')
-    OPTS=['DIR:panda/metalibs/pandagles', 'BUILDING:PANDAGLES', 'GLES', 'EGL']
-    TargetAdd('pandagles_pandagles.obj', opts=OPTS, input='pandagles.cxx')
-    TargetAdd('libpandagles.dll', input='pandagles_pandagles.obj')
-    TargetAdd('libpandagles.dll', input='p3glesgsg_config_glesgsg.obj')
-    TargetAdd('libpandagles.dll', input='p3glesgsg_glesgsg.obj')
-    TargetAdd('libpandagles.dll', input='pandagles_androiddisplay_composite1.obj')
-    TargetAdd('libpandagles.dll', input='libp3android.dll')
-    TargetAdd('libpandagles.dll', input=COMMON_PANDA_LIBS)
-    TargetAdd('libpandagles.dll', opts=['MODULE', 'GLES', 'EGL'])
-
-if GetTarget() == 'android' and not PkgSkip("EGL") and not PkgSkip("GLES2"):
-    DefSymbol('GLES2', 'OPENGLES_2', '')
-    OPTS=['DIR:panda/src/androiddisplay', 'DIR:panda/src/glstuff', 'BUILDING:PANDAGLES2', 'GLES2', 'EGL']
-    TargetAdd('pandagles2_androiddisplay_composite1.obj', opts=OPTS, input='p3androiddisplay_composite1.cxx')
-    OPTS=['DIR:panda/metalibs/pandagles2', 'BUILDING:PANDAGLES2', 'GLES2', 'EGL']
-    TargetAdd('pandagles2_pandagles2.obj', opts=OPTS, input='pandagles2.cxx')
-    TargetAdd('libpandagles2.dll', input='pandagles2_pandagles2.obj')
-    TargetAdd('libpandagles2.dll', input='p3gles2gsg_config_gles2gsg.obj')
-    TargetAdd('libpandagles2.dll', input='p3gles2gsg_gles2gsg.obj')
-    TargetAdd('libpandagles2.dll', input='pandagles2_androiddisplay_composite1.obj')
-    TargetAdd('libpandagles2.dll', input='libp3android.dll')
-    TargetAdd('libpandagles2.dll', input=COMMON_PANDA_LIBS)
-    TargetAdd('libpandagles2.dll', opts=['MODULE', 'GLES2', 'EGL'])
-
-#
 # DIRECTORY: panda/src/tinydisplay/
 #
 
@@ -5002,8 +4775,6 @@ if not PkgSkip("TINYDISPLAY"):
     OPTS=['DIR:panda/src/tinydisplay', 'BUILDING:TINYDISPLAY', 'X11']
     if not PkgSkip("X11"):
         OPTS += ['X11']
-    if not PkgSkip("COCOA"):
-        OPTS += ['COCOA']
     TargetAdd('p3tinydisplay_composite1.obj', opts=OPTS, input='p3tinydisplay_composite1.cxx')
     TargetAdd('p3tinydisplay_composite2.obj', opts=OPTS, input='p3tinydisplay_composite2.cxx')
     TargetAdd('p3tinydisplay_ztriangle_1.obj', opts=OPTS, input='ztriangle_1.cxx')
@@ -5014,12 +4785,6 @@ if not PkgSkip("TINYDISPLAY"):
     if GetTarget() == 'windows':
         TargetAdd('libp3tinydisplay.dll', input='libp3windisplay.dll')
         TargetAdd('libp3tinydisplay.dll', opts=['WINIMM', 'WINGDI', 'WINKERNEL', 'WINOLDNAMES', 'WINUSER', 'WINMM'])
-    elif GetTarget() == 'darwin':
-        if not PkgSkip("COCOA"):
-            TargetAdd('libp3tinydisplay_tinyCocoaGraphicsWindow.obj', opts=OPTS, input='tinyCocoaGraphicsWindow.mm')
-            TargetAdd('libp3tinydisplay.dll', input='libp3tinydisplay_tinyCocoaGraphicsWindow.obj')
-            TargetAdd('libp3tinydisplay.dll', input='p3cocoadisplay_composite1.obj')
-            TargetAdd('libp3tinydisplay.dll', opts=['COCOA', 'CARBON', 'QUARTZ'])
     elif not PkgSkip("X11"):
         TargetAdd('libp3tinydisplay.dll', input='p3x11display_composite1.obj')
         TargetAdd('libp3tinydisplay.dll', opts=['X11'])
@@ -5843,7 +5608,7 @@ if not PkgSkip("PANDATOOL") and (GetTarget() in ('windows', 'darwin') or not Pkg
     TargetAdd('pstats.exe', input='libp3progbase.lib')
     TargetAdd('pstats.exe', input='libp3pandatoolbase.lib')
     TargetAdd('pstats.exe', input=COMMON_PANDA_LIBS)
-    TargetAdd('pstats.exe', opts=['SUBSYSTEM:WINDOWS', 'WINCOMCTL', 'WINCOMDLG', 'WINSOCK', 'WINIMM', 'WINGDI', 'WINKERNEL', 'WINOLDNAMES', 'WINUSER', 'WINMM', 'UXTHEME', 'GTK3', 'COCOA', 'CARBON', 'QUARTZ'])
+    TargetAdd('pstats.exe', opts=['SUBSYSTEM:WINDOWS', 'WINCOMCTL', 'WINCOMDLG', 'WINSOCK', 'WINIMM', 'WINGDI', 'WINKERNEL', 'WINOLDNAMES', 'WINUSER', 'WINMM', 'UXTHEME', 'GTK3'])
 
 #
 # DIRECTORY: pandatool/src/xfileprogs/

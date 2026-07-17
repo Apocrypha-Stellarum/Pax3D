@@ -776,28 +776,6 @@ package_option(GL
 
 package_status(GL "OpenGL")
 
-# OpenGL ES 1
-if(NOT APPLE) # Apple X11 ships the GLES headers but they're broken
-  find_package(OpenGLES1 QUIET)
-endif()
-
-package_option(GLES1
-  "Enable support for OpenGL ES 1.x rendering APIs."
-  FOUND_AS OPENGLES1)
-
-package_status(GLES1 "OpenGL ES 1.x")
-
-# OpenGL ES 2
-if(NOT APPLE) # Apple X11 ships the GLES headers but they're broken
-  find_package(OpenGLES2 QUIET)
-endif()
-
-package_option(GLES2
-  "Enable support for OpenGL ES 2.x rendering APIs."
-  FOUND_AS OPENGLES2)
-
-package_status(GLES2 "OpenGL ES 2.x")
-
 # Nvidia Cg
 find_package(Cg QUIET)
 
@@ -851,15 +829,6 @@ if(HAVE_GLX)
 else()
   package_status(X11 "X11" "without GLX")
 endif()
-
-# EGL
-find_package(EGL QUIET)
-
-package_option(EGL
-  "Enable support for the Khronos EGL context management interface for
-  OpenGL ES.  This is necessary to support OpenGL ES under X11.")
-
-package_status(EGL "EGL")
 
 #
 # ------------ Vision tools ------------

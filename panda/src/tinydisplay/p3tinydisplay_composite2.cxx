@@ -1,4 +1,3 @@
-#include "tinyCocoaGraphicsPipe.cxx"
 #include "tinyGraphicsStateGuardian.cxx"
 #include "tinyOffscreenGraphicsPipe.cxx"
 #include "tinySDLGraphicsPipe.cxx"

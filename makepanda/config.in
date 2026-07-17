@@ -13,8 +13,6 @@
 # when that fails, the next aux-display line, and so on.
 
 load-display pandagl
-#load-display pandagles
-#load-display pandagles2
 #load-display p3tinydisplay
 
 # These control the placement and size of the default rendering window.

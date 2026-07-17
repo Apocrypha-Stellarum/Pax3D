@@ -79,21 +79,6 @@ if(NOT MSVC)
     PROPERTIES COMPILE_FLAGS "-Wno-unused-but-set-variable")
 endif()
 
-if(HAVE_COCOA)
-  set(P3TINYDISPLAY_HEADERS ${P3TINYDISPLAY_HEADERS}
-    tinyCocoaGraphicsPipe.I tinyCocoaGraphicsPipe.h
-    tinyCocoaGraphicsWindow.I tinyCocoaGraphicsWindow.h)
-
-  set(P3TINYDISPLAY_SOURCES ${P3TINYDISPLAY_SOURCES}
-    tinyCocoaGraphicsPipe.cxx
-    tinyCocoaGraphicsWindow.mm)
-
-  set_source_files_properties(tinyCocoaGraphicsWindow.mm
-    PROPERTIES SKIP_UNITY_BUILD_INCLUSION YES)
-
-  add_compile_definitions(HAVE_COCOA)
-endif()
-
 composite_sources(p3tinydisplay P3TINYDISPLAY_SOURCES)
 
 # Determine the additional components to link in.
@@ -105,10 +90,6 @@ endif()
 
 if(HAVE_X11)
   list(APPEND COCOADISPLAY_LINK_TARGETS p3x11display)
-endif()
-
-if(HAVE_COCOA)
-  list(APPEND COCOADISPLAY_LINK_TARGETS p3cocoadisplay)
 endif()
 
 set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "TinyDisplay")

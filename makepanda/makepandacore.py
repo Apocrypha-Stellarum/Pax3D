@@ -98,7 +98,6 @@ MSVCVERSIONINFO = {
 ##
 ########################################################################
 
-DXVERSIONS = ["DX9"]
 
 ########################################################################
 ##
@@ -2606,7 +2605,7 @@ def SdkLocateAndroid():
 ########################################################################
 
 def SdkAutoDisableDirectX():
-    for ver in DXVERSIONS + ["DIRECTCAM"]:
+    for ver in ["DIRECTCAM"]:
         if (PkgSkip(ver)==0):
             if (ver not in SDK):
                 if (GetHost() == "windows"):

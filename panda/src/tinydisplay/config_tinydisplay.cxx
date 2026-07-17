@@ -12,8 +12,6 @@
  */
 
 #include "config_tinydisplay.h"
-#include "tinyCocoaGraphicsPipe.h"
-#include "tinyCocoaGraphicsWindow.h"
 #include "tinyXGraphicsPipe.h"
 #include "tinyXGraphicsWindow.h"
 #include "tinyWinGraphicsPipe.h"
@@ -81,14 +79,6 @@ init_libtinydisplay() {
 
   GraphicsPipeSelection *selection = GraphicsPipeSelection::get_global_ptr();
 
-#ifdef HAVE_COCOA
-  TinyCocoaGraphicsPipe::init_type();
-  TinyCocoaGraphicsWindow::init_type();
-  selection->add_pipe_type(TinyCocoaGraphicsPipe::get_class_type(),
-                           TinyCocoaGraphicsPipe::pipe_constructor);
-  ps->set_system_tag("TinyPanda", "native_window_system", "Cocoa");
-#endif
-
 #ifdef HAVE_X11
   TinyXGraphicsPipe::init_type();
   TinyXGraphicsWindow::init_type();
@@ -125,10 +115,6 @@ init_libtinydisplay() {
  */
 int
 get_pipe_type_p3tinydisplay() {
-
-#ifdef HAVE_COCOA
-  return TinyCocoaGraphicsPipe::get_class_type().get_index();
-#endif
 
 #ifdef _WIN32
   return TinyWinGraphicsPipe::get_class_type().get_index();
