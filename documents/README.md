@@ -15,6 +15,7 @@ superseded — check the banner at the top of each file.
 | `OPENWORLD_FEEDBACK_RESPONSE_2.md` | **CURRENT** | Round 2 (Session F): the evening P0 verdict (contaminated engine tree, not a regression), the real skinning P1 queued, planetary-track policy. |
 | `OPENWORLD_FEEDBACK_RESPONSE_3.md` | **CURRENT** | Round 3 (Session G): both asks landed (assertion + glTF caster/receiver test), P1 concertina not reproducible on the clean engine (re-measurement requested), per-node `set_hardware_skinning()` delivered. |
 | `OPENWORLD_FEEDBACK_RESPONSE_4.md` | **CURRENT** | Round 4 (Session I): the P0 addendum (direction-gated vanishing shadows) root-caused as grazing-angle acne (fact 14); slope-scaled bias (`shadow_normal_bias_world`) landed opt-in, gated, proven on the village GLB; in-app A/B requested. |
+| `PLANETSIDE_LOOK_GUIDE.md` | **CURRENT** | Session J planetside package field guide: aerial haze, hemisphere/SH ambient, shadow texel snapping — APIs, Mars starting values, tuning loops, the opt-out contract for spaceflight. |
 | `HANDOVERS/handover_session_f_windows_1-3.md` | HISTORICAL — superseded | Session F handover: builds/validation/deletions, machine migration. |
 | `HANDOVERS/handover_session_g_hardening_skinning.md` | **CURRENT** | Session G handover: paxtest hardening, the P1 verdict, per-node skinning API, next-session priorities. |
 | `PAXTEST_FINDINGS_SESSION_A.md` | **CURRENT** | The harness findings that rebooted the program (double-gamma disproven, DirectionalLight exonerated, bloom defect cornered). |

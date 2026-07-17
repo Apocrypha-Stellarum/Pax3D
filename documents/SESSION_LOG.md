@@ -237,3 +237,36 @@ for Session H is in the (updated) Session G handover: scale-faithful
 sweep → their exact vectors → `set_shadow_extent` depth-window
 placement audit → mode-10/11 decode. Their addendum also confirms
 skinned NPC shadows in-game (0.604× darkening at noon).
+
+**Session J update (2026-07-18):** The **planetside package** — R5's
+planetside slice pulled forward by user direction after the openworld
+Mars colony map proved the use-case. Spaceflight stays first priority,
+so every feature is opt-in, default-off, byte-identical when off, and
+toggleable off for space scenes (each test asserts the opt-out restores
+the baseline capture with rms exactly 0.0). Three features, all
+Python/GLSL per the Language Canon, no engine build:
+**R5.1 aerial perspective / height haze** (`enable_atmosphere`,
+recompile-class + uniform-only `set_atmosphere_params`) — analytic
+exponential-height medium in the PBR shader with a sun-forward scatter
+tint; test_atmosphere matches the transmittance curve to 3 decimals at
+three distances, proves the altitude falloff and the sunward tint, and
+proves `density=0` is an exact no-op even when compiled in.
+**R5.2 environment ambient** — the sh_coeffs IBL path that shipped
+zeroed since R1 is now fed by `set_hemisphere_ambient(sky, ground)`
+(exact SH bands 0–1), raw `set_ambient_sh()`, `clear_ambient_sh()`, and
+EXPERIMENTAL `sh_from_cubemap()`; test_ambient_sh matches the analytic
+per-channel expectations exactly, proves coefficients survive
+recompile-class toggles (the §3 invariant extended to
+`_set_env_map_uniforms`), and validates the cubemap projection against
+the analytic hemisphere at 0.0% error.
+**Shadow texel snapping** (backlog item) — `shadow_texel_snap` quantizes
+the frustum center to the texel grid along the light's film axes;
+test_shadow_snap measures the shimmer source (0.3-texel move flips 24
+depth texels unsnapped), the anti-shimmer property (0 changed texels and
+rms 0.0 screens across a snapped sub-texel sweep), and that whole-texel
+steps still follow (152 texels). Full gate: both engines × both
+baselines green in the documented pattern; the three new tests also run
+green through the game's routed `pax_pbr` import path. Field handover:
+`PLANETSIDE_LOOK_GUIDE.md` (API + Mars starting values for the openworld
+dev). Open: in-app tuning, sh_from_cubemap horizontal-orientation check
+on a real skybox, orbital scattering (the spaceflight half of R5).

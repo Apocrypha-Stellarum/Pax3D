@@ -36,12 +36,12 @@ Identical paxtest results on both engines = the defect is Python/GLSL, not C++.
 
 | Phase | What | Status (evidence) |
 |---|---|---|
-| R0 harness | `tools/paxtest/` — 11 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; +2 Session G, +1 Session I) |
+| R0 harness | `tools/paxtest/` — 14 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; +2 Session G, +1 Session I, +3 Session J) |
 | R1 unified renderer | `pax3d_render/` (pax_pbr ⊕ pax3d_simplepbr merge), color contract, `register_scene_camera()` | **Core done** (Sessions B, D — game flag flipped, boots clean). Open: in-game parity eyeball (user), sRGB linearization experiment, GLSL-120 path removal (needs game `gl-version 3 2`) |
 | R2 directional sun + shadows | Pipeline-owned DirectionalLight, HPR-driven; shadows with world-space extent center; **hardened Session E**: world-unit bias, 3×3 PCF, no-cast API, skinned casters proven; **hardened Session G**: glTF caster darkening is a hard assertion, glTF caster+receiver test (angled sun), per-node `set_hardware_skinning()` opt-out; **Session I**: slope-scaled bias (`shadow_normal_bias_world`, opt-in) kills grazing-angle acne (fact 14) | **Core done + hardened** (test_shadows 13+13, test_shadow_quality 9, test_shadows_gltf 6, test_shadow_grazing 6, test_skinning 12). Open: in-game validation — set `shadow_bias_world` (~0.5 IEU) first; openworld dev A/Bs `shadow_normal_bias_world` at az 240 low sun |
 | R3 bloom + HDR | F3 root-caused (8-bit intermediate FBOs) and fixed; float fbprops everywhere | **Core done** (Session D; test_bloom green both sizes). Open: content retune, light units, auto-exposure stretch |
 | R4 space scale | R4.0 acceptance tests; R4.1 log depth opt-in (`enable_log_depth`, @logdepth row green); R4.2 camera-relative DECIDED (game-side; parent-cancel trap measured); doubles wheel **built + verified 2026-07-17**: precision 0.000e+00 at Neptune offsets, `test3d_ftl --selftest` green, but stock simplepbr crashes on it (stays quarantined in `pax3d-double-env`) | **Engine side essentially done.** Open: game-side R4.2 implementation, frustum flip, then sky-camera retirement; doubles perf A/B + user flight |
-| R5 atmosphere + signature look | Scattering, SH-from-skybox ambient, height fog, lens polish | **Not started** — next feature phase after in-game sign-offs |
+| R5 atmosphere + signature look | Scattering, SH-from-skybox ambient, height fog, lens polish | **Planetside slice LANDED opt-in (Session J, user-directed):** R5.1 aerial perspective/height haze (`enable_atmosphere`, analytic exponential-height medium + sunward scatter tint), R5.2 env ambient via the existing SH path (`set_hemisphere_ambient`/`set_ambient_sh`, `sh_from_cubemap` experimental), plus backlog shadow texel snapping (`shadow_texel_snap`). All default-off = byte-identical; gated by test_atmosphere/test_ambient_sh/test_shadow_snap, green both engines × both baselines. Open: field tuning in openworld Mars colony (`PLANETSIDE_LOOK_GUIDE.md`), orbital scattering + specular IBL + lens polish |
 | R6 engine surgery | DX9 + dead-backend deletion | **Windows 2+3 DONE 2026-07-17** (`d29183ce42`, `3912762dd9` — −35k lines, both fully gated). Window 4 (mobile-target extraction) queued — `ENGINE_SURGERY_PLAN.md` |
 
 Engine changes to date: the makepanda oscmd fix, the Route A catch-up merge
@@ -138,21 +138,35 @@ The doubles wheel, if Build 2 succeeds, is a complementary experiment — measur
 against `handover_doubles_spike.md`'s checks, adopted only if it beats
 camera-relative on evidence.
 
-### 4.4 R5 — atmosphere & the signature look (next engine feature phase)
+### 4.4 R5 — atmosphere & the signature look (planetside slice landed Session J)
 
-Unblocked once 4.2's sign-offs land. Content unchanged from v2, priority order:
+The planetside half was pulled forward by user direction (2026-07-18 — the
+openworld Mars colony proved the planetside use-case; spaceflight stays
+first priority, so every feature is opt-in, default-off, byte-identical,
+toggleable off for space scenes):
 
-- **SH-from-skybox ambient** first — highest value per line: both games run flat
-  hand-tuned AmbientLights today, and shadow readability is dominated by the
-  sun:ambient ratio (openworld's finding). The skyboxes are already float
-  textures; simplepbr's IBL machinery (SH irradiance) is in the codebase.
-- **Atmospheric scattering** for orbital views (single-scattering analytic limb
-  model per planet type; Bruneton LUTs as stretch).
-- **Height fog / volumetric media** (~65 lines GLSL, tobspr catalogue) for gas
-  giants and nebulae; fold the runtime fog toggle in here.
-- Lens flare/dirt polish on the bloom chain.
+- ~~**Env-driven ambient** first~~ — **LANDED opt-in (Session J / R5.2):**
+  `set_hemisphere_ambient(sky, ground)` (exact SH bands 0–1 — the two-tone
+  sky/bounce ambient), raw `set_ambient_sh()`, `clear_ambient_sh()`, and
+  EXPERIMENTAL `sh_from_cubemap()` for real skyboxes. Zero shader changes —
+  it feeds the sh_coeffs path that shipped zeroed since R1. Gated by
+  test_ambient_sh (analytics exact). Open: horizontal-orientation
+  validation of sh_from_cubemap on a real skybox; specular env maps.
+- ~~**Height fog / aerial perspective**~~ — **LANDED opt-in (Session J /
+  R5.1):** `enable_atmosphere` — analytic exponential-height medium with
+  sun-forward scatter tint (arch doc §9). Gated by test_atmosphere. Open:
+  content tuning per planet type (Mars starting values in
+  `PLANETSIDE_LOOK_GUIDE.md`).
+- Also landed from the backlog: **shadow texel snapping**
+  (`shadow_texel_snap`, arch doc §5.7, test_shadow_snap) — the planetside
+  camera-following-frustum shimmer fix.
+- **Atmospheric scattering** for orbital views (single-scattering analytic
+  limb model per planet type; Bruneton LUTs as stretch) — not started.
+- Lens flare/dirt polish on the bloom chain — not started.
 
-Gate: aesthetic sign-off per planet type; A/B against the old Fresnel shader.
+Gate: aesthetic sign-off per planet type; A/B against the old Fresnel
+shader. Field consumer for the planetside slice: the openworld Mars
+colony map (guide doc above).
 
 ### 4.5 R6 — engine surgery (Windows 2+3 DONE 2026-07-17)
 
@@ -178,9 +192,9 @@ Evaluate ONLY when it can run the paxtest suite. No cadence; check when curious.
 | ~~Direction-gated lit-shadow failure (openworld P0 addendum)~~ | pipeline + paxtest | **ROOT-CAUSED + FIX LANDED Session I (fact 14):** it is grazing-angle self-shadow acne (∝ 1/tan(alt)), not a depth-path corruption. The toy sweep was clean because flat toy ground at alt 34 doesn't graze hard enough — the trigger is sun-altitude × terrain-slope. `shadow_normal_bias_world` (opt-in slope-scaled bias) clears it: proven on the real village GLB at az 240 (terracing gone, real shadows kept). Open: openworld dev A/Bs the value in-app and signs off |
 | ~~paxtest hardening (openworld asks)~~ | tools/paxtest | **DONE Session G** — assertion promoted (after fixing two test-geometry traps it exposed, fact 12), `test_shadows_gltf.py` added; green both engines × both baselines |
 | ~~Hardware skinning vs 94-joint Rigify rigs~~ | pipeline + shaders | **RESOLVED Session G (fact 13):** not reproducible on a clean engine — `test_skinning.py` guards it permanently; per-node `set_hardware_skinning()` opt-out landed anyway. Reopens ONLY if openworld's re-measurement on the clean wheel still concertinas in-app (then: their in-app repro + test_skinning on their machine first) |
-| Engine-side shadow texel snapping in `set_shadow_extent` | pax3d_render (Python) | Next shadow session; reference impl = openworld `app.py:_follow_shadow_frustum`; gate with a shimmer test |
+| ~~Engine-side shadow texel snapping in `set_shadow_extent`~~ | pax3d_render (Python) | **DONE Session J** — `shadow_texel_snap` (opt-in, default off), snaps the frustum center to the texel grid along the light's film axes; gated by test_shadow_snap (sub-texel sweep leaves depth map + screen byte-identical; whole-texel steps still follow) |
 | ~~Slope-scaled / receiver-plane shadow bias~~ | pax_pbr.frag | **DONE Session I** — slope-scaled depth bias (`shadow_normal_bias_world`), opt-in, gated by test_shadow_grazing; physics + API in arch doc §5.2 |
-| Runtime fog toggle | pax3d_render | R5 fog work |
+| ~~Runtime fog toggle~~ | pax3d_render | **Superseded by Session J R5.1** — `set_enable_atmosphere()` is the runtime toggle; the legacy `enable_fog`/p3d_Fog path stays as-is |
 | CSM (cascades) | pipeline + shaders | Post-R5, if extent-following stops sufficing |
 | Clustered/tiled lights | shaders (+ maybe C++ culling) | Post-R5; openworld's Megacity wants it (781 lamps vs ~6 forward lights) |
 | `shaderAttrib.cxx:471` intermittent assert | engine | Needs a repro (fires when a shader reads an unbound input; the known recompile-wipe class is fixed) |

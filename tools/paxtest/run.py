@@ -17,8 +17,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(HERE, 'output')
 
 ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows',
-             'shadows_gltf', 'shadow_quality', 'shadow_grazing', 'ftl_blur',
-             'scale', 'skinning']
+             'shadows_gltf', 'shadow_quality', 'shadow_grazing',
+             'shadow_snap', 'ftl_blur', 'scale', 'skinning',
+             'atmosphere', 'ambient_sh']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 

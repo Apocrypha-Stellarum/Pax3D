@@ -38,7 +38,7 @@ The rendering program runs in gated phases (see the master plan):
 | R2 | Real DirectionalLight sun + shadows | **Core done, harness-proven.** Extent centering + camera-driven sizing done (Session D). Remaining: user flips `sun_light_mode` to directional in-game and validates |
 | R3 | Bloom fixed + HDR polish | **Core done (Session D).** F3 fixed (8-bit intermediate FBOs were the root cause), test_bloom green everywhere. Remaining: content retune (strength/intensity/tints), light units, auto-exposure stretch |
 | R4 | Log depth, camera-relative rendering, single camera | **Log depth landed opt-in (Session D)** — `enable_log_depth`, acceptance row `scale @logdepth` green. Remaining: camera-relative/doubles decision (see game repo spike), sky-camera retirement, game frustum flip |
-| R5 | Atmospheric scattering, env-driven ambient, signature look | Not started |
+| R5 | Atmospheric scattering, env-driven ambient, signature look | **Planetside slice landed opt-in (Session J, 2026-07-18):** aerial haze (`enable_atmosphere`), hemisphere/SH ambient (`set_hemisphere_ambient`), shadow texel snap (`shadow_texel_snap`) — all default-off = byte-identical, gated by 3 new paxtests. Remaining: openworld field tuning, orbital scattering, specular IBL |
 | R6 | Engine hygiene (dead-path deletion, Vulkan watch) | **Windows 2+3 DONE (2026-07-17):** DX9 excised (`d29183ce42`), GLES/EGL/WebGL/mobile/macOS display backends excised (`3912762dd9`) — −35k lines, full gate green both times. Window 4 candidates queued below |
 
 **Engine C++ changes so far: one build-system fix.** Everything else is

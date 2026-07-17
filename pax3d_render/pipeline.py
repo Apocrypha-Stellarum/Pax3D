@@ -106,6 +106,84 @@ def _load_brdf_lut(debug=False):
     return tex
 
 
+def sh_from_cubemap(tex, band_factors=(math.pi, 2.0 * math.pi / 3.0,
+                                       math.pi / 4.0)):
+    """Project a cube-map Texture to 9 irradiance-SH coefficients for
+    Pipeline.set_ambient_sh() — the R5 "ambient from the skybox" path.
+
+    EXPERIMENTAL (Session J): the face-direction table follows the standard
+    GL cube-map convention with Panda's Z-up lookup vectors (face 4 = +z =
+    up, face 5 = -z = down). The up/down axis and the DC term are exact;
+    validate the horizontal orientation against your actual skybox before
+    shipping content tuned to it. Runs on the CPU from the texture's RAM
+    image (loaded skyboxes have one) — call once at scene setup, not per
+    frame; cost scales with face area (a 64px cubemap is plenty for
+    irradiance).
+
+    Returns a list of 9 (r, g, b) tuples, or raises RuntimeError if a face
+    cannot be read back.
+    """
+    size = tex.get_x_size()
+    if tex.get_texture_type() != p3d.Texture.TT_cube_map or size == 0:
+        raise RuntimeError('sh_from_cubemap needs a loaded cube map texture')
+
+    # Shader basis constants, slot order [1, x, z, y, xz, yz, xy,
+    # 3z^2-ish, x^2-y^2] (matches pax_pbr.frag irradiance_from_sh).
+    def basis(d):
+        x, y, z = d
+        return (0.282095,
+                0.488603 * x, 0.488603 * z, 0.488603 * y,
+                1.092548 * x * z, 1.092548 * y * z, 1.092548 * y * x,
+                0.946176 * z * z - 0.315392,
+                0.546274 * (x * x - y * y))
+
+    # Per-slot cosine-convolution factors (Ramamoorthi): band 0, 1, 2.
+    slot_factor = (band_factors[0],) + (band_factors[1],) * 3 \
+        + (band_factors[2],) * 5
+
+    coeffs = [[0.0, 0.0, 0.0] for _ in range(9)]
+    img = p3d.PNMImage()
+    for face in range(6):
+        if not tex.store(img, face, 0):
+            raise RuntimeError(f'sh_from_cubemap: cannot read face {face}')
+        n = img.get_x_size()
+        for py in range(n):
+            # PNM y runs down from the top; GL face t runs up.
+            t = 1.0 - (py + 0.5) / n
+            b = 2.0 * t - 1.0
+            for px in range(n):
+                s = (px + 0.5) / n
+                a = 2.0 * s - 1.0
+                if face == 0:
+                    d = (1.0, -b, -a)      # +x
+                elif face == 1:
+                    d = (-1.0, -b, a)      # -x
+                elif face == 2:
+                    d = (a, 1.0, b)        # +y
+                elif face == 3:
+                    d = (a, -1.0, -b)      # -y
+                elif face == 4:
+                    d = (a, -b, 1.0)       # +z (up)
+                else:
+                    d = (-a, -b, -1.0)     # -z (down)
+                r2 = a * a + b * b + 1.0
+                inv_len = r2 ** -0.5
+                dn = (d[0] * inv_len, d[1] * inv_len, d[2] * inv_len)
+                # Texel solid angle: dA / r^3, with dA = (2/n)^2 on the
+                # unit-distance cube face and r = sqrt(a^2 + b^2 + 1).
+                dw = (2.0 / n) ** 2 / (r2 * r2 ** 0.5)
+                c = img.get_xel(px, py)
+                y_vals = basis(dn)
+                for i in range(9):
+                    w = y_vals[i] * dw
+                    coeffs[i][0] += c[0] * w
+                    coeffs[i][1] += c[1] * w
+                    coeffs[i][2] += c[2] * w
+    return [(coeffs[i][0] * slot_factor[i],
+             coeffs[i][1] * slot_factor[i],
+             coeffs[i][2] * slot_factor[i]) for i in range(9)]
+
+
 class _SceneCameraRegistration:
     """Internal record of an auxiliary camera attached to the scene buffer."""
 
@@ -141,6 +219,14 @@ class Pipeline:
                  enable_taa=False, debug=False,
                  sun_light_mode='uniforms', shadow_map_size=2048,
                  enable_log_depth=False,
+                 shadow_texel_snap=False,
+                 enable_atmosphere=False,
+                 atmo_haze_color=(0.60, 0.71, 0.85),
+                 atmo_sun_haze_color=None,
+                 atmo_sun_power=8.0,
+                 atmo_density=0.002,
+                 atmo_scale_height=60.0,
+                 atmo_base_height=0.0,
                  radial_blur_strength=0.0,
                  chromatic_aberration_strength=0.0,
                  radial_blur_center=(0.5, 0.5),
@@ -215,6 +301,35 @@ class Pipeline:
         # scene span (e.g. 0.1 / 1e9); the pipeline tracks the lens far
         # every frame for the shader coefficient.
         self.enable_log_depth = enable_log_depth
+
+        # Planetside package (Session J / R5.1-R5.3) — ALL opt-in; with the
+        # defaults every one of these is byte-identical to the previous
+        # pipeline (guarded by test_atmosphere / test_ambient_sh /
+        # test_shadow_snap opt-out checks). Spaceflight scenes simply never
+        # enable them.
+        #
+        # Shadow texel snapping: quantize the shadow-frustum center to the
+        # shadow-map texel grid in the light's film plane, so a frustum that
+        # follows the camera (planetside pattern) stops re-rasterizing the
+        # depth map every sub-texel step — the source of edge shimmer while
+        # walking. Off by default (center used exactly as given).
+        self.shadow_texel_snap = bool(shadow_texel_snap)
+        # Aerial perspective / height haze: exponential-height medium
+        # evaluated analytically in the PBR shader (define
+        # ENABLE_ATMOSPHERE, recompile-class). Parameters are uniform-only.
+        self.enable_atmosphere = bool(enable_atmosphere)
+        self.atmo_haze_color = tuple(atmo_haze_color)
+        self.atmo_sun_haze_color = (tuple(atmo_sun_haze_color)
+                                    if atmo_sun_haze_color is not None
+                                    else None)
+        self.atmo_sun_power = float(atmo_sun_power)
+        self.atmo_density = max(0.0, float(atmo_density))
+        self.atmo_scale_height = max(1e-6, float(atmo_scale_height))
+        self.atmo_base_height = float(atmo_base_height)
+        # Environment-driven ambient (R5): irradiance SH coefficients fed to
+        # the shader's existing sh_coeffs path (zeros = off = the shipped
+        # behavior). Set via set_hemisphere_ambient()/set_ambient_sh().
+        self._ambient_sh = None
 
         # Sun light mode (R2)
         if sun_light_mode not in ('uniforms', 'directional'):
@@ -341,6 +456,7 @@ class Pipeline:
             'SUN_FROM_LIGHTSOURCE': self.sun_light_mode == 'directional',
             'LOG_DEPTH': self.enable_log_depth,
             'SHADOW_FILTER_SIZE': self.shadow_filter_size,
+            'ENABLE_ATMOSPHERE': self.enable_atmosphere,
         }
 
     def _recompile_pbr(self):
@@ -365,10 +481,18 @@ class Pipeline:
         self.render_node.set_attrib(attr)
         self._push_shadow_bias()
         self._set_env_map_uniforms()
+        self._push_atmosphere_uniforms()
 
     def _set_env_map_uniforms(self):
-        """Set IBL-related shader inputs."""
-        self.render_node.set_shader_input('sh_coeffs', self._empty_sh)
+        """Set IBL-related shader inputs.
+
+        sh_coeffs carries the environment-driven ambient when one is set
+        (set_hemisphere_ambient / set_ambient_sh) — it must survive shader
+        recompiles like every other input, so this re-pushes the CURRENT
+        coefficients, not unconditionally the empty set.
+        """
+        sh = self._ambient_sh if self._ambient_sh is not None else self._empty_sh
+        self.render_node.set_shader_input('sh_coeffs', sh)
         self.render_node.set_shader_input('brdf_lut', self._brdf_lut)
         self.render_node.set_shader_input('filtered_env_map', self._empty_cubemap)
         self.render_node.set_shader_input('max_reflection_lod', 0)
@@ -954,10 +1078,44 @@ class Pipeline:
         self._push_shadow_bias()
         if self.sun_light_np is None:
             return
-        self.sun_light_np.set_pos(self._shadow_center)
+        self._apply_shadow_center()
         lens = self.sun_light_np.node().get_lens()
         lens.set_film_size(2 * radius, 2 * radius)
         lens.set_near_far(-self._shadow_depth / 2, self._shadow_depth / 2)
+        self._push_shadow_probe_matrix()
+
+    def _apply_shadow_center(self):
+        """Position the sun node on the requested shadow center, texel-
+        snapped when shadow_texel_snap is on.
+
+        Snapping quantizes the center to multiples of the shadow-map texel's
+        world size (2*extent / map_size) along the light's film axes (the
+        node's right and up vectors), leaving the along-ray component
+        untouched. A frustum that follows the camera then re-rasterizes the
+        depth map only on whole-texel steps, so shadow edges stop shimmering
+        as the viewer walks (the openworld `_follow_shadow_frustum` pattern,
+        engine-side). Always snapped FROM the stored ideal center — repeated
+        calls cannot drift. With the flag off this is set_pos(center),
+        byte-identical to the pre-snap pipeline.
+        """
+        if self.sun_light_np is None:
+            return
+        center = p3d.Vec3(self._shadow_center)
+        if self.shadow_texel_snap and self.shadow_map_size > 0:
+            texel = 2.0 * self._shadow_extent / self.shadow_map_size
+            if texel > 0.0:
+                quat = self.sun_light_np.get_quat(self.render_node)
+                for axis in (quat.get_right(), quat.get_up()):
+                    offs = center.dot(axis)
+                    center += axis * (round(offs / texel) * texel - offs)
+        self.sun_light_np.set_pos(center)
+
+    def set_shadow_texel_snap(self, enabled):
+        """Toggle shadow-frustum texel snapping at runtime (uniform-cost,
+        no rebuild). See _apply_shadow_center. The requested center from
+        set_shadow_extent is preserved: toggling off restores it exactly."""
+        self.shadow_texel_snap = bool(enabled)
+        self._apply_shadow_center()
         self._push_shadow_probe_matrix()
 
     def _push_shadow_probe_matrix(self):
@@ -1193,6 +1351,11 @@ class Pipeline:
                 self.sun_light_np.set_hpr(heading, pitch, 0)
             self.sun_light_np.node().set_color(
                 p3d.LColor(sun_color[0], sun_color[1], sun_color[2], 1))
+            # The texel-snap grid rotates with the light's film axes — with
+            # snapping on, re-derive the snapped center from the stored
+            # ideal one (no-op set_pos when snapping is off).
+            if self.shadow_texel_snap:
+                self._apply_shadow_center()
             self._push_shadow_probe_matrix()
 
         # Uniforms are always updated: the legacy sun block reads them, and
@@ -1208,6 +1371,139 @@ class Pipeline:
     def set_debug_lighting(self, mode):
         """Set shader debug visualization mode (see pax_pbr.frag)."""
         self.render_node.set_shader_input('u_debug_lighting', float(mode))
+
+    # ------------------------------------------------------------------
+    # Planetside atmosphere (Session J / R5.1) — aerial perspective
+    # ------------------------------------------------------------------
+
+    def _push_atmosphere_uniforms(self):
+        """Push the aerial-perspective uniforms.
+
+        Always pushed (whether or not ENABLE_ATMOSPHERE is compiled in):
+        unused inputs are free, whereas a compiled-in shader with a missing
+        input is the known crash class (arch doc §3).
+        """
+        haze = self.atmo_haze_color
+        sun_haze = (self.atmo_sun_haze_color
+                    if self.atmo_sun_haze_color is not None else haze)
+        rn = self.render_node
+        rn.set_shader_input('u_atmo_haze_color', p3d.Vec3(*haze))
+        rn.set_shader_input('u_atmo_sun_haze_color', p3d.Vec3(*sun_haze))
+        rn.set_shader_input('u_atmo_sun_power', self.atmo_sun_power)
+        rn.set_shader_input('u_atmo_density', self.atmo_density)
+        rn.set_shader_input('u_atmo_inv_scale_height',
+                            1.0 / self.atmo_scale_height)
+        rn.set_shader_input('u_atmo_base_height', self.atmo_base_height)
+
+    def set_enable_atmosphere(self, enabled):
+        """Toggle aerial perspective / height haze (recompile-class).
+
+        PLANETSIDE feature — leave off for space scenes (off is the
+        default and is byte-identical to the pre-atmosphere pipeline).
+        With it on, distant geometry fades into u_atmo_haze_color with an
+        exponential-height falloff, tinted toward u_atmo_sun_haze_color
+        when looking sunward. Tune with set_atmosphere_params().
+        """
+        enabled = bool(enabled)
+        if enabled == self.enable_atmosphere:
+            return
+        self.enable_atmosphere = enabled
+        self._recompile_pbr()
+
+    def set_atmosphere_params(self, haze_color=None, sun_haze_color=None,
+                              sun_power=None, density=None,
+                              scale_height=None, base_height=None):
+        """Update aerial-perspective parameters (uniform-only, no rebuild).
+
+        haze_color:     linear-HDR inscatter color at the horizon. Match it
+                        to the horizon of the scene's skybox.
+        sun_haze_color: inscatter when looking straight at the sun (the
+                        forward-scattering glow); None = follow haze_color.
+        sun_power:      tightness of that sunward lobe (pow exponent).
+        density:        extinction per world unit at base_height. The
+                        distance to ~63% haze is 1/density world units.
+        scale_height:   world-unit e-folding height of the medium — haze
+                        thins with altitude (mountaintops stay clear).
+        base_height:    world z of the density datum (ground level).
+        """
+        if haze_color is not None:
+            self.atmo_haze_color = tuple(haze_color)
+        if sun_haze_color is not None:
+            self.atmo_sun_haze_color = tuple(sun_haze_color)
+        if sun_power is not None:
+            self.atmo_sun_power = float(sun_power)
+        if density is not None:
+            self.atmo_density = max(0.0, float(density))
+        if scale_height is not None:
+            self.atmo_scale_height = max(1e-6, float(scale_height))
+        if base_height is not None:
+            self.atmo_base_height = float(base_height)
+        self._push_atmosphere_uniforms()
+
+    # ------------------------------------------------------------------
+    # Environment-driven ambient (Session J / R5.2) — irradiance SH
+    # ------------------------------------------------------------------
+
+    def set_ambient_sh(self, coeffs):
+        """Feed 9 irradiance-convolved SH coefficients (RGB triples) to the
+        shader's existing sh_coeffs diffuse-IBL path (uniform-only).
+
+        The shader evaluates E(n) = sum(coeffs[i] * Y_i(n)) and applies it
+        as base_color * E(n) / pi, energy-conserving against metallic/
+        Fresnel (arch doc §9 R5 hooks). Basis slot order (world frame,
+        Panda Z-up): [const, x, z, y, xz, yz, xy, 3z^2-1, x^2-y^2] with
+        simplepbr's normalization constants. Survives shader recompiles.
+        """
+        pta = p3d.PTA_LVecBase3f()
+        for c in coeffs:
+            pta.push_back(p3d.LVecBase3f(c[0], c[1], c[2]))
+        if len(pta) != 9:
+            raise ValueError(f'set_ambient_sh needs 9 coefficients, '
+                             f'got {len(pta)}')
+        self._ambient_sh = pta
+        self.render_node.set_shader_input('sh_coeffs', pta)
+
+    def set_hemisphere_ambient(self, sky_color, ground_color, up=(0, 0, 1)):
+        """Two-tone environment ambient: sky_color lights up-facing
+        surfaces, ground_color down-facing, smoothly blended by the world
+        normal (uniform-only, exact SH bands 0-1).
+
+        THE cheap planetside-look win: shadowed sides of objects pick up
+        sky tint instead of a flat gray, and undersides get ground bounce.
+        Both colors are linear; a surface facing straight up receives
+        base_color * (avg + 2/3 * delta) where avg/delta are the mean and
+        half-difference of the two colors. Replaces (don't stack with) the
+        flat AmbientLight the scene would otherwise use — keep any
+        AmbientLight small. up is the world up axis in Panda Z-up space.
+        clear_ambient_sh() restores the exact pre-call output.
+        """
+        sky = p3d.Vec3(sky_color[0], sky_color[1], sky_color[2])
+        ground = p3d.Vec3(ground_color[0], ground_color[1], ground_color[2])
+        upv = p3d.Vec3(up[0], up[1], up[2])
+        if upv.length_squared() > 0:
+            upv.normalize()
+        avg = (sky + ground) * 0.5
+        half = (sky - ground) * 0.5
+        # Irradiance of L(w) = avg + half*(w.up): E(n) = pi*avg
+        # + (2pi/3)*half*(n.up). Divide by the shader's basis constants so
+        # sum(c_i * Y_i(n)) reproduces E(n) exactly (bands 0-1 are exact
+        # for a linear-gradient environment; higher bands are zero).
+        c0 = avg * (math.pi / 0.282095)
+        lin = half * ((2.0 * math.pi / 3.0) / 0.488603)
+        zero = (0.0, 0.0, 0.0)
+        self.set_ambient_sh([
+            tuple(c0),
+            tuple(lin * upv.x),   # slot 1: basis normal.x
+            tuple(lin * upv.z),   # slot 2: basis normal.z
+            tuple(lin * upv.y),   # slot 3: basis normal.y
+            zero, zero, zero, zero, zero,
+        ])
+
+    def clear_ambient_sh(self):
+        """Remove the environment ambient: sh_coeffs back to zeros —
+        byte-identical to the pipeline before any set_*_ambient call."""
+        self._ambient_sh = None
+        self.render_node.set_shader_input('sh_coeffs', self._empty_sh)
 
     # ------------------------------------------------------------------
     # Per-frame update

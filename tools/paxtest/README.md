@@ -109,6 +109,32 @@ a real caster's umbra retained (no peter-pan), and — with teeth — that a
 too-large value erodes the real umbra. The mechanism gate; the varied-
 terrain proof is `probe_openworld_scale.py --normal-bias`.
 
+**`test_shadow_snap.py`** (Session J, planetside package) — shadow-frustum
+texel snapping (`shadow_texel_snap`). Measures the shimmer source first
+(with snap off, a 0.3-texel `set_shadow_extent` center move re-rasterizes
+the depth map), then asserts the anti-shimmer property: with snap on, a
+sub-texel center sweep leaves the depth map AND the screen byte-identical,
+while a whole-texel move still re-rasterizes (the frustum follows, in
+texel steps). Default-off and toggle-off byte-identity are asserted.
+
+**`test_atmosphere.py`** (Session J / R5.1) — aerial perspective / height
+haze (`enable_atmosphere`). Analytic checks: a black card at distance d
+through a uniform medium renders at exactly
+`curve(haze * (1 - exp(-density*d)))` (three distances); a horizontal ray
+above the scale height carries almost no inscatter; the inscatter tint
+follows the sun (forward-scatter lobe); `density=0` with the feature
+compiled in is byte-identical to off; disabling restores the baseline
+capture exactly.
+
+**`test_ambient_sh.py`** (Session J / R5.2) — environment-driven ambient
+through the shader's existing (previously zeroed) `sh_coeffs` path.
+Asserts the hemisphere ambient analytics per channel (up-facing card gets
+`base*kd*(avg + 2/3*delta)`, down-facing the ground-bounce mix), that the
+coefficients survive a recompile-class toggle, that `clear_ambient_sh()`
+restores the baseline byte-identically, and that the EXPERIMENTAL
+`sh_from_cubemap()` reproduces the analytic hemisphere coefficients from
+a synthetic cubemap (math-only check, no rendering).
+
 **`test_skinning.py`** (Session G, openworld P1) — hardware vs CPU
 skinning correctness plus the per-node opt-out API. Three layers: the
 egg sheet posed and rendered GPU vs `set_hardware_skinning(np, False)`
@@ -147,13 +173,13 @@ the correct surface's favor and mimic a working depth buffer.
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Results snapshot (post Session G, 2026-07-17)
+## Results snapshot (post Session J, 2026-07-18)
 
 Same results on stock 1.10.16 and Pax3D 1.11.0 (Window-3 wheel), both
-baselines — 58 jobs per matrix, 4 matrices. Note: with the game's
-`use_pax3d_render` flag flipped (Session D), the `pax_pbr` adapter routes
-to pax3d_render — its column now mirrors pax3d_render except for `rebuild`
-(the test exercises the old attach pattern, which fails by design).
+baselines. Note: with the game's `use_pax3d_render` flag flipped
+(Session D), the `pax_pbr` adapter routes to pax3d_render — its column now
+mirrors pax3d_render except for `rebuild` (the test exercises the old
+attach pattern, which fails by design).
 
 | Test | none | simplepbr | pax_pbr (routed) | pax3d_render |
 |---|---|---|---|---|
@@ -165,6 +191,9 @@ to pax3d_render — its column now mirrors pax3d_render except for `rebuild`
 | shadows_gltf | skip | skip | skip | **PASS (glTF caster AND receiver, 45° sun)** |
 | shadow_quality | skip | skip | skip | **PASS** |
 | shadow_grazing | skip | skip | skip | **PASS (grazing acne cleared by slope-scaled bias, umbra kept)** |
+| shadow_snap | skip | skip | skip | **PASS (sub-texel sweep depth+screen stable; teeth measured)** |
+| atmosphere | skip | skip | skip | **PASS (analytic transmittance exact; opt-out byte-identical)** |
+| ambient_sh | skip | skip | skip | **PASS (hemisphere analytics exact; SH survives recompile)** |
 | ftl_blur | skip | skip | PASS | PASS |
 | scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)**; **@logdepth PASS (R4.1)** |
 | skinning | skip | skip | skip | **PASS (opt-out API + both openworld packs)** |

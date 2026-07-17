@@ -53,6 +53,22 @@ uniform struct p3d_FogParameters {
 } p3d_Fog;
 #endif
 
+#ifdef ENABLE_ATMOSPHERE
+// Aerial perspective / height haze (R5.1, planetside package). Exponential-
+// height medium: density(z) = u_atmo_density * exp(-(z - base) / H), with
+// the optical depth along the camera->fragment ray integrated analytically.
+// Inscatter color blends toward u_atmo_sun_haze_color when looking sunward
+// (forward-scattering lobe, pow(mu, u_atmo_sun_power)). World space here is
+// the same frame as u_sun_dir_world / camera_world_position (Panda Z-up:
+// +z is up, so height = world position z).
+uniform vec3 u_atmo_haze_color;      // horizon inscatter, linear HDR
+uniform vec3 u_atmo_sun_haze_color;  // inscatter when looking at the sun
+uniform float u_atmo_sun_power;      // forward-lobe tightness
+uniform float u_atmo_density;        // extinction per world unit at base height
+uniform float u_atmo_inv_scale_height;  // 1 / H (world units)
+uniform float u_atmo_base_height;    // world z of the density datum
+#endif
+
 uniform vec4 p3d_ColorScale;
 uniform vec4 p3d_TexAlphaOnly;
 
@@ -435,6 +451,39 @@ void main() {
     float fog_distance = length(v_view_position);
     float fog_factor = clamp(1.0 / exp(fog_distance * p3d_Fog.density), 0.0, 1.0);
     color = mix(p3d_Fog.color, color, fog_factor);
+#endif
+
+#ifdef ENABLE_ATMOSPHERE
+    // Aerial perspective (R5.1). Applied after emission (extinction affects
+    // emitters too) and, if both are compiled in, after the legacy fog.
+    // With u_atmo_density = 0: tau = 0, trans = 1 -> color unchanged.
+    {
+        vec3 atmo_ray = v_world_position - camera_world_position;
+        float atmo_dist = length(atmo_ray);
+        // Optical depth of an exponential medium along the ray, analytic:
+        //   tau = density * dist * exp(-a) * (1 - exp(-u)) / u
+        // where a = (z_cam - base)/H and u = (z_frag - z_cam)/H; the
+        // (1-exp(-u))/u factor -> 1 as the ray goes horizontal (u -> 0).
+        float atmo_a = (camera_world_position.z - u_atmo_base_height)
+                       * u_atmo_inv_scale_height;
+        float atmo_u = (v_world_position.z - camera_world_position.z)
+                       * u_atmo_inv_scale_height;
+        float atmo_falloff = (abs(atmo_u) > 1e-4)
+            ? (1.0 - exp(-clamp(atmo_u, -30.0, 30.0))) / atmo_u
+            : 1.0;
+        float atmo_tau = u_atmo_density * atmo_dist
+                         * exp(-clamp(atmo_a, -30.0, 30.0)) * atmo_falloff;
+        float atmo_trans = exp(-clamp(atmo_tau, 0.0, 60.0));
+        // Forward-scattering tint: mu = cos(view ray, toward-sun) — looking
+        // AT the sun means the ray direction equals the toward-sun vector.
+        float atmo_mu = (atmo_dist > 1e-6)
+            ? clamp(dot(atmo_ray / atmo_dist, normalize(u_sun_dir_world)), 0.0, 1.0)
+            : 0.0;
+        vec3 atmo_inscatter = mix(u_atmo_haze_color, u_atmo_sun_haze_color,
+                                  pow(atmo_mu, u_atmo_sun_power));
+        // Alpha deliberately untouched (unlike the legacy fog mix).
+        color.rgb = color.rgb * atmo_trans + atmo_inscatter * (1.0 - atmo_trans);
+    }
 #endif
 
     // Debug visualization modes (V key cycles when Ctrl+L debug is on)

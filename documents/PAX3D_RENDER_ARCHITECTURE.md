@@ -5,7 +5,7 @@
 **Status:** Active — this is where ALL rendering work lands (see CLAUDE.md
 working method). Game-side usage is documented separately in
 `sfb2/documents/PAX_3D_ENGINE_AND_GRAPHICS/USING_PAX3D_RENDER.md`.
-**Last updated:** 2026-07-16 (post Session C / R2)
+**Last updated:** 2026-07-18 (post Session J / planetside package)
 
 ---
 
@@ -109,6 +109,7 @@ post pass). A structural change (`enable_bloom`, `bloom_levels`,
 | `CALC_NORMAL_Z` | `calculate_normalmap_blue` | Reconstruct normal-map Z |
 | `SUN_FROM_LIGHTSOURCE` | `sun_light_mode == 'directional'` | **R2**: sun via `p3d_LightSource` loop (§4) |
 | `LOG_DEPTH` | `enable_log_depth` | **R4.1**: fragment-level logarithmic depth (§9) |
+| `ENABLE_ATMOSPHERE` | `enable_atmosphere` | **R5.1**: aerial perspective / height haze (§9) — planetside, off for space |
 
 Notable shader features already present (inherited from the game's fork):
 geometric specular anti-aliasing (Kaplanyan-Hill), Eddington limb darkening
@@ -344,6 +345,24 @@ palette), so one compiled shader serves both paths. Proven by
 test_skinning: pixel-exact vs the GPU path on the same pose, shadow
 follows pose while opted out, round-trip restores exactly.
 
+### 5.7 Texel snapping: `shadow_texel_snap` (Session J — planetside)
+
+A shadow frustum that follows the camera (the planetside pattern —
+openworld drives `set_shadow_extent(center=cam)` per frame) re-rasterizes
+the depth map on every sub-texel center move, making every shadow edge
+crawl while the viewer walks. With `shadow_texel_snap=True` (init) or
+`set_shadow_texel_snap(True)` (runtime, uniform-cost) the pipeline
+quantizes the frustum center to multiples of the texel's world size
+(`2*extent / shadow_map_size`) along the light's film axes before
+positioning the node, so the map only re-rasterizes on whole-texel steps.
+Snapping is always FROM the caller's stored ideal center (no drift), the
+grid re-derives when `update_sun` rotates the light, and geometry coverage
+is unaffected (the center moves by at most half a texel — size extents
+with a half-texel margin as you already should). Default OFF =
+byte-identical. Measured record: `test_shadow_snap` (0.3-texel move flips
+24 depth texels unsnapped, 0 across a snapped sub-texel sweep, 152 on a
+2-texel step — the frustum follows, it is not frozen).
+
 ---
 
 ## 6. Auxiliary Scene Cameras (R1 — the skybox-death fix)
@@ -384,8 +403,8 @@ Three cost classes — keep new parameters within this taxonomy:
 
 | Class | Cost | Parameters / methods |
 |---|---|---|
-| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile) |
-| Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size` |
+| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2) |
+| Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere` |
 | FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, (`bloom_levels`, `msaa_samples` at init) |
 
 Constructor parameters (all keyword): `render_node, window, camera_node,
@@ -397,9 +416,12 @@ shadow_filter_size=1, shadow_caster_mask=None,
 enable_hardware_skinning=True, calculate_normalmap_blue=True,
 enable_bloom=False, bloom_strength=1.0, bloom_intensity=1.0,
 bloom_levels=5, tonemap_operator='aces', enable_taa=False, debug=False,
-sun_light_mode='uniforms', shadow_map_size=2048` — unknown kwargs are
-swallowed (`**_kwargs`) for forward/backward compatibility with the game's
-call sites.
+sun_light_mode='uniforms', shadow_map_size=2048, enable_log_depth=False,
+shadow_texel_snap=False, enable_atmosphere=False,
+atmo_haze_color=(0.60, 0.71, 0.85), atmo_sun_haze_color=None,
+atmo_sun_power=8.0, atmo_density=0.002, atmo_scale_height=60.0,
+atmo_base_height=0.0` — unknown kwargs are swallowed (`**_kwargs`) for
+forward/backward compatibility with the game's call sites.
 
 ---
 
@@ -526,12 +548,60 @@ nothing new:
   mode already anchors the ship at origin — generalize that), owned in
   the game repo.
 
-### R5 hooks (atmosphere / env ambient)
+### R5.1 — Aerial perspective / height haze (LANDED opt-in, Session J)
 
-IBL plumbing already exists (SH coefficients `sh_coeffs[9]`, filtered env
-cubemap + BRDF LUT, currently fed zeros/white). Environment-driven ambient
-= computing real SH from the skybox and feeding `_set_env_map_uniforms` —
-no shader changes needed to first light.
+**Planetside feature — off by default and byte-identical when off; space
+scenes never enable it.** `enable_atmosphere=True` (init) or
+`set_enable_atmosphere()` (recompile-class) compiles `ENABLE_ATMOSPHERE`
+into the PBR shader: an exponential-height medium
+(`density(z) = density * exp(-(z - base_height) / scale_height)`) whose
+optical depth along the camera→fragment ray is integrated analytically —
+no ray marching, a handful of ALU per fragment. Distant geometry fades
+into `haze_color`, blended toward `sun_haze_color` by a
+`pow(cos_angle_to_sun, sun_power)` forward-scattering lobe, so the haze
+glows around the sun direction. Applied in linear HDR after emission
+(extinction affects emitters too), before the tonemap; alpha untouched;
+debug modes override it (instruments stay pure). If the legacy
+`ENABLE_FOG` is also compiled in, fog applies first.
+
+Parameters are uniform-only via `set_atmosphere_params(haze_color,
+sun_haze_color, sun_power, density, scale_height, base_height)`. Rules of
+thumb: 1/density is the distance to ~63% haze; match `haze_color` to the
+skybox horizon (the shader has no sky — background matching is content
+work); `scale_height` sets how far above the ground the haze dies.
+`density=0` is an exact no-op even when compiled in. Heights are world-z
+(the shader's world frame is Panda Z-up — same frame as
+`u_sun_dir_world`). Measured record: `test_atmosphere` (transmittance
+matches `curve(haze*(1-exp(-density*d)))` to 3 decimals at three
+distances, height falloff analytic, sunward tint, byte-identical opt-out).
+
+### R5.2 — Environment-driven ambient via irradiance SH (LANDED, Session J)
+
+The IBL plumbing that shipped zeroed since R1 (`sh_coeffs[9]`) is now
+fed by three uniform-only APIs — **zero shader changes**, and zeros (the
+default) remain byte-identical to the pre-R5 pipeline:
+
+- `set_hemisphere_ambient(sky_color, ground_color, up=(0,0,1))` — exact
+  SH bands 0–1 for a two-tone environment: up-facing surfaces receive
+  `base * (avg + 2/3*delta)`, down-facing the ground-bounce complement,
+  smoothly blended by the world normal. THE cheap planetside win: shadow
+  sides pick up sky tint, undersides get bounce. Replaces (don't stack
+  with) the flat AmbientLight — keep any AmbientLight small.
+- `set_ambient_sh(coeffs)` — raw 9×RGB irradiance-convolved
+  coefficients, shader slot order `[1, x, z, y, xz, yz, xy, 3z²-1,
+  x²-y²]` (simplepbr constants).
+- `clear_ambient_sh()` — back to zeros, byte-identical restore.
+- `sh_from_cubemap(tex)` (module-level, EXPERIMENTAL) — CPU projection of
+  a loaded cubemap to those 9 coefficients (call once at scene setup).
+  The up/down axis and DC term are validated; confirm horizontal
+  orientation against a real skybox before tuning content to it.
+
+The custom coefficients survive shader recompiles
+(`_set_env_map_uniforms` re-pushes the CURRENT set — the §3 invariant
+extended). Specular IBL (filtered env cubemap) remains future R5 work.
+Measured record: `test_ambient_sh` (per-channel analytics exact through
+the tonemap curve; recompile survival; cubemap projection matches the
+analytic hemisphere at 0.0%).
 
 ---
 
