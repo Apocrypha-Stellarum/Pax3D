@@ -16,8 +16,14 @@ superseded — check the banner at the top of each file.
 | `OPENWORLD_FEEDBACK_RESPONSE_3.md` | **CURRENT** | Round 3 (Session G): both asks landed (assertion + glTF caster/receiver test), P1 concertina not reproducible on the clean engine (re-measurement requested), per-node `set_hardware_skinning()` delivered. |
 | `OPENWORLD_FEEDBACK_RESPONSE_4.md` | **CURRENT** | Round 4 (Session I): the P0 addendum (direction-gated vanishing shadows) root-caused as grazing-angle acne (fact 14); slope-scaled bias (`shadow_normal_bias_world`) landed opt-in, gated, proven on the village GLB; in-app A/B requested. |
 | `PLANETSIDE_LOOK_GUIDE.md` | **CURRENT** | Session J planetside package field guide: aerial haze, hemisphere/SH ambient, shadow texel snapping — APIs, Mars starting values, tuning loops, the opt-out contract for spaceflight. |
+| `HANDOVERS/handover_session_j_planetside.md` | **CURRENT** | **The live handover.** Session J: planetside package (haze, SH ambient, texel snap) landed opt-in; next-session priorities (openworld tuning, sh_from_cubemap orientation, R5 remainder). |
+| `HANDOVERS/handover_session_i_grazing_bias_landed.md` | HISTORICAL — executed | Session I handover: slope-scaled bias landed; its item #3 (texel snapping) executed in Session J; items #1/#2 (openworld A/B, normal-offset contingency) carried forward in the J handover. |
+| `HANDOVERS/handover_session_h_shadow_grazing_bias.md` | HISTORICAL — executed | Session H plan for the grazing-angle fix (executed in Session I). |
+| `HANDOVERS/handover_session_g_hardening_skinning.md` | HISTORICAL — superseded | Session G handover: paxtest hardening, the P1 verdict, per-node skinning API. |
 | `HANDOVERS/handover_session_f_windows_1-3.md` | HISTORICAL — superseded | Session F handover: builds/validation/deletions, machine migration. |
-| `HANDOVERS/handover_session_g_hardening_skinning.md` | **CURRENT** | Session G handover: paxtest hardening, the P1 verdict, per-node skinning API, next-session priorities. |
+| `HANDOVERS/handover_session_d2_r4_logdepth.md` | HISTORICAL — superseded | Session D2 handover: R4 acceptance tests + log depth. |
+| `HANDOVERS/handover_session_d_bloom_fix.md` | HISTORICAL — superseded | Session D handover: the F3 bloom root-cause fix. |
+| `HANDOVERS/handover_session_c_directional_sun.md` | HISTORICAL — superseded | Session C handover: the directional sun + shadows landing. |
 | `PAXTEST_FINDINGS_SESSION_A.md` | **CURRENT** | The harness findings that rebooted the program (double-gamma disproven, DirectionalLight exonerated, bloom defect cornered). |
 | `../tools/paxtest/README.md` | **CURRENT** | Test harness usage and results snapshot. |
 | `BUILDING_PAX3D.md` | REFERENCE | Building the engine wheel from source — thirdparty setup, every pitfall, build-window policy note. |
