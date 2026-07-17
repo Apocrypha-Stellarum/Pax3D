@@ -220,3 +220,20 @@ green in the documented pattern (the only new row-level note:
 fixed-function-under-gl3.2 control-pipeline artifact, not ours). Engine
 C++ untouched; everything this session is Python/GLSL/tests/docs, per
 the Language Canon.
+
+**Session G postscript (same evening):** openworld updated
+`PAX3D_FEEDBACK.md` with a P0 ADDENDUM — the lit-shadow failure is
+**sun-direction-gated** (perfect at eastern/high sun, dead inside a
+western low-sun cone, alt ≤~40° az ~240, depth-error signature
+~1/tan(alt), azimuth-asymmetric; `OW_SUN_OVERRIDE` makes it
+deterministic and clock-independent) — and their reinterpretation of
+the 03:36/04:29 window (sun-arc mapping change, not contamination) is
+credible now that fact #12 showed the forensic counter-evidence was
+pose luck. Immediate probe (`tools/paxtest/probe_azimuth_sweep.py`):
+at toy scale the glTF caster+receiver scene casts perfect shadows at
+ALL 4 azimuths × alt 34/45/60, identical stock vs Pax3D — the trigger
+needs openworld scale and/or their exact daynight sun vectors. Plan
+for Session H is in the (updated) Session G handover: scale-faithful
+sweep → their exact vectors → `set_shadow_extent` depth-window
+placement audit → mode-10/11 decode. Their addendum also confirms
+skinned NPC shadows in-game (0.604× darkening at noon).

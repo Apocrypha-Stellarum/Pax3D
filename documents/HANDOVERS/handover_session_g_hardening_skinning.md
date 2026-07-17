@@ -38,18 +38,75 @@ control-pipeline artifact under gl 3 2, not ours).
    0.00%); net compensating-scale = 1.000 on every spine joint; palette
    cap [100] in every era. Same epistemic shape as the P0.
 
+## LATE-BREAKING (same day, after the sections above): the P0 is back,
+## and it is DIRECTION-GATED
+
+Openworld updated `PAX3D_FEEDBACK.md` with an afternoon **P0 addendum**
+that supersedes their "shadows vanish everywhere" characterization AND
+weakens Session F's contamination verdict:
+
+- **Cast shadows work at high/eastern sun and die only inside a western
+  low-sun cone.** Their `OW_SUN_OVERRIDE=alt,az` matrix (deterministic,
+  clock-independent): alt 34/az 120 east = perfect; noon = perfect;
+  az 240 west at alt 60/45 = good, 42 = fading, 40 = nearly gone +
+  ground banding, ≤38 = gone. Natural clock: works ≤15:36, broken
+  ≥15:42; the 08:00 morning mirror (same 34° altitude, eastern azimuth)
+  is FINE.
+- **Signature:** shadow pools fade and vanish inside the cone; fine
+  terracing/acne on open ground; large-offset self-shadowing survives;
+  mode-10 UV gradient stays smooth across the boundary → looks like a
+  **depth error growing ~1/tan(alt) with an azimuth-sign asymmetry**,
+  not a UV/matrix flip. Eliminated: follow-frustum (`OW_NO_FOLLOW`),
+  PCF 1v3, NPCs, all hour-driven inputs.
+- **Their reinterpretation, which we should take seriously:** the
+  03:36/04:29 "regression window" probably changed their sun-arc
+  mapping, moving hour-16's *direction* across an always-present fault
+  boundary — i.e. possibly NOT the contamination after all. Our own
+  fact #12 (the forensic 0.800→0.086 was pose luck) already removed the
+  strongest clean-engine counter-evidence. Treat the direction-gated
+  failure as a LIVE bug candidate of unknown location (engine C++ /
+  pipeline Python-GLSL / their daynight mapping).
+- **Session G postscript probe** (`tools/paxtest/probe_azimuth_sweep.py`):
+  at TOY scale (extent 12/60, origin, static sun, glTF caster+receiver)
+  all 4 azimuths × alt 34/45/60 cast perfect shadows (ratio 0.11–0.12),
+  **identical on stock and Pax3D**. So the trigger needs their scale
+  and/or their exact sun vectors — the toy matrix is exonerated on all
+  axes, both engines.
+- Also in the addendum: NPC casters darken ground 0.604× at noon
+  in-game (Session E follow-up delivered) — skinned shadow casting is
+  fully confirmed in the field.
+
 ## Next session — priorities in order
 
-1. **Openworld round-3 follow-up** (when their re-measurement arrives):
-   if pack 2 still concertinas in-app on a clean tree + current wheel,
-   first step is `test_skinning.py` on THEIR machine, then their in-app
-   two-command-style repro. If it's clean: close the P1 for good.
-2. **Game-side adoption queue** (master plan §4.2 — needs the user):
+1. **THE direction-gated shadow bug (new P0).** Method, in order:
+   (a) re-run `probe_azimuth_sweep.py` at openworld scale —
+   `set_shadow_extent(450, 600)`, `shadow_map_size=4096`, scene
+   spanning hundreds of units, camera + content off-origin,
+   `shadow_bias_world=0.18`, per-frame `update_sun` — sweep the
+   az×alt boundary (30–60°); (b) read openworld's `game/daynight.py`
+   alt/az→vector mapping and feed the harness its EXACT vectors for
+   (34,240) vs (34,120) — their evidence cannot distinguish an engine
+   defect from a mapping defect, the harness can; (c) read our
+   `set_shadow_extent`/`_configure_sun_shadows` for how the depth
+   window is placed along the light axis relative to `center` — a
+   placement error is the natural candidate for a depth offset that
+   grows as the sun drops and could carry a sign asymmetry; (d) once
+   reproduced, mode-10/11 decode at a failing direction; fix in
+   Python/GLSL if it's ours; (e) if it will NOT reproduce at scale
+   with their exact vectors, ship them a parameterized in-app probe
+   (Session-E style) and take their two-command repro. Run everything
+   on BOTH engines — stock-vs-Pax3D identity is the C++-vs-Python
+   discriminator.
+2. **Openworld P1 re-measurement follow-up** (their file did NOT
+   retract the concertina claim): if pack 2 still deforms in-app on a
+   clean tree + current wheel, run `test_skinning.py` on THEIR machine
+   first, then take their in-app repro. If clean: close the P1.
+3. **Game-side adoption queue** (master plan §4.2 — needs the user):
    parity eyeball, shadows-in-the-pilot-seat (`shadow_bias_world` ~0.5
    IEU first!), bloom retune, sRGB linearization experiment.
-3. **R4.2 camera-relative** (game side, §4.3) — the engine is ready;
+4. **R4.2 camera-relative** (game side, §4.3) — the engine is ready;
    coordinate with the nested-space dev.
-4. Smaller backlog: engine-side shadow texel snapping (shimmer test),
+5. Smaller backlog: engine-side shadow texel snapping (shimmer test),
    runtime fog toggle (R5-adjacent), the two sfb2 bugs (cp1252 `→`
    print; mixed-slash music path).
 
