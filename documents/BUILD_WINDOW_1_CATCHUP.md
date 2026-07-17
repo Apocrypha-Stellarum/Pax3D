@@ -1,5 +1,20 @@
 # Build Window 1 — Final Catch-Up Merge (+ optional doubles wheel)
 
+> **COMPLETED + SIGNED OFF 2026-07-17.** Both builds succeeded (~8 min
+> each on the new primary machine, MSVC 14.5 / VS Build Tools 2026 — see
+> BUILDING_PAX3D.md pitfall 0 for the detection quirk). The FULL §6
+> gauntlet ran green the same day: paxtest both engines × both baselines
+> identical (48/48 rows), testbed eyeball, sfb2 boot smoke, openworld
+> selftest, doubles precision check perfect (0.000e+00 at Neptune
+> offsets) + `test3d_ftl --selftest` PASS. The merge is signed off; the
+> severed-upstream policy is fully in force. Wheels:
+> `wheels_window1\{float,double}\`. Doubles results recorded in the game
+> repo's `handover_doubles_spike.md`. One incident during the window —
+> stale-file contamination of the worktree — is documented in
+> `SESSION_LOG.md`; the first build failed because of it, the rebuild
+> after `git restore` succeeded.
+> This document is now HISTORICAL — procedure kept for reference.
+
 **Date opened:** 2026-07-17 · **Merge commit:** `eb685fd003`
 **What this window builds:** the one-time Route A catch-up merge of
 upstream `panda3d/panda3d` master (93 commits: C++17 migration,

@@ -39,7 +39,7 @@ The rendering program runs in gated phases (see the master plan):
 | R3 | Bloom fixed + HDR polish | **Core done (Session D).** F3 fixed (8-bit intermediate FBOs were the root cause), test_bloom green everywhere. Remaining: content retune (strength/intensity/tints), light units, auto-exposure stretch |
 | R4 | Log depth, camera-relative rendering, single camera | **Log depth landed opt-in (Session D)** — `enable_log_depth`, acceptance row `scale @logdepth` green. Remaining: camera-relative/doubles decision (see game repo spike), sky-camera retirement, game frustum flip |
 | R5 | Atmospheric scattering, env-driven ambient, signature look | Not started |
-| R6 | Engine hygiene (DX9 removal, dead-path deletion, Vulkan watch) | Ongoing, low priority |
+| R6 | Engine hygiene (dead-path deletion, Vulkan watch) | **Windows 2+3 DONE (2026-07-17):** DX9 excised (`d29183ce42`), GLES/EGL/WebGL/mobile/macOS display backends excised (`3912762dd9`) — −35k lines, full gate green both times. Window 4 candidates queued below |
 
 **Engine C++ changes so far: one build-system fix.** Everything else is
 Python/GLSL in `pax3d_render/`. When to use which language is canon — see
@@ -66,6 +66,15 @@ full analysis in `documents/PAXTEST_FINDINGS_SESSION_A.md`):
   banding, not filtering. Any HDR post pass MUST pass float fbprops;
   `bloom_buffers_float` in test_bloom guards this. Beware the diagnostic
   trap: this banding looks exactly like nearest-neighbor sampling.
+- **Verify the engine worktree is clean before trusting field reports
+  (2026-07-17).** During Window-1 prep, ~35 repo files were silently
+  overwritten with stale Session-D-era content (editor/session artifact;
+  forensics in the session log). The openworld "lit shadows vanish" P0
+  was measured against that contaminated tree — on a clean engine the
+  same harness probe (`gltf_caster_ground_lum`) shows the glTF caster
+  darkening ground 0.800→0.086. Before chasing any externally-reported
+  rendering regression: `git status`, then reproduce on a pristine
+  checkout + current wheel.
 
 ---
 
@@ -146,12 +155,13 @@ the GPU and Panda's C++, not in our orchestration layer.
 
 | Item | Class | Status |
 |---|---|---|
-| **WINDOW 1 (open): final catch-up merge build** — Route A ratified 2026-07-17: one-time merge of upstream master (93 commits: C++17, robustness fixes) BEFORE the door closes; merge committed clean (`eb685fd003`, zero conflicts, oscmd fix intact), paxtest green on old wheels | Merge + rebuild | **Awaiting B-computer build** — instructions: `documents/BUILD_WINDOW_1_CATCHUP.md`. Rollback: `wheels_float/` wheel + `pre-catchup-merge` tag |
-| Doubles engine build (`STDFLOAT_DOUBLE`) | Build flag | **Bundled into Window 1 as optional Build 2** (B computer removes the CPU-cost objection); validated AFTER the float wheel, separately. Procedure: game repo `handover_doubles_spike.md` |
-| R2.3 DirectionalLight conveniences (`set_direction_world`, strip translation in `xform()`, non-zero-pos warning) | New C++ API | Queued, low urgency — the pipeline owns sun orientation. Deliberately NOT in Window 1 (zero new own-C++ that window) |
-| DX9 removal (`dxgsg9/`, `pandadx9/`) + dead-path deletion | Deletion (R6) | Queued (not Window 1) |
+| ~~WINDOW 1: final catch-up merge build~~ | Merge + rebuild | **DONE + VALIDATED 2026-07-17** — float wheel built (8 min on this machine, MSVC 14.5), full §6 gauntlet green (paxtest both engines × both baselines identical, testbed, sfb2 + openworld smokes). The merge is signed off; severed-upstream policy fully in force. Wheel: `wheels_window1\float\` |
+| ~~Doubles engine build (`STDFLOAT_DOUBLE`)~~ | Build flag | **DONE, spike VERIFIED 2026-07-17** — compiles clean under C++17 (upstream never CI'd this); precision perfect (0.000e+00 round-trip at Neptune offsets); `test3d_ftl --selftest` green. Finding: stock simplepbr crashes on doubles (LVecBase3f/3d) — the wheel stays quarantined in `pax3d-double-env`. Remaining: perf A/B + user flight. Results: game repo `handover_doubles_spike.md` |
+| ~~WINDOW 2: DX9 removal~~ | Deletion (R6) | **DONE 2026-07-17** — `d29183ce42`, 65 files, −16,691 lines, gate green |
+| ~~WINDOW 3: dead platform display backends~~ | Deletion (R6) | **DONE 2026-07-17** — `3912762dd9`, 132 files, −18,546 lines (GLES/GLES2/EGL/WebGL/Android/iPhone/macOS backends + the DX9 flag machinery), gate green. **`--no-dx9` is no longer a valid makepanda option** |
+| Window 4 candidates: `panda/src/android` + `iphone` app glue, makepanda Android cross-compile machinery, `direct/dist` mobile deploy logic, DIRECTCAM (permanently auto-disabled — its SDK came from the DX SDK) | Deletion (R6) | Queued — mobile-*target* extraction, one themed window per the surgery plan |
+| R2.3 DirectionalLight conveniences (`set_direction_world`, strip translation in `xform()`, non-zero-pos warning) | New C++ API | Queued, low urgency — the pipeline owns sun orientation |
 | Vulkan-port evaluation (hand-port from read-only upstream reference) | Port | Only when it can run the paxtest suite. Watch log 2026-07-17: ACTIVE — upstream merged `shaderpipeline` (SPIR-V) into the `vulkan` branch 2026-07-02/03; nowhere near paxtest-ready. The catch-up merge moved our base next to it — a future port got much cheaper |
-| ~~Upstream cherry-pick candidates~~ | Cherry-pick | **Absorbed by the Window 1 catch-up merge** (all 93 commits incl. `70775c34`, `fac1fd77`, `29620e79` are now in-tree) |
 | Python→C++ promotions | Promotion | **None yet** — nothing Python has profiled hot |
 
 ---
@@ -164,8 +174,8 @@ the GPU and Panda's C++, not in our orchestration layer.
 | `pax3d_render/shaders/` | GLSL sources (PBR, bloom, tonemap, TAA, shadow) | Active |
 | `tools/paxtest/` | Offscreen test harness: gamma, lighting, bloom, rebuild, shadows | Active — extend when adding features |
 | `pax3d_simplepbr/` | March-2026 simplepbr fork | **Retired** — reference only, merged into pax3d_render |
-| `panda/src/` | Engine C++ (~65 modules; `glstuff/` is the GL backend, `pgraphnodes/` has the light classes) | Unmodified upstream 1.11.0-dev at its **July-2026 state** (final catch-up merge `eb685fd003`, C++17) |
-| `makepanda/` | Build system | One committed fix (`oscmd` ignoreError) |
+| `panda/src/` | Engine C++ (`glstuff/`+`glgsg/` are the GL backend, `wgldisplay/`+`windisplay/` the Windows glue, `pgraphnodes/` has the light classes) | Upstream 1.11.0-dev July-2026 state (merge `eb685fd003`, C++17) **minus R6 surgery**: DX9 and all GLES/EGL/WebGL/mobile/macOS display backends deleted (Windows 2+3, −35k lines). Kept on purpose: `x11display/`+`glxdisplay/` (HOLD — plausible Linux CI future), `tinydisplay/` (software renderer — paxtest on GPU-less machines) |
+| `makepanda/` | Build system | oscmd fix + R6 surgery scrubs. Ships one graphics reality: OpenGL core on Windows (+X11/tinydisplay). `--no-dx9`/`--directx-sdk` no longer exist |
 | `documents/` | Planning docs, findings, guides — see `documents/README.md` | Mixed current/historical |
 | `doc/` | Upstream Panda3D docs (CODING_STYLE, INSTALL) | Upstream |
 
@@ -176,33 +186,51 @@ the GPU and Panda's C++, not in our orchestration layer.
 Python/GLSL work in `pax3d_render/` needs **no engine build** — it runs on
 whatever `panda3d` is installed. Build only when touching `panda/src/`.
 
-```bash
-cd C:/python/pax3d
-C:/Python313/python.exe makepanda/makepanda.py \
-    --everything --no-dx9 --no-fmod --no-ffmpeg --no-fftw --no-opencv \
-    --windows-sdk 10 --threads 8 --wheel
+The canonical command on this machine (PowerShell; ~8 min at 20 threads):
+
+```powershell
+cd C:\python\pax3d
+$env:VCINSTALLDIR = "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\"
+C:\Python313\python.exe makepanda\makepanda.py --everything --no-fmod --no-ffmpeg `
+    --no-fftw --no-opencv --windows-sdk 10 --msvc-version=14.5 --threads 20 --wheel
 
 # Install into the Pax3D venv:
-source C:/python/pax3d-env/Scripts/activate
-pip install --force-reinstall panda3d-*.whl
+C:\python\pax3d-env\Scripts\python.exe -m pip install --force-reinstall --no-deps panda3d-1.11.0-cp313-cp313-win_amd64.whl
 ```
 
 Critical pitfalls (full detail in `documents/BUILDING_PAX3D.md`):
-1. **ALWAYS pass `--windows-sdk 10`** — SDK 8.1 is present but broken.
-2. **Thirdparty libraries are not in the repo** — see the build doc.
-3. **Use system Python, never `makepanda.bat`.**
-4. **Delete `built_x64/` after failed builds** — the dep cache corrupts.
+1. **ALWAYS pass `--windows-sdk 10`** — never rely on the default SDK pick.
+2. **This machine has VS Build Tools 2026, not full VS** — makepanda's
+   vswhere query cannot see Build Tools editions and it defaults to MSVC
+   14.3, hence BOTH `--msvc-version=14.5` AND the `VCINSTALLDIR` env var
+   are required (detection falls through to that var).
+3. **`--no-dx9` no longer exists** (removed with the DX9 surgery) — old
+   docs/scripts that pass it will error out.
+4. **Thirdparty libraries are not in the repo** — see the build doc.
+5. **Use system Python, never `makepanda.bat`.**
+6. **Delete `built_x64/` after failed builds AND between flag changes** —
+   the dep cache corrupts/mis-builds silently.
 
 ## Environments
 
 | Environment | Python | Engine | Use for |
 |---|---|---|---|
 | System Python | `C:\Python313\python.exe` | Stock Panda3D 1.10.16 | paxtest cross-checks, quick runs |
-| Pax3D venv | `C:\python\pax3d-env\` | Pax3D 1.11.0 custom wheel | **The game's default engine**; engine-build testing |
+| Pax3D venv | `C:\python\pax3d-env\` | Pax3D 1.11.0 (Window-3 wheel) + full game dep stack | **The game's default engine**; engine-build testing |
+| Doubles venv | `C:\python\pax3d-double-env\` | Pax3D 1.11.0 `STDFLOAT_DOUBLE` wheel | The doubles experiment ONLY — never wire to launchers (stock simplepbr crashes on it) |
 
 The game (`plan.py`) and testbed run under either; paxtest runs under both —
 identical results on both is itself a useful signal (defect is in Python/GLSL,
 not C++). See `documents/SWITCHING_ENGINES.md`.
+
+**Machine context (since 2026-07-17):** THIS machine (20 cores, VS Build
+Tools 2026) is the primary dev machine — sfb2 development moved here;
+`C:\python\sfb2` is the canonical current game copy (`D:\python\sfb2` on
+the external T7 is the master backup; `D:\python\pax3d` is the pre-transfer
+engine backup). Wheels live in `wheels_window1\{float,double}\`,
+`wheels_window2\`, `wheels_window3\` (current); `wheels_float\` holds the
+pre-merge rollback. Smoke-boot the game with `PYTHONUTF8=1` when stdout is
+redirected (a game-side `→` print crashes under cp1252 otherwise).
 
 ---
 
@@ -234,9 +262,11 @@ specific fix by hand if one ever matters. There is no sync cadence.
 One-time exception, user-ratified (Route A, 2026-07-17): a **final
 catch-up merge** of upstream master (`eb685fd003` — C++17 migration + 93
 commits of fixes) was taken before the door closed, moving our divergence
-point from 2026-02-26 to July 2026. It awaits its build window
-(`documents/BUILD_WINDOW_1_CATCHUP.md`). No further syncs — the policy
-above is otherwise unchanged.
+point from 2026-02-26 to July 2026. **Built and fully validated
+2026-07-17** (`documents/BUILD_WINDOW_1_CATCHUP.md`) — the door is now
+closed for good. No further syncs — the policy above is otherwise
+unchanged. Sovereignty has since been exercised: R6 surgery Windows 2+3
+deleted 35k lines of never-shipped backends.
 
 | | |
 |---|---|
@@ -255,5 +285,8 @@ reverted almost entirely (Session 459 in the game repo). July 2026 rebooted
 the program with a test harness first: the harness disproved both founding
 myths (engine light bug, double gamma), reproduced the real bloom defect,
 and then R1/R2 landed in quick succession — one unified pipeline, a real
-DirectionalLight sun with working shadows, all harness-proven. The lesson
-that must survive: **measure first, then build.**
+DirectionalLight sun with working shadows, all harness-proven. On
+2026-07-17 the final upstream catch-up merge was built and signed off, the
+doubles spike verified, and R6 surgery removed DX9 and every dead platform
+backend — a sovereign, single-reality engine tree, every step gated by the
+harness. The lesson that must survive: **measure first, then build.**

@@ -146,3 +146,40 @@ Upstream 2026 check: no SDK releases (latest remains 1.10.16,
 `ENGINE_SURGERY_PLAN.md` written (DX9 removal = Window 2; dead
 backends = Window 3; Cg deferred to a shaderpipeline-port decision).
 Master plan rewritten as v3; this log extracted.
+
+**Session F update (2026-07-17, the build-window marathon):** All three
+build windows executed and validated in one day on the new primary
+machine (20 cores, VS Build Tools 2026 — makepanda needs
+`--msvc-version=14.5` + `VCINSTALLDIR`, see BUILDING_PAX3D.md pitfall 0).
+**Window 1:** float wheel 7m49s, doubles wheel 8m19s (upstream never
+CI-built C++17×doubles — it compiles clean); full §6 gauntlet green —
+paxtest both engines × both baselines 48/48 identical, testbed eyeball,
+sfb2 boot, openworld selftest; doubles spike verified (round-trip
+0.000e+00 at station/1 AU/Neptune offsets, `test3d_ftl --selftest`
+PASS; finding: stock simplepbr crashes on doubles → wheel quarantined
+in `pax3d-double-env`). The merge is SIGNED OFF; severed-upstream policy
+fully in force. **Windows 2+3 (R6 surgery):** DX9 excised
+(`d29183ce42`, −16,691 lines) then all dead platform display backends +
+the DX9 flag machinery (`3912762dd9`, −18,546 lines); each with its own
+build and full gate; none/simplepbr canaries never moved. `--no-dx9` no
+longer exists. **Incident worth remembering:** the first Window-1 build
+failed because ~35 repo files had been silently overwritten with stale
+Session-D-era content (xfile C++ reverted to pre-merge string_view-less
+signatures; pipeline.py/pax_pbr.frag missing ~140 lines of Session D2/E
+work). Forensics: content matched the repo state of commit `2499ecc6c4`
+(03:18); the write happened 05:53–05:54 on the A machine, pre-transfer;
+the D:\ backup carries the identical dirty state; openworld's vendored
+copy and its launcher were ruled out. Fixed by `git restore` of 15 files
+(stale diff preserved as a patch). **Consequence:** the openworld
+evening "P0 — lit shadows vanish" was measured against that contaminated
+tree; on the clean engine `gltf_caster_ground_lum` shows 0.800→0.086
+darkening, and the user confirms shadows look good in-game. Established
+fact #11 added. **Machine migration:** sfb2 development moved here —
+canonical `C:\python\sfb2` (67.5 GB robocopy from the T7), fresh
+`pax3d-env` with the current wheel + full game dep stack. Two game-side
+bugs found in passing (sfb2): a `→` print crashes under cp1252 redirected
+stdout (smoke with `PYTHONUTF8=1`), and a mixed-slash music path breaks
+one audio load (reproduces on stock 1.10.16 — pre-existing). Docs
+refreshed this session; next-session priorities: paxtest hardening
+(openworld asks), the REAL new P1 (94-joint Rigify hardware-skinning
+deformation), then the game-side adoption queue.

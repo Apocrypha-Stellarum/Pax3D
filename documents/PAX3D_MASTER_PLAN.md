@@ -40,12 +40,13 @@ Identical paxtest results on both engines = the defect is Python/GLSL, not C++.
 | R1 unified renderer | `pax3d_render/` (pax_pbr ⊕ pax3d_simplepbr merge), color contract, `register_scene_camera()` | **Core done** (Sessions B, D — game flag flipped, boots clean). Open: in-game parity eyeball (user), sRGB linearization experiment, GLSL-120 path removal (needs game `gl-version 3 2`) |
 | R2 directional sun + shadows | Pipeline-owned DirectionalLight, HPR-driven; shadows with world-space extent center; **hardened Session E**: world-unit bias, 3×3 PCF, no-cast API, skinned casters proven | **Core done + hardened** (test_shadows 12+12 checks, test_shadow_quality 9). Open: in-game validation — set `shadow_bias_world` (~0.5 IEU) first |
 | R3 bloom + HDR | F3 root-caused (8-bit intermediate FBOs) and fixed; float fbprops everywhere | **Core done** (Session D; test_bloom green both sizes). Open: content retune, light units, auto-exposure stretch |
-| R4 space scale | R4.0 acceptance tests; R4.1 log depth opt-in (`enable_log_depth`, @logdepth row green); R4.2 camera-relative DECIDED (game-side; parent-cancel trap measured); doubles wheel = Window 1 Build 2 (experiment) | **Engine side essentially done.** Open: game-side R4.2 implementation, frustum flip, then sky-camera retirement |
+| R4 space scale | R4.0 acceptance tests; R4.1 log depth opt-in (`enable_log_depth`, @logdepth row green); R4.2 camera-relative DECIDED (game-side; parent-cancel trap measured); doubles wheel **built + verified 2026-07-17**: precision 0.000e+00 at Neptune offsets, `test3d_ftl --selftest` green, but stock simplepbr crashes on it (stays quarantined in `pax3d-double-env`) | **Engine side essentially done.** Open: game-side R4.2 implementation, frustum flip, then sky-camera retirement; doubles perf A/B + user flight |
 | R5 atmosphere + signature look | Scattering, SH-from-skybox ambient, height fog, lens polish | **Not started** — next feature phase after in-game sign-offs |
-| R6 engine surgery | DX9 + dead-backend deletion | **ELEVATED** — `ENGINE_SURGERY_PLAN.md`, Windows 2+ |
+| R6 engine surgery | DX9 + dead-backend deletion | **Windows 2+3 DONE 2026-07-17** (`d29183ce42`, `3912762dd9` — −35k lines, both fully gated). Window 4 (mobile-target extraction) queued — `ENGINE_SURGERY_PLAN.md` |
 
-Engine C++ changes to date: **one build-system fix** (makepanda oscmd) — plus the
-Route A catch-up merge of upstream code (`eb685fd003`, awaiting its build window).
+Engine changes to date: the makepanda oscmd fix, the Route A catch-up merge
+(`eb685fd003` — **built and signed off 2026-07-17**), and the R6 surgery
+deletions (Windows 2+3). Still zero new own-C++ features.
 
 ---
 
@@ -83,6 +84,7 @@ Each was established mechanically; each has a permanent guard.
 | 8 | `shadow_bias` is normalized light-space depth: world offset = bias × extent depth (0.005 ⇒ 20 IEU at the game's 500/4000). Use `shadow_bias_world` | Session E; test_shadow_quality `bias_trap_at_scale` |
 | 9 | Both sphere windings light correctly through pax3d_render (the old Formula B/C saga is closed); tangents matter only when normal maps arrive | Session A/C; test_lighting both variants |
 | 10 | The GL layer pads absent/short transform tables with identity — a depth shader with `ENABLE_SKINNING` always on is safe for static meshes | Session E C++ recon (`glShaderContext update_transform_table`) |
+| 11 | Field reports are only as good as the tree they measured. The 2026-07-17 openworld "lit shadows vanish" P0 was measured against a worktree contaminated with stale Session-D-era `pipeline.py`/`pax_pbr.frag` (forensics: SESSION_LOG.md); on a clean engine `gltf_caster_ground_lum` darkens 0.800→0.086. Check `git status` + reproduce on a pristine checkout before chasing external regressions | Session F forensics; Window 1–3 gate logs |
 
 ---
 
@@ -91,12 +93,13 @@ Each was established mechanically; each has a permanent guard.
 Ordered by dependency, not excitement — the v2 lesson stands: *measure first,
 light before glow, engine truth before content tuning.*
 
-### 4.1 In flight: Build Window 1 (B computer)
+### 4.1 ~~In flight: Build Window 1~~ — COMPLETE (2026-07-17)
 
-The Route A catch-up merge build. Float wheel (required) validates the merge;
-doubles wheel (optional Build 2) resumes the R4.2-adjacent experiment. Procedure,
-prerequisites, rollback: `BUILD_WINDOW_1_CATCHUP.md`. Until the float wheel passes
-the full gauntlet, no surgery and no new C++.
+Both wheels built, the full gauntlet ran green, the merge is signed off, and
+R6 surgery Windows 2+3 followed the same day (each with its own build + gate).
+The program's engine base is now: upstream July-2026 + C++17, minus 35k lines
+of dead backends, on a machine that rebuilds in 8 minutes. Details:
+`BUILD_WINDOW_1_CATCHUP.md` (historical), `SESSION_LOG.md` (Session F).
 
 ### 4.2 Game-side adoption queue (needs the user / game dev, not this repo)
 
@@ -148,14 +151,15 @@ Unblocked once 4.2's sign-offs land. Content unchanged from v2, priority order:
 
 Gate: aesthetic sign-off per planet type; A/B against the old Fresnel shader.
 
-### 4.5 R6 — engine surgery (ELEVATED; the user wants this soon)
+### 4.5 R6 — engine surgery (Windows 2+3 DONE 2026-07-17)
 
-`ENGINE_SURGERY_PLAN.md` is the authority. Window 2 = DX9 removal (588 KB,
-19 makepanda refs, zero runtime risk — it never builds). Window 3 = dead
-platform backends (mobile/GLES/WebGL/macOS delete; x11/glx hold; tinydisplay
-KEEP as the GPU-less CI insurance). Cg deferred — it falls out for free if the
-shaderpipeline port ever happens. Deletions only, one themed set per window,
-full paxtest gate each time.
+`ENGINE_SURGERY_PLAN.md` is the authority. Window 2 (DX9, `d29183ce42`) and
+Window 3 (mobile/GLES/WebGL/macOS backends + the DX9 flag machinery,
+`3912762dd9`) both executed with their own builds and full gates — the
+none/simplepbr canary rows never moved. x11/glx held, tinydisplay kept.
+Window 4 queued: mobile-target extraction (android/iphone app glue, makepanda
+Android machinery, deploy-tool logic, DIRECTCAM). Cg still deferred — it
+falls out for free if the shaderpipeline port ever happens.
 
 ### 4.6 Watch: upstream `vulkan` / `shaderpipeline`
 
@@ -168,6 +172,8 @@ Evaluate ONLY when it can run the paxtest suite. No cadence; check when curious.
 
 | Item | Home | Trigger |
 |---|---|---|
+| **paxtest hardening (openworld asks, 2026-07-17 feedback):** promote `gltf_caster_ground_lum` from `[info]` to assertion; add a lit-shadow test with glTF-material geometry as BOTH caster and receiver (flat-color scenes can't catch that class) | tools/paxtest | **Next session, first item** — cheap, and it also guards the contamination class that produced the false P0 |
+| **Hardware skinning breaks 94-joint Rigify rigs** (animated non-uniform scale on DEF bones + control-bone-heavy skins → concertina necks on the GPU path; CPU path perfect; pack 1 with 64 DEF-only joints fine on both). REAL bug, unaffected by the contamination verdict | pipeline + shaders (maybe engine) | **Next session:** (1) paxtest repro with a Rigify-class rig, (2) per-node hardware-skinning opt-out API (cheap interim — global CPU costs openworld 112→8 fps), (3) root-cause GPU palette scale composition |
 | Engine-side shadow texel snapping in `set_shadow_extent` | pax3d_render (Python) | Next shadow session; reference impl = openworld `app.py:_follow_shadow_frustum`; gate with a shimmer test |
 | Slope-scaled / receiver-plane shadow bias | pax_pbr.frag | If PCF acne appears at real content scales (physics + margins documented in arch doc §5.2) |
 | Runtime fog toggle | pax3d_render | R5 fog work |
@@ -184,7 +190,7 @@ Evaluate ONLY when it can run the paxtest suite. No cadence; check when curious.
 
 | Risk | Mitigation |
 |---|---|
-| Window 1 build fails on B (first C++17 build; doubles×C++17 never CI-built upstream) | Logs come home; float and doubles fail independently; rollback = sheltered pre-merge wheel + `pre-catchup-merge` tag |
+| ~~Window 1 build fails~~ | RESOLVED — both builds green 2026-07-17; rollback wheel still sheltered in `wheels_float\` |
 | In-game shadow validation disappoints at content scale | The Session E knobs (world bias, PCF, no-cast) + shadow_quality rows exist precisely for this; tune with the testbed, not the full game |
 | R4.2 game-side rebasing introduces jitter/regressions | The trap is machine-measured (test_scale); acceptance criterion defined; nested-space dev owns the integration |
 | Missing future upstream fixes (severance cost) | Accepted by policy; read-only remote for hand cherry-picks; watch log in CLAUDE.md |

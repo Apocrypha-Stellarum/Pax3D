@@ -3,27 +3,29 @@
 This guide is for AI developers building Pax3D. It documents every pitfall we hit so you don't have to rediscover them.
 
 > **Policy note (2026-07-17):** builds run only in **user-scheduled build
-> windows** (see CLAUDE.md "Language Canon"), typically on the B computer —
-> the active window's procedure lives in `BUILD_WINDOW_1_CATCHUP.md`.
-> Post-catch-up-merge (`eb685fd003`) facts: the tree compiles as **C++17**
-> (any VS 2022 toolchain is fine), and makepanda **pip-installs
-> `panda3d-interrogate==0.11.2` from PyPI at build time** — the build
-> machine needs internet, or pre-seed
+> windows** (see CLAUDE.md "Language Canon"). Windows 1–3 all completed
+> 2026-07-17 on the current primary machine (20 cores, ~8-minute builds).
+> Post-catch-up-merge (`eb685fd003`) facts: the tree compiles as **C++17**,
+> and makepanda **pip-installs `panda3d-interrogate==0.11.2` from PyPI at
+> build time** — the build machine needs internet, or pre-seed
 > `built_x64/tmp/interrogate` with `pip install -t <that dir>
 > panda3d-interrogate==0.11.2` beforehand. Convention: segregate wheels
-> into per-window folders (`wheels_window1/float/`, `.../double/`) —
-> float and doubles builds emit the SAME filename.
+> into per-window folders (`wheels_window1/float/`, `wheels_window2/`, …) —
+> all builds emit the SAME filename.
+> **R6 surgery note:** DX9 and the GLES/EGL/WebGL/mobile/macOS backends
+> are deleted from the tree; **`--no-dx9` and `--directx-sdk` are no
+> longer valid makepanda options.**
 
 ---
 
 ## Prerequisites
 
-| Requirement | What We Have | Notes |
+| Requirement | What We Have (primary machine, 2026-07-17) | Notes |
 |-------------|-------------|-------|
-| **Visual Studio 2022** | Community edition at `C:\Program Files\Microsoft Visual Studio\2022\Community\` | Need the "Desktop development with C++" workload. VS 2019 BuildTools also present but VS 2022 is used. |
-| **Windows SDK 10** | 10.0.22621.0 at `C:\Program Files (x86)\Windows Kits\10\` | **CRITICAL: SDK 8.1 is also installed but is essentially empty — only has a `References` folder, no `windows.h`. You MUST specify `--windows-sdk 10` or the build will fail with `Cannot open include file: 'windows.h'`.** |
-| **Python 3.13** | `C:\Python313\python.exe` | Must match the Python version Pax Abyssi uses. The thirdparty package includes its own Python but we invoke makepanda with the system Python. |
-| **Thirdparty libraries** | `C:\python\pax3d\thirdparty\` | Pre-built dependencies. See "Thirdparty Setup" below. |
+| **Visual Studio C++ toolchain** | **VS Build Tools 2026** (v18.2, MSVC 14.50) at `C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\` | "Desktop development with C++" workload. **Build Tools editions are invisible to makepanda's vswhere query** — you MUST pass `--msvc-version=14.5` AND set `VCINSTALLDIR` (see pitfall 0). Full VS 2022+ works without the env var. |
+| **Windows SDK 10** | 10.0.26100.0 at `C:\Program Files (x86)\Windows Kits\10\` | Always pass `--windows-sdk 10` regardless of machine — never trust the default pick. |
+| **Python 3.13** | `C:\Python313\python.exe` (3.13.11 x64, also `py -3.13`) | Must be 3.13 x64 — the wheel is tagged `cp313` to match `pax3d-env`. |
+| **Thirdparty libraries** | `C:\python\pax3d\thirdparty\` (777 MB, 24 packages) | Pre-built dependencies, NOT in git. See "Thirdparty Setup" below. |
 
 ---
 
@@ -80,21 +82,17 @@ This takes a long time. Use the prebuilt route if at all possible.
 
 ---
 
-## The Build Command
+## The Build Command (canonical, primary machine)
 
-```bash
-cd C:/python/pax3d
+```powershell
+cd C:\python\pax3d
+$env:VCINSTALLDIR = "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\"
 
-C:/Python313/python.exe makepanda/makepanda.py \
-    --everything \
-    --no-dx9 \
-    --no-fmod \
-    --no-ffmpeg \
-    --no-fftw \
-    --no-opencv \
-    --windows-sdk 10 \
-    --threads 8 \
-    --wheel
+C:\Python313\python.exe makepanda\makepanda.py `
+    --everything `
+    --no-fmod --no-ffmpeg --no-fftw --no-opencv `
+    --windows-sdk 10 --msvc-version=14.5 `
+    --threads 20 --wheel
 ```
 
 ### Flags Explained
@@ -102,18 +100,22 @@ C:/Python313/python.exe makepanda/makepanda.py \
 | Flag | Why |
 |------|-----|
 | `--everything` | Build all supported features (then subtract what we don't want) |
-| `--no-dx9` | DirectX 9 removal is a Pax3D goal. We only target OpenGL. |
 | `--no-fmod` | FMOD isn't in our thirdparty package (proprietary license). Pax Abyssi uses the default OpenAL audio backend. |
 | `--no-ffmpeg` | Video playback not needed — we'd use PyQt6 for that. Also not in our thirdparty. |
 | `--no-fftw` | FFT library — not in thirdparty, not needed. |
 | `--no-opencv` | Computer vision — not in thirdparty, not needed. |
-| `--windows-sdk 10` | **CRITICAL.** Without this, makepanda defaults to SDK 8.1 which is broken on this machine. See pitfalls below. |
-| `--threads 8` | Parallel compilation. Adjust to your CPU core count. |
+| `--windows-sdk 10` | **CRITICAL.** Never trust the default SDK pick. |
+| `--msvc-version=14.5` | **CRITICAL on this machine.** makepanda defaults to 14.3 (VS 2022); we have MSVC 14.5 (VS 2026 Build Tools). Pairs with the `VCINSTALLDIR` env var above. |
+| `--threads 20` | Parallel compilation. Set to your core count. |
 | `--wheel` | Produce a `.whl` pip package instead of an installer. |
+
+(`--no-dx9` is gone — DX9 was deleted from the tree in R6 Window 2; the
+flag no longer parses.)
 
 ### Build Time
 
-- **Clean build:** ~25-40 minutes with 8 threads
+- **Clean build:** ~8 minutes at 20 threads on the primary machine
+  (25–40 min at 8 threads on older hardware)
 - **Incremental rebuild** (after code changes): Much faster — only recompiles changed files
 
 ### Build Output
@@ -165,15 +167,27 @@ python plan.py
 
 ## Known Pitfalls
 
-### 1. Windows SDK 8.1 is broken — ALWAYS use `--windows-sdk 10`
+### 0. VS Build Tools editions are invisible to makepanda (this machine)
 
-SDK 8.1 is installed at `C:\Program Files (x86)\Windows Kits\8.1\` but only contains a `References` folder — no headers, no `windows.h`. Makepanda defaults to 8.1 if present and will fail with:
+makepanda finds Visual Studio via `vswhere.exe` — but its query lacks
+`-products *`, so **Build Tools** editions (like this machine's VS 2026
+Build Tools) are never found, and the VS7 registry fallback doesn't exist
+for them either. The surviving detection path is the `VCINSTALLDIR`
+environment variable:
 
+```powershell
+$env:VCINSTALLDIR = "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\"
 ```
-fatal error C1083: Cannot open include file: 'windows.h': No such file or directory
-```
 
-**Fix:** Always pass `--windows-sdk 10`.
+Combined with `--msvc-version=14.5` (makepanda defaults to 14.3 = VS 2022),
+this makes detection work end-to-end. Symptom if you forget either:
+`Couldn't find Visual Studio 2022/2026`.
+
+### 1. Never trust the default Windows SDK pick — ALWAYS use `--windows-sdk 10`
+
+On the old A computer, a broken SDK 8.1 shell made makepanda's default fail
+with `Cannot open include file: 'windows.h'`. Pass `--windows-sdk 10` on
+every machine, always.
 
 ### 2. `mt.exe` not found — patched in Pax3D
 
@@ -225,49 +239,49 @@ This is usually fine. The packages we explicitly exclude with `--no-xxx` flags w
 
 Any C++ changes to the engine source are in the `panda/src/` and `dtool/` directories. After making changes:
 
-```bash
+```powershell
 # Incremental rebuild (only recompiles changed files)
-cd C:/python/pax3d
-C:/Python313/python.exe makepanda/makepanda.py \
-    --everything --no-dx9 --no-fmod --no-ffmpeg --no-fftw --no-opencv \
-    --windows-sdk 10 --threads 8 --wheel
+cd C:\python\pax3d
+$env:VCINSTALLDIR = "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\"
+C:\Python313\python.exe makepanda\makepanda.py `
+    --everything --no-fmod --no-ffmpeg --no-fftw --no-opencv `
+    --windows-sdk 10 --msvc-version=14.5 --threads 20 --wheel
 
 # Install updated wheel
-source C:/python/pax3d-env/Scripts/activate
-pip install --force-reinstall panda3d-*.whl
+C:\python\pax3d-env\Scripts\python.exe -m pip install --force-reinstall --no-deps panda3d-*.whl
 
-# Test
-cd C:/python/sfb2
-python plan.py
+# Gate it (never skip): paxtest both engines, then testbed/smokes
+C:\Python313\python.exe tools\paxtest\run.py
+C:\python\pax3d-env\Scripts\python.exe tools\paxtest\run.py
 ```
 
 ### Build system changes we've made
 
 | File | Change | Why |
 |------|--------|-----|
-| `makepanda/makepandacore.py:677-681` | `oscmd()` respects `ignoreError` for binary-not-found | `mt.exe` not in PATH caused hard crash on optional step |
+| `makepanda/makepandacore.py` | `oscmd()` respects `ignoreError` for binary-not-found | `mt.exe` not in PATH caused hard crash on optional step |
+| `makepanda/*` (Window 2, `d29183ce42`) | DX9 build rules, SDK locator, `HAVE_DX9`/`HAVE_CGDX9`, installer refs removed | R6 surgery: DX9 deleted from the tree |
+| `makepanda/*` (Window 3, `3912762dd9`) | GLES/GLES2/EGL/COCOA packages, build sections, config.in display lines, DX9 flag machinery removed | R6 surgery: dead platform backends deleted; `--no-dx9`/`--directx-sdk` no longer parse |
 
 ---
 
 ## Quick Reference
 
-```bash
+```powershell
 # Full clean build
-rm -rf C:/python/pax3d/built_x64
-cd C:/python/pax3d
-C:/Python313/python.exe makepanda/makepanda.py \
-    --everything --no-dx9 --no-fmod --no-ffmpeg --no-fftw --no-opencv \
-    --windows-sdk 10 --threads 8 --wheel
+Remove-Item C:\python\pax3d\built_x64 -Recurse -Force
+cd C:\python\pax3d
+$env:VCINSTALLDIR = "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\"
+C:\Python313\python.exe makepanda\makepanda.py `
+    --everything --no-fmod --no-ffmpeg --no-fftw --no-opencv `
+    --windows-sdk 10 --msvc-version=14.5 --threads 20 --wheel
 
-# Install into venv
-source C:/python/pax3d-env/Scripts/activate
-pip install --force-reinstall C:/python/pax3d/panda3d-*.whl
+# Segregate the wheel (all builds emit the same filename), then install
+Move-Item panda3d-*.whl wheels_windowN\
+C:\python\pax3d-env\Scripts\python.exe -m pip install --force-reinstall --no-deps wheels_windowN\panda3d-1.11.0-cp313-cp313-win_amd64.whl
 
-# Run game on Pax3D
-cd C:/python/sfb2 && python plan.py
-
-# Deactivate (back to stock Panda3D)
-deactivate
+# Run game on Pax3D (PYTHONUTF8=1 if redirecting output)
+cd C:\python\sfb2; C:\python\pax3d-env\Scripts\python.exe plan.py
 ```
 
 ---
@@ -281,8 +295,9 @@ deactivate
 | Build output | `C:\python\pax3d\built_x64\` |
 | Wheel file | `C:\python\pax3d\panda3d-*.whl` |
 | Pax3D venv | `C:\python\pax3d-env` |
-| Game code | `C:\python\sfb2` |
+| Doubles venv (experiment only) | `C:\python\pax3d-double-env` |
+| Game code (canonical) | `C:\python\sfb2` (master backup: `D:\python\sfb2`) |
 | System Python | `C:\Python313\python.exe` |
-| Visual Studio | `C:\Program Files\Microsoft Visual Studio\2022\Community\` |
-| Windows SDK 10 | `C:\Program Files (x86)\Windows Kits\10\` |
-| Windows SDK 8.1 | `C:\Program Files (x86)\Windows Kits\8.1\` (BROKEN — do not use) |
+| VS Build Tools 2026 | `C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\` |
+| Windows SDK 10 | `C:\Program Files (x86)\Windows Kits\10\` (10.0.26100) |
+| Wheels | `wheels_window1\{float,double}\`, `wheels_window2\`, `wheels_window3\` (current), `wheels_float\` (pre-merge rollback) |

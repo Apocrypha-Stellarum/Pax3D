@@ -1,9 +1,9 @@
 # Engine Surgery Plan — Deletions, Windows 2+
 
-**Date:** 2026-07-17 · **Status:** planned, opens after Build Window 1
-validates · **Policy basis:** Pax3D is sovereign (no upstream sync — see
-CLAUDE.md); deletions no longer carry merge-friction cost. **Audience:**
-the AI dev running a build window.
+**Date:** 2026-07-17 · **Status:** Windows 2+3 EXECUTED same day (see
+Sequencing at the bottom); Window 4 queued · **Policy basis:** Pax3D is
+sovereign (no upstream sync — see CLAUDE.md); deletions no longer carry
+merge-friction cost. **Audience:** the AI dev running a build window.
 
 Pax3D ships one graphics reality: **OpenGL 3.3+ core on Windows**, custom
 GLSL via `pax3d_render`. Everything in the engine tree that serves another
@@ -73,25 +73,39 @@ We target Windows + OpenGL. These serve platforms we will never ship:
 
 ---
 
-## Sequencing
+## Sequencing — status 2026-07-17 evening
 
 ```
-Window 1 (OPEN)   Catch-up merge build + optional doubles wheel  → validate
-Window 2          DX9 removal (dxgsg9, pandadx9, makepanda, PRC) → gate
-Window 3          Mobile/GLES/WebGL/macOS backend removal        → gate
-                  (+ decide x11/glx HOLD row)
-Window 4+         R2.3 DirectionalLight conveniences (additive C++,
-                  separate from deletions); any Language-Canon
-                  promotions that have profiled hot by then
-Unscheduled       Cg — only via a shaderpipeline port decision
+Window 1  DONE     Catch-up merge + doubles wheel — built, FULL gauntlet
+                   green, merge signed off (see BUILD_WINDOW_1_CATCHUP.md)
+Window 2  DONE     DX9 removal — commit d29183ce42, 65 files,
+                   −16,691 lines, own build + full gate green
+Window 3  DONE     Mobile/GLES/WebGL/macOS backend removal + DX9 flag
+                   machinery drop — commit 3912762dd9, 132 files,
+                   −18,546 lines, own build + full gate green.
+                   x11/glx HOLD confirmed kept; tinydisplay kept
+                   (its macOS tinyCocoa* flavor removed with the theme)
+Window 4  QUEUED   Mobile-TARGET extraction: panda/src/android +
+                   panda/src/iphone app glue, makepanda's Android
+                   cross-compile machinery, direct/dist mobile deploy
+                   logic (still references pandagles — deploy-tool only,
+                   no build impact), DIRECTCAM (permanently
+                   auto-disabled; its SDK came from the DX SDK)
+Window 5+          R2.3 DirectionalLight conveniences (additive C++,
+                   separate from deletions); any Language-Canon
+                   promotions that have profiled hot by then
+Unscheduled        Cg — only via a shaderpipeline port decision
 ```
 
-Each window: one themed change-set, one build, one full gate. If the user
-schedules a generous window, Window 2 + 3 can share a single B session
-**as two builds** (delete DX9 → build → gate on A later is impossible
-mid-session, so practical compromise: do both deletions, build once, and
-gate the union — acceptable because both are compile-out-verified dead
-code; if the gate fails, bisect by restoring one set).
+Each window: one themed change-set, one build, one full gate. Windows 2
+and 3 each got their own build + gate (paxtest both baselines identical
+incl. the none/simplepbr canaries, testbed + openworld selftests, sfb2
+boot). Post-surgery the tree is ~35k lines lighter and ships exactly one
+graphics reality: OpenGL core on Windows, with X11/GLX held and
+tinydisplay as GPU-less insurance.
+
+Note for Window 4: `--no-dx9` / `--directx-sdk` already ceased to exist
+in Window 3 — any script still passing them fails fast.
 
 ## What surgery does NOT cover
 

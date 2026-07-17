@@ -9,9 +9,11 @@ superseded — check the banner at the top of each file.
 | `PAX3D_MASTER_PLAN.md` | **CURRENT** | **v3 (2026-07-17):** verified state, policies in force (sovereignty, Language Canon, build windows), established facts, the road forward. Start here. |
 | `SESSION_LOG.md` | **CURRENT** | Session-by-session narrative (extracted from Master Plan v2), newest at the bottom. |
 | `PAX3D_RENDER_ARCHITECTURE.md` | **CURRENT** | Maintainer's guide to the pax3d_render pipeline: passes, sun modes, shadows (incl. the bias trap §5.1), invariants, defect analysis, API. |
-| `ENGINE_SURGERY_PLAN.md` | **CURRENT** | The deletion program (DX9, dead backends, Cg verdicts) sequenced into build windows 2+. |
-| `BUILD_WINDOW_1_CATCHUP.md` | **CURRENT — active window** | B-computer procedure for the Route A catch-up-merge build (+ optional doubles wheel), validation plan, rollback. |
-| `OPENWORLD_FEEDBACK_RESPONSE.md` | **CURRENT** | Point-by-point reply to the openworld build's engine feedback: P0 root cause (bias trap + contaminated instrument), landed APIs, backlog. |
+| `ENGINE_SURGERY_PLAN.md` | **CURRENT** | The deletion program. **Windows 2+3 executed 2026-07-17** (DX9 + dead backends gone, −35k lines); Window 4 (mobile-target extraction) queued. |
+| `BUILD_WINDOW_1_CATCHUP.md` | HISTORICAL — completed | Window 1 procedure. Built, fully validated and signed off 2026-07-17; kept for reference. |
+| `OPENWORLD_FEEDBACK_RESPONSE.md` | **CURRENT** | Round 1 (Session E): P0 root cause (bias trap + contaminated instrument), landed APIs, backlog. |
+| `OPENWORLD_FEEDBACK_RESPONSE_2.md` | **CURRENT** | Round 2 (Session F): the evening P0 verdict (contaminated engine tree, not a regression), the real skinning P1 queued, planetary-track policy. |
+| `HANDOVERS/handover_session_f_windows_1-3.md` | **CURRENT** | Session F handover: what was built/validated/deleted, machine migration, next-session priorities. |
 | `PAXTEST_FINDINGS_SESSION_A.md` | **CURRENT** | The harness findings that rebooted the program (double-gamma disproven, DirectionalLight exonerated, bloom defect cornered). |
 | `../tools/paxtest/README.md` | **CURRENT** | Test harness usage and results snapshot. |
 | `BUILDING_PAX3D.md` | REFERENCE | Building the engine wheel from source — thirdparty setup, every pitfall, build-window policy note. |
