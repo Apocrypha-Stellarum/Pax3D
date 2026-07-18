@@ -597,3 +597,42 @@ chase. Window 4 mobile-glue deletion deliberately NOT taken (themed
 window deserves its own fresh session). Concurrent-session note:
 sfb2 Session 617 landed "Phobos walkable" mid-session — the
 walkable-ship adoption wave has begun game-side.
+
+**Session S update (2026-07-18):** Docs-first adoption support + the
+walkable-ship interior package, user-directed ("make things easy for
+the Phobos/weapons/terrain/NPC devs, then Phobos-priority items").
+(1) **Doc true-up both repos:** stale status markers fixed engine-side
+(combine warning "queued"→landed, sh_from_cubemap EXPERIMENTAL→pinned,
+in RESPONSE_5 / look guide / master plan / index); game-side
+USING_PAX3D_RENDER corrected (bloom-is-broken advice retracted — F3
+fixed Session D; sRGB section now teaches set_srgb_inputs) and gained
+§10 per-role routes: interior env-lighting workflow (Phobos), the
+black-metal-viewmodel fix (weapons — "no IBL" predates Session M), the
+character/skinned-asset engine contract (NPC — 100-bone
+p3d_TransformTable, 4 influences, NO morph targets, per-node CPU
+valve), terrain pointers; PAX3D_PITFALLS +6 measured traps;
+GRAPHICS_ROADMAP status banner. (2) **Phobos wall-pusher consult
+answered by measurement** (probe_walkmesh 7-8, now 10/10 both
+engines; design doc §9): THE READBACK CONTRACT — a directly-positioned
+walker must adopt the pusher's corrected pos after traverse or a held
+key escapes through any wall ~7 frames past contact (measured at their
+r 0.35 / 0.10-per-frame numbers; with readback: pinned, zero spread,
+z untouched); chunked wall nodes traverse 6.3-6.7x faster than one
+3200-poly node (bounds culling) — loader chunks right for Phobos v1,
+converter block_room_* groups recommended for the Fenris. (3) **Field
+ask landed — per-node atmosphere scale** (`set_atmosphere_scale(np,k)`,
+inherited u_atmo_scale multiplying the R5.1 optical depth; k=0 ⇒ tau
+exactly 0 = no cabin wash, windows keep hazed terrain; test_atmosphere
+atmo_scale_* all exact). (4) **Consult ask landed — per-subtree
+environment binding** (`set_env_map(tex, node=np)`,
+`set_ambient_sh`/`set_hemisphere_ambient(..., node=np)` + node-form
+clears): inherited-input overrides incl. max_reflection_lod so a node
+chain addresses its own ladder (test_env_map pernode_* — a leaked
+global lod would miss by ~0.25, measured exact; test_ambient_sh
+pernode_sh_* — swapped-hemisphere override renders the down-face
+analytic exactly). Full gate 48/6/63 both engines, identical, the six
+FAILs the documented set. Rig lesson encoded: the harness lens is
+fov 30 — project sample points, x=8 at dist 30 is already off the
+sampling window. Next: SSAO foundation (depth+normals post-pass) as
+its own session; bone-palette spike + morph-target measurement for the
+character class queued.
