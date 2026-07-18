@@ -2,7 +2,12 @@
 
 uniform mat4 p3d_ModelViewProjectionMatrix;
 #ifdef ENABLE_SKINNING
-uniform mat4 p3d_TransformTable[100];
+// Same MAX_SKINNING_BONES knob as pax_pbr.vert (Session S) — the depth
+// pass must carry the same palette or big rigs would shadow wrong.
+#ifndef MAX_SKINNING_BONES
+    #define MAX_SKINNING_BONES 100
+#endif
+uniform mat4 p3d_TransformTable[MAX_SKINNING_BONES];
 #endif
 
 attribute vec4 p3d_Vertex;

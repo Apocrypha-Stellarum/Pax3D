@@ -239,6 +239,7 @@ class Pipeline:
                  srgb_inputs=False,
                  enable_ssao=False, ao_radius=1.0, ao_intensity=1.0,
                  ao_bias=0.02, ao_samples=12,
+                 max_skinning_bones=100,
                  **_kwargs):
         base = builtins.base
 
@@ -282,6 +283,14 @@ class Pipeline:
         self.shadow_caster_mask = self._normalize_caster_mask(
             shadow_caster_mask)
         self.enable_hardware_skinning = enable_hardware_skinning
+        # Session S: the GPU joint-palette ceiling (p3d_TransformTable
+        # size, scene AND shadow depth pass). Default 100 = the shipped
+        # declaration. The GL layer identity-pads short tables (fact
+        # #10) so raising it is safe for small rigs; the cost is vertex
+        # uniform budget (16 floats/joint). The character pipeline's
+        # 352->81-bone cuts exist because of this ceiling — raise it
+        # before cutting corrective bones on a rig that needs them.
+        self.max_skinning_bones = max(4, min(1024, int(max_skinning_bones)))
         self.calculate_normalmap_blue = calculate_normalmap_blue
         # Double-sided lighting (Session K, asset enablement): shade
         # backfaces with the inverted normal (the glTF doubleSided /
@@ -537,6 +546,7 @@ class Pipeline:
             'USE_330': self._use_330,
             'IS_WEBGL': self._is_webgl,
             'ENABLE_SKINNING': self.enable_hardware_skinning,
+            'MAX_SKINNING_BONES': self.max_skinning_bones,
             'CALC_NORMAL_Z': self.calculate_normalmap_blue,
             'SUN_FROM_LIGHTSOURCE': self.sun_light_mode == 'directional',
             'LOG_DEPTH': self.enable_log_depth,
@@ -1079,6 +1089,26 @@ class Pipeline:
         lens = self.camera_node.node().get_lens()
         lens.set_film_offset(0, 0)
         self._setup_tonemapping()
+
+    def set_max_skinning_bones(self, count):
+        """Change the GPU joint-palette ceiling (recompile-class: the
+        PBR shader AND the shadow depth shader recompile; existing
+        shadow-caster initial states are invalidated so the next frame
+        rebuilds them with the new table size). Default 100. Small rigs
+        are unaffected at any size (identity padding, fact #10); the
+        budget is vertex uniforms — 200 bones = 3200 of the typical
+        4096 GL_MAX_VERTEX_UNIFORM_COMPONENTS."""
+        count = max(4, min(1024, int(count)))
+        if count == self.max_skinning_bones:
+            return
+        self.max_skinning_bones = count
+        self._recompile_pbr()
+        if self.enable_shadows:
+            for caster in self._get_all_casters():
+                state = caster.get_initial_state()
+                if state.has_attrib(p3d.ShaderAttrib):
+                    caster.set_initial_state(
+                        state.remove_attrib(p3d.ShaderAttrib))
 
     def _push_ssao_lens_inputs(self, quad):
         """Push the camera lens parameters the SSAO pass needs to
@@ -2448,6 +2478,7 @@ class Pipeline:
             'USE_330': self._use_330,
             'IS_WEBGL': self._is_webgl,
             'ENABLE_SKINNING': self.enable_hardware_skinning,
+            'MAX_SKINNING_BONES': self.max_skinning_bones,
         }
         shader = shaderutils.make_shader(
             'shadow', 'shadow.vert', 'shadow.frag', defines

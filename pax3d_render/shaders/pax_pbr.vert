@@ -18,7 +18,15 @@ uniform struct p3d_LightSourceParameters {
 #endif
 
 #ifdef ENABLE_SKINNING
-uniform mat4 p3d_TransformTable[100];
+// Session S: the joint-palette ceiling is a knob (max_skinning_bones).
+// The GL layer identity-pads tables shorter than the declaration
+// (engine fact #10), so raising it is safe for small rigs; the cost is
+// vertex-uniform budget (16 components per mat4 — 100 = 1600, 200 =
+// 3200; typical desktop GL_MAX_VERTEX_UNIFORM_COMPONENTS is 4096).
+#ifndef MAX_SKINNING_BONES
+    #define MAX_SKINNING_BONES 100
+#endif
+uniform mat4 p3d_TransformTable[MAX_SKINNING_BONES];
 #endif
 
 uniform mat4 p3d_ProjectionMatrix;

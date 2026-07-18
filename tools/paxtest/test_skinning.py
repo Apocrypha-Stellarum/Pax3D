@@ -199,6 +199,28 @@ def main():
     h.report.check('optout_clear_restores', rms_back < 0.02,
                    f'image rms HW vs cleared = {rms_back:.4f}')
 
+    # ------------------------------------------------------------------
+    # 1b. Bone-palette ceiling (Session S): the declared table size is a
+    # knob (max_skinning_bones) and must be INERT for small rigs — the
+    # GL layer identity-pads short tables (engine fact #10). 200 bones
+    # = 3200 of the typical 4096 vertex-uniform components, the spike
+    # target for un-cut UE5-class rigs (the character pipeline's 352->81
+    # cut exists because of the old hard [100]).
+    # ------------------------------------------------------------------
+    if hasattr(pipeline, 'set_max_skinning_bones'):
+        pipeline.set_max_skinning_bones(200)
+        img_200 = snap('sheet_bones200')
+        rms_200 = common.image_rms_diff(img_back, img_200)
+        pipeline.set_max_skinning_bones(100)
+        img_100 = snap('sheet_bones100')
+        rms_100 = common.image_rms_diff(img_back, img_100)
+        h.report.check('bone_palette_200_inert', rms_200 == 0.0,
+                       f'p3d_TransformTable[200] on the 2-joint rig: rms '
+                       f'vs [100] = {rms_200:.2e} (identity padding — the '
+                       f'ceiling is a knob, shadow pass included)')
+        h.report.check('bone_palette_restore', rms_100 == 0.0,
+                       f'back to 100: rms = {rms_100:.2e} (exact restore)')
+
     sheet.detach_node()
     ground.detach_node()
 

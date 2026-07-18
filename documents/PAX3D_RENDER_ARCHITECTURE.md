@@ -106,6 +106,7 @@ post pass). A structural change (`enable_bloom`, `bloom_levels`,
 | `USE_OCCLUSION_MAP` | `use_occlusion_maps` | AO from metal-rough texture R channel |
 | `USE_330` | gl-version ≥ 3.2 | Mechanical 120→330 shader upgrade |
 | `ENABLE_SKINNING` | `enable_hardware_skinning` | GPU skinning |
+| `MAX_SKINNING_BONES` | `max_skinning_bones` | **Session S**: joint-palette size (`p3d_TransformTable[N]`, scene + shadow pass; default 100 — the ceiling that forced the character pipeline's 352→81 cuts, now a knob) |
 | `CALC_NORMAL_Z` | `calculate_normalmap_blue` | Reconstruct normal-map Z |
 | `SUN_FROM_LIGHTSOURCE` | `sun_light_mode == 'directional'` | **R2**: sun via `p3d_LightSource` loop (§4) |
 | `LOG_DEPTH` | `enable_log_depth` | **R4.1**: fragment-level logarithmic depth (§9) |
@@ -365,6 +366,32 @@ byte-identical. Measured record: `test_shadow_snap` (0.3-texel move flips
 24 depth texels unsnapped, 0 across a snapped sub-texel sweep, 152 on a
 2-texel step — the frustum follows, it is not frozen).
 
+### 5.8 Bone palette + the morph verdict (Session S — NPC characters)
+
+**`max_skinning_bones`** (init) / `set_max_skinning_bones(n)`
+(recompile-class — PBR AND shadow depth shader, caster initial states
+invalidated): the `p3d_TransformTable[N]` declaration, default 100.
+The GL layer identity-pads short tables (fact #10), so raising it is
+inert for small rigs — measured: the 2-joint sheet renders rms exactly
+0.0 at [200] vs [100] (test_skinning `bone_palette_*`). Budget: 16
+vertex-uniform components per joint — 200 = 3200 of the typical 4096.
+The character pipeline's 352→81-bone cut (corrective-bone weights
+merged into parents, a real deformation-quality loss) exists because
+of the old hard [100]; rigs that need their correctives can now keep
+them, game-side validation per asset.
+
+**Vertex morphs (egg `<Dxyz>` sliders) — measured verdict
+(`probe_morph.py`, both engines identical = upstream behavior):** the
+egg loader DOES create the `CharacterSlider`, and `animate_vertices`
+(the CPU path) applies the morph exactly — but the hardware-skinning
+render path **silently drops sliders** (the morphed vertices never
+move on screen). The working morphs path today is the per-node valve:
+`set_hardware_skinning(actor_np, False)` renders morphs correctly
+(measured 0.000→0.763 at the probe's sample point) at that one
+character's CPU-skinning cost. A GPU morph path (slider deltas as
+vertex columns scaled in the vert shader) is the upgrade if content
+ever needs many morphing characters at once.
+
 ---
 
 ## 6. Auxiliary Scene Cameras (R1 — the skybox-death fix)
@@ -406,7 +433,7 @@ Three cost classes — keep new parameters within this taxonomy:
 | Class | Cost | Parameters / methods |
 |---|---|---|
 | Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `set_ao_radius`/`set_ao_intensity`/`set_ao_bias` (§9 Session S), `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_env_map`/`clear_env_map` (§9 R5.3), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input), `set_atmosphere_scale`/`clear_atmosphere_scale` (§9 Session S; per-node inherited input scaling the R5.1 optical depth — hull interiors), `activate_model_lights`/`deactivate_model_lights` (§9 Session P; scene-graph state only) |
-| Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere`, `set_double_sided_lighting` (§9 Session K) |
+| Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere`, `set_double_sided_lighting` (§9 Session K), `set_max_skinning_bones` (§5.8 Session S; also invalidates shadow-caster states) |
 | FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, `set_enable_ssao` (§9 Session S), (`bloom_levels`, `msaa_samples`, `ao_samples` at init) |
 
 Constructor parameters (all keyword): `render_node, window, camera_node,
