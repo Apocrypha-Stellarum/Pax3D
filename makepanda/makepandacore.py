@@ -904,6 +904,9 @@ def CxxFindHeader(srcfile, incfile, ipath):
             if GetTimestamp(full) > 0: return full
         return 0
 
+CxxIgnoreHeader = {}
+CxxDependencyCache = {}
+
 def CxxCalcDependencies(srcfile, ipath, ignore):
     if srcfile in CxxDependencyCache:
         return CxxDependencyCache[srcfile]
