@@ -60,6 +60,25 @@ Standard: `git log --oneline -10`, `git status` (fact #11), field sweep
 
 ## Phase 1 — Field triage (FIRST, always)
 
+**Already in hand (arrived mid-Session-S close-out —
+`PAX3D_FEEDBACK.md` 2026-07-18 character entry, unanswered):** the
+character dev measured the pack's bone sets (full 352 / clip-animated
+151 / shipped core 81) and asked for a ≥192 table with both shaders
+bumped together + identity padding confirmed — **all already satisfied
+by the landed `max_skinning_bones` knob** (test_skinning
+`bone_palette_200_inert`, both shaders share the define, padding rms
+0.0). Their 151-bone `keyed` re-bake A/B is UNBLOCKED — tell them to
+run it (`set_max_skinning_bones(200)` or init kwarg). Two new items
+from the same entry: (1) they OFFER a real glTF morph test asset
+(SK_SFM_Head1, blink/jaw/brow shape keys, skinned + static variants)
+— ACCEPT it: probe_morph answered the egg-slider mechanics (fact #15)
+but whether panda3d-gltf DELIVERS morph targets at all is unmeasured;
+(2) small ask, queue: a one-time warning when a Character's joint
+count exceeds the table size (a >100-bone skin renders
+plausibly-exploded garbage with no log line — cost them an hour).
+Cheapest shape: a Python `pipeline` audit helper walking Characters
+at load; a C++ munger warning is the build-window alternative.
+
 Expected report classes:
 
 1. **Wall pusher goes in game-side** — the readback contract is the
