@@ -387,3 +387,30 @@ baselines + routed pax_pbr; full 18-test gate green. The §4.8
 walkable-ship queue is now COMPLETE on the rendering side — remaining
 there: the interior-collision joint design. R5 remainder: orbital
 scattering, lens polish, GGX prefilter tool.
+
+**Session N update (2026-07-18):** **Interior-collision design session
+CONCLUDED** — the ship dev accepted the §4.8 engine position and
+supplied their opening shape (converter emits a `phobos_collision`
+subtree; walk mode swaps to CollisionSegment + pusher sphere inside
+ship bounds; ramp-foot handoff; their walk mode is plain heightfield +
+eye height, no controller library). The joint design is written up in
+`WALKABLE_INTERIOR_COLLISION_DESIGN.md`, and — per the house method —
+every load-bearing engine mechanic was MEASURED first by the new
+`tools/paxtest/probe_walkmesh.py` (headless, no window; 7/7 both
+engines, identical numbers), which doubles as the reference
+implementation (`geom_np_to_collision` recipe + the ground-query and
+pusher rigs). The probe corrected two design assumptions en route:
+(1) segment-vs-polygon intersection is DOUBLE-SIDED — the "one-sided
+CollisionPolygon" folklore does not apply to the ground query, so the
+converter needs no floor-winding fixups (winding only sets the
+pusher's push direction: keep wall normals inward); (2) plain
+`Character.update()` short-circuits when no animation has marked the
+bundle modified — same-frame procedural joint reads need
+`force_update()` (in-game, playing door/ramp animations marks the
+bundle and updates flow normally). Collision-rides-the-animated-part
+is proven on the egg Character machinery (expose-joint pattern,
+control_joint-posed panel read back at the exact moved height). The
+`max(walkmesh, heightfield)` rule makes the ramp handoff automatic.
+No engine code needed; implementation + field report are game-side
+(§4.8 open items). Relay note: the dev's message predated Session M —
+specular IBL is already landed for their "after" list.
