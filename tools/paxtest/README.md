@@ -93,7 +93,9 @@ flat-color scenes demonstrably cannot catch this class), asserts the box
 darkens the textured ground, and repeats with the pack-1 openworld
 character as caster when the asset is present. Guards
 `receiver_is_gltf_material` so the test can't silently degrade to the
-flat-color path.
+flat-color path. Session L: the actor's anim pick is now `sorted()`
+(the fact-#12 pin this file had missed — the unsorted pick flaked
+run-to-run as the pose wandered around the darkening threshold).
 
 **`test_shadow_quality.py`** (Session E) — angled-sun analytic shadow
 placement, the normalized-bias trap (measured record), `shadow_bias_world`,
@@ -159,6 +161,15 @@ cannot change), and that toggling off restores the default capture
 byte-identically. `@directional` covers the view-space flip consumed by
 the p3d_LightSource loop.
 
+**`test_ambient_scale.py`** (Session L) — per-node ambient scale
+(`set_ambient_scale(np, k)`, hull interiors). The ambient_sh recipe
+(white up-facing card, two-tone hemisphere ambient, sun black) with
+per-channel analytics at three states: untouched (root default 1.0 is
+an exact no-op), scaled to 0.25 (the interior), and 0.25 + full sun on
+the view axis (the sun-shaft case — direct light must NOT be scaled).
+Also asserts the scale survives a recompile-class toggle and that
+`clear_ambient_scale()` restores the baseline byte-identically.
+
 **`test_skinning.py`** (Session G, openworld P1) — hardware vs CPU
 skinning correctness plus the per-node opt-out API. Three layers: the
 egg sheet posed and rendered GPU vs `set_hardware_skinning(np, False)`
@@ -197,7 +208,7 @@ the correct surface's favor and mimic a working depth buffer.
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Results snapshot (post Session K, 2026-07-18)
+## Results snapshot (post Session L, 2026-07-18)
 
 Same results on stock 1.10.16 and Pax3D 1.11.0 (Window-3 wheel), both
 baselines. Note: with the game's `use_pax3d_render` flag flipped
@@ -220,6 +231,7 @@ attach pattern, which fails by design).
 | ambient_sh | skip | skip | PASS | **PASS (hemisphere analytics exact; SH survives recompile)** |
 | glass | skip | skip | PASS | **PASS (spec survives alpha, 2.07× vs M_alpha; both sun modes; opt-out byte-identical)** |
 | doublesided | skip | skip | PASS | **PASS (backface 0.108→0.705 analytic; front faces bit-identical; opt-out byte-identical)** |
+| ambient_scale | skip | skip | PASS | **PASS (per-channel analytics exact ×3 states; direct light unscaled; opt-out byte-identical)** |
 | ftl_blur | skip | skip | PASS | PASS |
 | scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)**; **@logdepth PASS (R4.1)** |
 | skinning | skip | skip | skip | **PASS (opt-out API + both openworld packs)** |

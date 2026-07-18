@@ -321,3 +321,36 @@ test_doublesided 6 checks, analytics exact on first run, green both
 engines × both baselines × both sun modes + the routed pax_pbr path;
 full 16-test suite green both engines, documented baselines unchanged.
 Remaining in §4.8: specular IBL first slice, per-node ambient scale.
+
+**Session L update (2026-07-18):** **Per-node ambient scale** — third
+§4.8 slice, moved to the front of the queue by the ship dev's ranking
+("the interior is unlit without it"; their #2, the double-sided fix,
+had already landed in Session K update 2). `set_ambient_scale(np, k)` /
+`clear_ambient_scale(np)`: an inherited `u_ambient_scale` shader input
+(root default 1.0 — an EXACT no-op, IEEE x*1.0, asserted) folded into
+the shader's ambient-occlusion factor, which multiplies precisely the
+indirect terms — SH/IBL and flat AmbientLight ambient, including their
+GLASS-variant splits — and nothing else: direct sun through a canopy
+still lights the deck, local lights work normally, emissive screens
+still glow. Uniform-cost, no recompile, composes with set_glass and
+use_occlusion_maps. Evidence: test_ambient_scale — per-channel
+analytics exact (max err 0.000) at scale 1.0, 0.25, and 0.25 + full
+sun (the sun-shaft case proving direct light is unscaled), recompile
+survival and byte-identical opt-out both rms 0.0; green both engines ×
+both baselines + the routed pax_pbr path; full 17-test suite green
+both engines, documented baselines unchanged. Also this session: the
+ship dev's ask for an **interior collision / local walkable-mesh
+story** is registered in §4.8 as a design-with-game-dev item (walk
+mode is heightfield-only; a ship interior is a floor above terrain
+with walls and a ceiling) with the engine-side position written out:
+no new engine code expected — dedicated low-poly collision subtree
+emitted at GLB conversion, walk mode swaps heightfield sampling for a
+downward CollisionSegment via a scene-local traverser inside the
+ship's bounds, door collision rides the animated joints. §4.8
+remaining rendering item: specular IBL (ship-dev-ranked last, "pure
+polish"). Also root-caused mid-gate: a PRE-EXISTING harness flake —
+test_shadows_gltf's actor check still picked `get_anim_names()[0]`
+UNSORTED (the fact-#12 trap; Session G sorted only test_shadows.py),
+so the pose wandered between runs (height 1.82 → lum 0.239 PASS vs
+height 1.84 → 0.415 FAIL against the 0.373 threshold). Fixed with the
+same sorted() pin; 5/5 reruns now read exactly 0.254 on both engines.

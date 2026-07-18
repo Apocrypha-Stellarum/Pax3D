@@ -426,6 +426,10 @@ class Pipeline:
         # Limb darkening (0=off, only close sun renderer sets nonzero)
         self.render_node.set_shader_input('u_limb_darkening', 0.0)
 
+        # Per-node ambient scale root default (Session L): 1.0 = exact
+        # no-op; interiors override via set_ambient_scale(np, k).
+        self.render_node.set_shader_input('u_ambient_scale', 1.0)
+
         # Debug lighting mode (0=normal, 1=normals, 2=n_dot_l, 3=light dir)
         self.render_node.set_shader_input('u_debug_lighting', 0.0)
 
@@ -1273,6 +1277,34 @@ class Pipeline:
         if self.shadow_caster_mask is None:
             raise ValueError('shadow_caster_mask is not configured')
         nodepath.show(self.shadow_caster_mask)
+
+    # ------------------------------------------------------------------
+    # Per-node ambient scale (hull interiors)
+    # ------------------------------------------------------------------
+
+    def set_ambient_scale(self, nodepath, scale):
+        """Scale the indirect light (SH/IBL + flat AmbientLight ambient)
+        for `nodepath` and its subtree — the hull-interior control.
+
+        The global hemisphere/SH ambient models open sky; inside a hull
+        it floods enclosed spaces as if they were outdoors. Setting
+        e.g. 0.1–0.2 on the interior mesh group restores the sense of
+        enclosure while DIRECT light is untouched: a sun shaft through
+        the canopy still lights the deck, local point/spot lights work
+        normally, and emissive screens still glow. Pairs naturally with
+        `use_occlusion_maps=True` (the scale folds into the same AO
+        factor).
+
+        Uniform-cost per-node shader input — inherits down the subtree,
+        survives recompiles, composes with set_glass. Assets like the
+        Starhopper that split exterior/interior/cockpit meshes can tag
+        the interior group directly."""
+        nodepath.set_shader_input('u_ambient_scale', float(scale))
+
+    def clear_ambient_scale(self, nodepath):
+        """Undo set_ambient_scale(): the subtree reverts to the inherited
+        (root default 1.0) ambient scale, byte-identical to untouched."""
+        nodepath.clear_shader_input('u_ambient_scale')
 
     # ------------------------------------------------------------------
     # Glass (specular-preserving transparency)

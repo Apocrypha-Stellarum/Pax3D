@@ -75,6 +75,13 @@ uniform vec4 p3d_TexAlphaOnly;
 uniform vec3 sh_coeffs[9];
 uniform vec3 camera_world_position;
 
+// Per-node indirect-light scale (Session L, hull interiors): damps the
+// ambient terms (SH/IBL + flat AmbientLight) for enclosed spaces that
+// the global sky ambient should not reach. Direct lights and emission
+// are untouched. Root default 1.0 = exact no-op (IEEE x*1.0 == x);
+// subtrees override via pipeline.set_ambient_scale(np, k).
+uniform float u_ambient_scale;
+
 // Custom sun uniforms (bypass p3d_LightSource for directional light)
 uniform vec3 u_sun_dir_world;  // world-space, normalized, toward sun
 uniform vec3 u_sun_color;      // linear RGB * intensity
@@ -333,6 +340,10 @@ void main() {
 #else
     float ambient_occlusion = 1.0;
 #endif
+    // Fold the per-node ambient scale into the AO factor: AO multiplies
+    // exactly the indirect terms (IBL + flat ambient) below — including
+    // their GLASS-variant splits — and nothing else.
+    ambient_occlusion *= u_ambient_scale;
 
 #ifdef USE_EMISSION_MAP
     vec3 emission = p3d_Material.emission.rgb * texture2D(p3d_TextureEmission, v_texcoord).rgb;

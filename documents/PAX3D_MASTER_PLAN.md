@@ -36,7 +36,7 @@ Identical paxtest results on both engines = the defect is Python/GLSL, not C++.
 
 | Phase | What | Status (evidence) |
 |---|---|---|
-| R0 harness | `tools/paxtest/` — 16 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; +2 Session G, +1 Session I, +3 Session J, +2 Session K) |
+| R0 harness | `tools/paxtest/` — 17 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; +2 Session G, +1 Session I, +3 Session J, +2 Session K, +1 Session L) |
 | R1 unified renderer | `pax3d_render/` (pax_pbr ⊕ pax3d_simplepbr merge), color contract, `register_scene_camera()` | **Core done** (Sessions B, D — game flag flipped, boots clean). Open: in-game parity eyeball (user), sRGB linearization experiment, GLSL-120 path removal (needs game `gl-version 3 2`) |
 | R2 directional sun + shadows | Pipeline-owned DirectionalLight, HPR-driven; shadows with world-space extent center; **hardened Session E**: world-unit bias, 3×3 PCF, no-cast API, skinned casters proven; **hardened Session G**: glTF caster darkening is a hard assertion, glTF caster+receiver test (angled sun), per-node `set_hardware_skinning()` opt-out; **Session I**: slope-scaled bias (`shadow_normal_bias_world`, opt-in) kills grazing-angle acne (fact 14) | **Core done + hardened** (test_shadows 13+13, test_shadow_quality 9, test_shadows_gltf 6, test_shadow_grazing 6, test_skinning 12). Open: in-game validation — set `shadow_bias_world` (~0.5 IEU) first; openworld dev A/Bs `shadow_normal_bias_world` at az 240 low sun |
 | R3 bloom + HDR | F3 root-caused (8-bit intermediate FBOs) and fixed; float fbprops everywhere | **Core done** (Session D; test_bloom green both sizes). Open: content retune, light units, auto-exposure stretch |
@@ -215,8 +215,32 @@ when off, paxtest-gated.
 |---|---|
 | ~~Specular-preserving glass~~ (`set_glass(np)`) — premultiplied-alpha PBR variant: alpha attenuates transmission terms only; specular (sun/local/IBL) and emission at full strength | **DONE Session K** — test_glass, analytics exact, green both engines × both baselines × both sun modes + the routed pax_pbr path; arch doc §9. Pair with `exclude_from_shadows()` on canopies (depth pass is opaque by design) |
 | ~~`gl_FrontFacing` normal flip for doubleSided glTF materials~~ (backfaces were lit from the wrong side — thin panels, decals, seat fabric) | **DONE Session K** — `double_sided_lighting` init kwarg + `set_double_sided_lighting()` (recompile-class); test_doublesided (backface 0.108→0.705 analytic exact, front faces bit-identical under the flag, opt-out byte-identical), green both engines × baselines × sun modes. Opt-in because existing two-sided content (foliage cards, FX quads) WOULD change look — games eyeball then flip it on |
-| Specular IBL first slice (`set_env_map()`, static prefiltered cubemap + `max_reflection_lod`) — canopy/hull reflections; also settles the sh_from_cubemap horizontal-orientation question (Session J open item) | Queued — promotes the existing R5 remainder; glass is its motivating consumer |
-| Per-node ambient scale — keep the global SH sky ambient out of hull interiors (this asset splits exterior/interior/cockpit meshes, so a subtree scale is enough) | Queued — one uniform |
+| ~~Per-node ambient scale~~ — keep the global SH sky ambient out of hull interiors | **DONE Session L** — `set_ambient_scale(np, k)`/`clear_ambient_scale(np)`: inherited `u_ambient_scale` input folded into the AO factor (scales SH/IBL + flat ambient ONLY; direct light and emission untouched — sun shafts still work). Root default 1.0 = exact no-op. test_ambient_scale (per-channel analytics exact ×3 states incl. the sun-shaft case), green both engines × baselines. Ship-dev-prioritized #1: "the interior is unlit without it" |
+| Specular IBL first slice (`set_env_map()`, static prefiltered cubemap + `max_reflection_lod`) — canopy/hull reflections; also settles the sh_from_cubemap horizontal-orientation question (Session J open item) | Queued (LAST per ship-dev ranking — "pure polish"); promotes the existing R5 remainder; glass is its motivating consumer |
+| **Interior collision / local walkable-mesh story** (registered 2026-07-18 from the ship dev: game walk mode is heightfield-only; a ship interior is a floor above terrain with walls and a ceiling — "walk around inside" is blocked on this) | **NEW — DESIGN WITH GAME DEV** (not a rendering feature; no paxtest — outside the harness's scope). Engine-side position below |
+
+Ship-dev priority ranking (2026-07-18, recorded): ambient scale →
+double-sided → specular IBL ("pure polish"). The first two are landed;
+IBL is the queue's remaining rendering item.
+
+**Interior-collision design position (engine side, for the joint
+design):** no new engine code expected for a first slice — Panda's C++
+collision system already covers it. Recommended shape: (1) the ship
+GLB conversion emits a dedicated LOW-POLY collision subtree (named
+`collision_*` geoms: floors/ramps walkable, walls/ceiling blockers),
+hidden from render — never ray-test the dense render mesh; (2) walk
+mode, when the player is inside the ship's bounds volume, switches its
+ground query from heightfield sample to a downward `CollisionSegment`
+against that subtree via a scene-local `CollisionTraverser` (C++ cost),
+with wall blocking from a `CollisionHandlerPusher` sphere active only
+inside; hand off at the ramp/airlock by zone (or `max(floor_hit,
+heightfield)` during the transition); (3) door/ramp collision nodes
+ride the same animated joints as the visuals, so an open ramp is
+automatically walkable. If the game uses its own character controller,
+the contract reduces to "the ship provides a collision subtree; query
+it with a traverser." Engine deliverables only if their profiling shows
+traverser cost (unlikely — it is already C++); the design conversation
+itself is the next step and belongs with the game dev.
 
 Established while scoping (needs NO engine work): interior point/spot
 lights (the p3d_LightSource loop is the known-correct path; lights scope

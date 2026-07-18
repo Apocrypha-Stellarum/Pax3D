@@ -405,7 +405,7 @@ Three cost classes — keep new parameters within this taxonomy:
 
 | Class | Cost | Parameters / methods |
 |---|---|---|
-| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles) |
+| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input) |
 | Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere`, `set_double_sided_lighting` (§9 Session K) |
 | FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, (`bloom_levels`, `msaa_samples` at init) |
 
@@ -668,6 +668,31 @@ Measured record: `test_doublesided` (front/back analytics exact both
 flag states; flag-on front vs flag-off front rms 0; opt-out rms 0;
 @directional variant covers the view-space flip in the light loop).
 
+### Session L — Per-node ambient scale: `set_ambient_scale(np, k)` (LANDED)
+
+Third slice of the walkable-ship queue (§4.8), prioritized first by the
+ship's integrating dev: the hemisphere/SH ambient models open sky, so a
+hull interior floods with sky light as if outdoors — "the interior is
+unlit without it" (dark where it should be dark, so its real lights can
+read).
+
+`set_ambient_scale(np, k)` sets the inherited shader input
+`u_ambient_scale` on the subtree (root default 1.0 — an EXACT no-op,
+IEEE `x*1.0 == x`, asserted). The shader folds it into the
+ambient-occlusion factor, which multiplies precisely the indirect
+terms — SH/IBL and the flat AmbientLight ambient, including their
+GLASS-variant splits — and nothing else: direct sun through a canopy
+still lights the deck, local point/spots work normally, emissive
+screens still glow. `clear_ambient_scale(np)` reverts to the inherited
+default, byte-identical. Uniform-cost, no recompile, composes with
+`set_glass` and `use_occlusion_maps`. Typical interior values: 0.1–0.2
+on the interior mesh group (the Starhopper splits
+exterior/interior/cockpit meshes, so the group is directly taggable).
+
+Measured record: `test_ambient_scale` (per-channel analytics exact at
+scale 1.0, 0.25, and 0.25+full sun — the sun-shaft case proving direct
+light is unscaled; recompile survival rms 0; opt-out rms 0).
+
 ---
 
 ## 10. Testing Contract
@@ -675,8 +700,8 @@ flag states; flag-on front vs flag-off front rms 0; opt-out rms 0;
 - Every feature has (at least) one paxtest: gamma, lighting (×sun-modes),
   bloom, rebuild, the shadow suite (shadows/gltf/quality/grazing/snap),
   skinning, ftl_blur, scale (+@logdepth), atmosphere, ambient_sh, glass
-  (×sun-modes), doublesided (×sun-modes). Run `tools/paxtest/run.py`
-  before and after.
+  (×sun-modes), doublesided (×sun-modes), ambient_scale. Run
+  `tools/paxtest/run.py` before and after.
 - Add a test WITH the feature, not after. Analytic checks > goldens;
   goldens (`--golden` / `--check-golden`) are a refactor safety net.
 - The testbed (`sfb2/test3d_pax.py`) is the eyeball companion — its
