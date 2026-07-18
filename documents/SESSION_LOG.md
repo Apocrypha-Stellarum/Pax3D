@@ -414,3 +414,30 @@ control_joint-posed panel read back at the exact moved height). The
 No engine code needed; implementation + field report are game-side
 (§4.8 open items). Relay note: the dev's message predated Session M —
 specular IBL is already landed for their "after" list.
+
+**Session O update (2026-07-18):** **Local lights measured** — the ship
+dev needs interior lighting ("dark at night, sun-side-lit by day"),
+and the answer is the engine already has everything: point/spot lights
+through the p3d_LightSource loop, per-subtree scoping via set_light,
+composing with the Session L ambient scale. But that loop was the
+pipeline's LAST never-measured lighting path (inherited simplepbr
+"correct path", exercised by nothing), so per the working method it
+got the analytic treatment before being handed over:
+`test_local_lights.py` — PointLight exact at the all-dots-1 geometry,
+quadratic attenuation exact (1/(1+q*d^2), the falloff knob; note
+Panda's DEFAULT attenuation is (1,0,0) = no falloff), per-room scoping
+(unlit sibling stays ambient-only), Spotlight in-cone exact /
+outside-cone dark (smoothstep cutoff), and the exact ship-interior
+recipe measured: lamp at FULL strength + hemisphere sky ambient damped
+by set_ambient_scale, per-channel composition to 0.002 (one test-side
+formula error caught en route: this card's normal is HORIZONTAL, so
+the hemisphere delta term vanishes — the engine had it right). 6/6
+green: both engines × both baselines × both sun modes (the
+@directional variant runs the loop with the sun occupying light slot
+0). No engine changes — verification + recipe only. Interior-lighting
+guidance for the ship dev: lamps parented under the ship fly with it;
+scope per room to stay under MAX_LIGHTS (8 per state, init kwarg);
+local lights cast NO shadows (point-light shadows are explicitly
+disabled — cube maps unsupported; acceptable for cabins); emissive
+strips glow but do not illuminate (they are not light sources); values
+are linear HDR through the tonemap.

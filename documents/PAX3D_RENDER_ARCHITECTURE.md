@@ -739,8 +739,9 @@ survival and opt-out both rms 0.
 - Every feature has (at least) one paxtest: gamma, lighting (×sun-modes),
   bloom, rebuild, the shadow suite (shadows/gltf/quality/grazing/snap),
   skinning, ftl_blur, scale (+@logdepth), atmosphere, ambient_sh, glass
-  (×sun-modes), doublesided (×sun-modes), ambient_scale, env_map. Run
-  `tools/paxtest/run.py` before and after.
+  (×sun-modes), doublesided (×sun-modes), ambient_scale, env_map,
+  local_lights (×sun-modes). Run `tools/paxtest/run.py` before and
+  after.
 - Add a test WITH the feature, not after. Analytic checks > goldens;
   goldens (`--golden` / `--check-golden`) are a refactor safety net.
 - The testbed (`sfb2/test3d_pax.py`) is the eyeball companion — its

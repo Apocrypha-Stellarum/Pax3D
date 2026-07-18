@@ -183,6 +183,16 @@ ORIENTATION (normal incidence → -Y face, 45° pitch → +Z face: cube
 sampling is GL-standard), glass composition (reflections unattenuated
 through alpha), recompile survival, and byte-identical clear.
 
+**`test_local_lights.py`** (Session O — ship interior lighting) — the
+p3d_LightSource point/spot loop, the pipeline's last never-measured
+lighting path. Sun black, lamp on the view axis (BRDF dots all 1, same
+analytics as test_glass): PointLight exact, quadratic attenuation
+exact (1/(1+q·d²)), per-subtree `set_light` scoping (unlit sibling
+stays ambient-only), Spotlight in-cone exact / outside-cone dark, and
+the full ship-interior recipe measured (lamp at full strength + sky
+hemisphere ambient damped by `set_ambient_scale`, composition to
+0.002). `@directional` runs the loop with the sun occupying slot 0.
+
 **`test_skinning.py`** (Session G, openworld P1) — hardware vs CPU
 skinning correctness plus the per-node opt-out API. Three layers: the
 egg sheet posed and rendered GPU vs `set_hardware_skinning(np, False)`
@@ -221,7 +231,7 @@ the correct surface's favor and mimic a working depth buffer.
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Results snapshot (post Session M, 2026-07-18)
+## Results snapshot (post Session O, 2026-07-18)
 
 Same results on stock 1.10.16 and Pax3D 1.11.0 (Window-3 wheel), both
 baselines. Note: with the game's `use_pax3d_render` flag flipped
@@ -246,6 +256,7 @@ attach pattern, which fails by design).
 | doublesided | skip | skip | PASS | **PASS (backface 0.108→0.705 analytic; front faces bit-identical; opt-out byte-identical)** |
 | ambient_scale | skip | skip | PASS | **PASS (per-channel analytics exact ×3 states; direct light unscaled; opt-out byte-identical)** |
 | env_map | skip | skip | PASS | **PASS (analytics exact vs LUT peek; LOD ladder + orientation + glass composition; opt-out byte-identical)** |
+| local_lights | skip | skip | PASS | **PASS (point/spot analytics exact incl. attenuation + scoping; interior recipe composes; both sun modes)** |
 | ftl_blur | skip | skip | PASS | PASS |
 | scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)**; **@logdepth PASS (R4.1)** |
 | skinning | skip | skip | skip | **PASS (opt-out API + both openworld packs)** |
