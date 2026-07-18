@@ -271,6 +271,69 @@ def main():
               want_g, extra=f' (alpha {ALPHA}: env term NOT scaled)')
     pipeline.set_glass(card, False)
 
+    # --- 7b. Per-node env override (Session S — cabin vs sky) -----------
+    # A second, smaller card beside the first: the "interior" node. The
+    # global map stays the sky (C_ENV); the node gets its own 4-size
+    # mip-colored chain, so BOTH overrides are proven: the map itself,
+    # and max_reflection_lod (if the global lod 3 leaked onto the node's
+    # 2-lod chain, mid-roughness would blend the wrong mips and miss by
+    # ~0.25 — far outside tolerance).
+    if 'node' in pipeline.set_env_map.__code__.co_varnames:
+        apply_surface(card, rough_tc, 1.0)      # restore from glass alpha
+        pipeline.set_env_map(env_const)         # the global "sky"
+        card2 = make_card(base.render, 2.0, roughness=rough_tc,
+                          metallic=1.0)
+        # x=5 keeps the projected center well inside the fov-30 frame
+        # (x=8 lands at px ~511 — off the sampling window); y=-0.5 puts
+        # card2 in FRONT of the big card it partially overlaps.
+        card2.set_pos(5.0, -0.5, 0.0)
+        ndc = p3d.Point2()
+        base.camLens.project(base.camera.get_relative_point(
+            base.render, card2.get_pos(base.render)), ndc)
+        c2x = int((ndc.x * 0.5 + 0.5) * h.win_w)
+        c2y = int((ndc.y * 0.5 + 0.5) * h.win_h)
+        # Off-axis view: ndv < 1 on card2 (normal -Y, camera at (0,-30,0))
+        view = p3d.Vec3(0.0 - 5.0, -30.0 - (-0.5), 0.0)
+        view.normalize()
+        ndv2 = -view.y                          # dot((0,-1,0), -view)
+        a, b = lut_ab(lut, ndv2, rough_tc)
+        h.step(5)
+        img_two = h.capture()
+        h.save_capture(img_two, 'pernode_before')
+        want_sky = tuple(curve(c * (a + b) + AMB) for c in C_ENV)
+        check_rgb(h, 'pernode_baseline_both_sky',
+                  avg_rgb(img_two, c2x, c2y), want_sky,
+                  extra=f' (both cards on the global map; ndv={ndv2:.3f})')
+
+        mips4 = [(0.6, 0.1, 0.1), (0.3, 0.3, 0.1), (0.1, 0.1, 0.6)]
+        env_cabin = make_float_cube(4, mip_colors=mips4)
+        r_mid = (int(0.5 * n_lut) + 0.5) / n_lut   # LUT texel center ~0.5
+        apply_surface(card2, r_mid, 1.0)
+        pipeline.set_env_map(env_cabin, node=card2)
+        a2, b2 = lut_ab(lut, ndv2, r_mid)
+        h.step(5)
+        img_override = h.capture()
+        h.save_capture(img_override, 'pernode_override')
+        # node lod = 2: lod = r*2 ~ 1.008 -> essentially mip 1 exactly
+        want_cabin = tuple(curve(c * (a2 + b2) + AMB) for c in mips4[1])
+        check_rgb(h, 'pernode_override_analytic',
+                  avg_rgb(img_override, c2x, c2y), want_cabin,
+                  extra=' (node map mip 1 via the NODE max_lod=2)')
+        a, b = lut_ab(lut, 1.0, rough_tc)
+        want_center = tuple(curve(c * (a + b) + AMB) for c in C_ENV)
+        check_rgb(h, 'pernode_sibling_keeps_sky',
+                  avg_rgb(img_override, cx, cy), want_center,
+                  extra=' (center card still on the global map)')
+
+        pipeline.clear_env_map(node=card2)
+        apply_surface(card2, rough_tc, 1.0)
+        h.step(5)
+        rms = common.image_rms_diff(img_two, h.capture(), step=1)
+        h.report.check('pernode_clear_restores', rms == 0.0,
+                       f'clear_env_map(node=...): rms vs pre-override = '
+                       f'{rms:.2e} (subtree reverts to the inherited map)')
+        card2.remove_node()
+
     # --- 8-11. The GGX prefilter tool (gen_env_prefilter.py) ------------
     try:
         import simplepbr  # noqa: F401

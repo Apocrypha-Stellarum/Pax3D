@@ -646,6 +646,16 @@ Measured record: `test_ambient_sh` (per-channel analytics exact through
 the tonemap curve; recompile survival; cubemap projection matches the
 analytic hemisphere at 0.0%).
 
+**Per-subtree binding (Session S):** `set_ambient_sh(coeffs, node=np)`
+and `set_hemisphere_ambient(sky, ground, node=np)` bind to a SUBTREE —
+a plain inherited shader-input override, so a hull interior gets
+cabin-derived ambient while the exterior keeps the sky's. Node-level
+inputs live on the node's own state, so they survive recompiles with
+no pipeline tracking; `clear_ambient_sh(node=np)` reverts to the
+inherited global set byte-identically. Measured record:
+`test_ambient_sh` `pernode_sh_*` (swapped-hemisphere override exact
+with the global card unaffected; clear rms 0).
+
 ### Session K — Specular-preserving glass: `set_glass(np)` (LANDED, opt-in)
 
 First slice of the walkable-ship asset-enablement queue (master plan
@@ -772,6 +782,19 @@ cube sampling is GL-standard; evidence toward the Session J
 sh_from_cubemap orientation question, sampling side), glass
 composition (env term unattenuated through alpha 0.15), recompile
 survival and opt-out both rms 0.
+
+**Per-subtree binding (Session S):** `set_env_map(cubemap, node=np)` /
+`clear_env_map(node=np)` — the walkable-ship pattern: the interior
+subtree reflects a cabin-derived map while the exterior keeps the sky.
+Inherited shader-input override of BOTH `filtered_env_map` and
+`max_reflection_lod` (the node's own chain ladder is addressed
+correctly even when its mip count differs from the global map's);
+same validation as the global path (cube-map type, real BRDF LUT,
+mipmap filter). Pair with `set_ambient_sh(..., node=np)` from the same
+cubemap. Measured record: `test_env_map` `pernode_*` (node-map
+mid-roughness analytic exact through the NODE max_lod — a leaked
+global lod would miss by ~0.25; sibling untouched at 0.000; node
+clear reverts to the inherited map at rms 0).
 
 ### R5.4 — The GGX prefilter tool: `tools/gen_env_prefilter.py` (LANDED, Session Q)
 

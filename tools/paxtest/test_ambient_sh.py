@@ -207,6 +207,49 @@ def main():
                    f'clear_ambient_sh(): rms vs baseline = {rms:.2e} '
                    f'(byte-identical opt-out)')
 
+    # --- 4b. Per-node SH override (Session S — cabin ambient) -----------
+    # Global hemisphere on; a second up-facing card floats above the big
+    # one with a node= override using SWAPPED colors — an up-facing card
+    # under the swapped hemisphere must render exactly the down-face
+    # analytic, while the global card underneath is untouched.
+    if 'node' in pipeline.set_ambient_sh.__code__.co_varnames:
+        pipeline.set_hemisphere_ambient(SKY, GROUND)
+        card_b = make_h_card(base.render, 6, 'node_card', z=0.5,
+                             face_up=True)
+        card_b.set_x(8)
+        ndc = p3d.Point2()
+        base.camLens.project(base.camera.get_relative_point(
+            base.render, card_b.get_pos(base.render)), ndc)
+        bx = int((ndc.x * 0.5 + 0.5) * h.win_w)
+        by = int((ndc.y * 0.5 + 0.5) * h.win_h)
+        h.step(5)
+        img_before = h.capture()
+        pipeline.set_hemisphere_ambient(GROUND, SKY, node=card_b)
+        h.step(5)
+        img_node = h.capture()
+        h.save_capture(img_node, 'pernode_sh')
+        got_b = avg_rgb(img_node, bx, by)
+        want_b = expected_rgb(curve, -1.0)    # swapped == down-face value
+        err_b = max(abs(g - w) for g, w in zip(got_b, want_b))
+        got_c = avg_rgb(img_node, cx, cy)
+        want_c = expected_rgb(curve, +1.0)
+        err_c = max(abs(g - w) for g, w in zip(got_c, want_c))
+        h.report.check(
+            'pernode_sh_override', err_b < 0.05 and err_c < 0.05,
+            f'node card rgb=({got_b[0]:.3f},{got_b[1]:.3f},{got_b[2]:.3f})'
+            f' expected swapped-hemisphere ({want_b[0]:.3f},'
+            f'{want_b[1]:.3f},{want_b[2]:.3f}) err {err_b:.3f}; global '
+            f'card beneath unaffected (err {err_c:.3f})')
+        pipeline.clear_ambient_sh(node=card_b)
+        h.step(5)
+        rms = common.image_rms_diff(img_before, h.capture(), step=1)
+        h.report.check('pernode_sh_clear_restores', rms == 0.0,
+                       f'clear_ambient_sh(node=...): rms vs pre-override '
+                       f'= {rms:.2e} (subtree reverts to the global set)')
+        card_b.remove_node()
+        pipeline.clear_ambient_sh()
+        h.step(2)
+
     # --- 5. sh_from_cubemap math vs the analytic hemisphere -------------
     from pax3d_render.pipeline import sh_from_cubemap
     size = 32

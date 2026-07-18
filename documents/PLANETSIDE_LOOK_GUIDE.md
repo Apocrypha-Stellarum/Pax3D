@@ -107,7 +107,11 @@ walkable hull it reads as "cabin wash." `set_atmosphere_scale(interior_np,
 terrain seen through the windows keeps full aerial perspective;
 `clear_atmosphere_scale(np)` restores. Same per-node inherited-input
 shape as `set_ambient_scale` — tag the same interior mesh group with
-both.
+both. The environment pair has per-subtree forms too:
+`set_env_map(cabin_tex, node=interior_np)` +
+`set_ambient_sh(sh_from_cubemap(cabin_tex), node=interior_np)` give the
+cabin its own reflections and ambient while the exterior keeps the
+sky's (§7 recipe applies unchanged to the cabin map).
 
 ## 3. Shadow texel snapping (`shadow_texel_snap`)
 

@@ -2085,7 +2085,7 @@ class Pipeline:
     # Environment-driven ambient (Session J / R5.2) — irradiance SH
     # ------------------------------------------------------------------
 
-    def set_ambient_sh(self, coeffs):
+    def set_ambient_sh(self, coeffs, node=None):
         """Feed 9 irradiance-convolved SH coefficients (RGB triples) to the
         shader's existing sh_coeffs diffuse-IBL path (uniform-only).
 
@@ -2094,6 +2094,14 @@ class Pipeline:
         Fresnel (arch doc §9 R5 hooks). Basis slot order (world frame,
         Panda Z-up): [const, x, z, y, xz, yz, xy, 3z^2-1, x^2-y^2] with
         simplepbr's normalization constants. Survives shader recompiles.
+
+        node (Session S): bind to a SUBTREE instead of the whole scene —
+        an inherited shader-input override, so e.g. a hull interior gets
+        cabin-derived ambient while the exterior keeps the sky's. The
+        global set stays tracked and re-pushed across recompiles;
+        node-level inputs live on the node and survive on their own.
+        clear_ambient_sh(node=np) reverts the subtree to the inherited
+        (global) set, byte-identical.
         """
         pta = p3d.PTA_LVecBase3f()
         for c in coeffs:
@@ -2101,10 +2109,14 @@ class Pipeline:
         if len(pta) != 9:
             raise ValueError(f'set_ambient_sh needs 9 coefficients, '
                              f'got {len(pta)}')
+        if node is not None:
+            node.set_shader_input('sh_coeffs', pta)
+            return
         self._ambient_sh = pta
         self.render_node.set_shader_input('sh_coeffs', pta)
 
-    def set_hemisphere_ambient(self, sky_color, ground_color, up=(0, 0, 1)):
+    def set_hemisphere_ambient(self, sky_color, ground_color, up=(0, 0, 1),
+                               node=None):
         """Two-tone environment ambient: sky_color lights up-facing
         surfaces, ground_color down-facing, smoothly blended by the world
         normal (uniform-only, exact SH bands 0-1).
@@ -2117,6 +2129,7 @@ class Pipeline:
         flat AmbientLight the scene would otherwise use — keep any
         AmbientLight small. up is the world up axis in Panda Z-up space.
         clear_ambient_sh() restores the exact pre-call output.
+        node (Session S): apply to a subtree only — see set_ambient_sh.
         """
         sky = p3d.Vec3(sky_color[0], sky_color[1], sky_color[2])
         ground = p3d.Vec3(ground_color[0], ground_color[1], ground_color[2])
@@ -2138,15 +2151,20 @@ class Pipeline:
             tuple(lin * upv.z),   # slot 2: basis normal.z
             tuple(lin * upv.y),   # slot 3: basis normal.y
             zero, zero, zero, zero, zero,
-        ])
+        ], node=node)
 
-    def clear_ambient_sh(self):
+    def clear_ambient_sh(self, node=None):
         """Remove the environment ambient: sh_coeffs back to zeros —
-        byte-identical to the pipeline before any set_*_ambient call."""
+        byte-identical to the pipeline before any set_*_ambient call.
+        With node (Session S): remove only the subtree override — the
+        subtree reverts to the INHERITED (global) coefficients."""
+        if node is not None:
+            node.clear_shader_input('sh_coeffs')
+            return
         self._ambient_sh = None
         self.render_node.set_shader_input('sh_coeffs', self._empty_sh)
 
-    def set_env_map(self, cubemap, max_lod=None):
+    def set_env_map(self, cubemap, max_lod=None, node=None):
         """Bind a cubemap for specular IBL reflections (Session M /
         R5.3 first slice) — glass canopies and metallic hulls pick up
         the environment; rough surfaces reflect it blurred.
@@ -2167,9 +2185,18 @@ class Pipeline:
         partially-filtered chain. Uniform-cost; survives recompiles;
         scaled per-node by set_ambient_scale (reflections are indirect
         light); reflections ride at full strength on set_glass nodes.
+
+        node (Session S): bind to a SUBTREE instead of the whole scene
+        — an inherited shader-input override, so a hull interior
+        reflects a cabin-derived map while the exterior keeps the sky
+        (the walkable-ship pattern; pair with the node= form of
+        set_ambient_sh from the same cubemap). max_reflection_lod is
+        overridden on the same node so the interior chain's ladder is
+        addressed correctly. clear_env_map(node=np) reverts the
+        subtree to the inherited (global) map, byte-identical.
         """
         if cubemap is None:
-            self.clear_env_map()
+            self.clear_env_map(node=node)
             return
         if cubemap.get_texture_type() != p3d.Texture.TT_cube_map:
             raise ValueError('set_env_map needs a cube map Texture')
@@ -2184,13 +2211,23 @@ class Pipeline:
             cubemap.set_minfilter(p3d.SamplerState.FT_linear_mipmap_linear)
         if max_lod is None:
             max_lod = max(0, int(math.log2(max(cubemap.get_x_size(), 1))))
+        if node is not None:
+            node.set_shader_input('filtered_env_map', cubemap)
+            node.set_shader_input('max_reflection_lod', float(max_lod))
+            return
         self._env_map = cubemap
         self._env_map_lod = float(max_lod)
         self._set_env_map_uniforms()
 
-    def clear_env_map(self):
+    def clear_env_map(self, node=None):
         """Remove the specular IBL cubemap: back to the 1x1 black
-        default — byte-identical to the pipeline before set_env_map."""
+        default — byte-identical to the pipeline before set_env_map.
+        With node (Session S): remove only the subtree override — the
+        subtree reverts to the INHERITED (global) map and lod."""
+        if node is not None:
+            node.clear_shader_input('filtered_env_map')
+            node.clear_shader_input('max_reflection_lod')
+            return
         self._env_map = None
         self._env_map_lod = 0
         self._set_env_map_uniforms()
