@@ -36,8 +36,8 @@ Identical paxtest results on both engines = the defect is Python/GLSL, not C++.
 
 | Phase | What | Status (evidence) |
 |---|---|---|
-| R0 harness | `tools/paxtest/` — 19 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; +2 Session G, +1 Session I, +3 Session J, +2 Session K, +1 Session L, +1 Session M, +1 Session O) |
-| R1 unified renderer | `pax3d_render/` (pax_pbr ⊕ pax3d_simplepbr merge), color contract, `register_scene_camera()` | **Core done** (Sessions B, D — game flag flipped, boots clean). Open: in-game parity eyeball (user), sRGB linearization experiment, GLSL-120 path removal (needs game `gl-version 3 2`) |
+| R0 harness | `tools/paxtest/` — 21 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; +2 Session G, +1 Session I, +3 Session J, +2 Session K, +1 Session L, +1 Session M, +1 Session O, +2 Session R: orbital, srgb — expected totals now 48 PASS / 6 documented FAILs / 63 SKIP per engine) |
+| R1 unified renderer | `pax3d_render/` (pax_pbr ⊕ pax3d_simplepbr merge), color contract, `register_scene_camera()` | **Core done** (Sessions B, D — game flag flipped, boots clean). sRGB linearization experiment LANDED gated (Session R — `set_srgb_inputs`, test_srgb, ACES verdict on file). Open: in-game parity eyeball (user), sRGB default flip (game retune + sign-off), GLSL-120 path removal (needs game `gl-version 3 2`) |
 | R2 directional sun + shadows | Pipeline-owned DirectionalLight, HPR-driven; shadows with world-space extent center; **hardened Session E**: world-unit bias, 3×3 PCF, no-cast API, skinned casters proven; **hardened Session G**: glTF caster darkening is a hard assertion, glTF caster+receiver test (angled sun), per-node `set_hardware_skinning()` opt-out; **Session I**: slope-scaled bias (`shadow_normal_bias_world`, opt-in) kills grazing-angle acne (fact 14) | **Core done + hardened** (test_shadows 13+13, test_shadow_quality 9, test_shadows_gltf 6, test_shadow_grazing 6, test_skinning 12). Open: in-game validation — set `shadow_bias_world` (~0.5 IEU) first; openworld dev A/Bs `shadow_normal_bias_world` at az 240 low sun |
 | R3 bloom + HDR | F3 root-caused (8-bit intermediate FBOs) and fixed; float fbprops everywhere | **Core done** (Session D; test_bloom green both sizes). Open: content retune, light units, auto-exposure stretch |
 | R4 space scale | R4.0 acceptance tests; R4.1 log depth opt-in (`enable_log_depth`, @logdepth row green); R4.2 camera-relative DECIDED (game-side; parent-cancel trap measured); doubles wheel **built + verified 2026-07-17**: precision 0.000e+00 at Neptune offsets, `test3d_ftl --selftest` green, but stock simplepbr crashes on it (stays quarantined in `pax3d-double-env`) | **Engine side essentially done.** Open: game-side R4.2 implementation, frustum flip, then sky-camera retirement; doubles perf A/B + user flight |
@@ -118,8 +118,14 @@ All engine work is done and waiting; these are eyeball-and-tune items in sfb2:
 3. **Bloom-on decision + retune** (R3): strength/intensity/tints (note the per-mip
    tint list reads inverted vs its comment labels), then the magic-number
    compensation factors go, one per test run.
-4. **sRGB linearization experiment** (R1): testbed G key; decides the input half of
-   the color contract, unlocks ACES for real.
+4. **sRGB linearization ADOPTION** (R1): the experiment itself is DONE
+   (Session R): `pipeline.set_srgb_inputs(True)` is the canonical flag,
+   test_srgb gates the exact decoded analytics through all four tonemap
+   curves, and the ACES prediction is VERIFIED in the testbed
+   (`--tonemap aces --srgb`: wash-out gone, brightness drops). What
+   remains is the game decision: retune sun/exposure around linear
+   inputs and sign off the default flip (arch doc §8 has the verdict
+   and the two adoption traps).
 
 ### 4.3 R4.2 — camera-relative rendering (game side, coordinated)
 

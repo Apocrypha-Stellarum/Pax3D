@@ -559,3 +559,41 @@ exactly 0.0. Full matrix now 20 tests: 46 PASS / 6 documented FAILs /
 the game shim routes to pax3d_render). Testbed: O / Shift+O hotkeys +
 --orbital flag (earth/mars presets), selftest screenshots verified by
 eye — limb halo, disk haze, terminator all read correctly at defaults.
+
+**Session R, continued (2026-07-18):** three more phases landed after
+R5.5. (1) **Worked skybox example (the proven-but-unused chain closed):**
+NEW `tools/gen_equirect_cubemap.py` — equirect panorama -> cubemap .txo
+front end (pip simplepbr 0.13.1 has no equirect support; its
+from_file_path just calls load_cube_map, so the borrow target did not
+exist — the converter is ours with simplepbr calc_vector face directions
+verbatim; --selftest proves the pinned face table 8/8 on a synthetic
+compass panorama; measured fact baked in: TexturePeeker rows are
+bottom-up). The openworld 006_Sunset HDRI (4096x2048) baked in 5s+2s
+through convert+prefilter and SHIPPED as tools/samples/
+sky006_sunset_ibl.txo (393 KB); testbed M key cycles off/spec/spec+SH
+(--env flag for scripted A/B; sfb2 gitignores env/, so the canonical
+sample lives engine-side with a testbed fallback path). A/B on file:
+shadowed hulls go black -> warm sunset fill. Recipes in
+USING_PAX3D_RENDER 8 + look guide 7. (2) **R1.3 sRGB experiment landed
+gated:** pipeline.set_srgb_inputs() flips M_modulate+M_emission stage
+textures to sRGB formats; two measured traps: release_all() required
+(prepared textures keep the old internal format — silently inert
+without it) and clear-color-only textures round-trip undecoded (no RAM
+image). NEW test_srgb (15 checks): metallic-1 cards collapse ambient to
+base*A -> the 128 texel lands on the exact decoded analytic through all
+four tonemap curves; opt-out rms 0.0; green both engines x baselines.
+Testbed --tonemap/--srgb A/B: THE SESSION A ACES PREDICTION VERIFIED —
+wash-out gone with linear inputs, overall brightness drops (content
+authored raw) -> default stays off pending game retune. (3) **C++
+mini-window (user-authorized in-session):** the queued core-profile
+combine-mode warning landed (857b715086) — once-per-TextureAttrib glgsg
+warning when the default shader flattens combine/scale/multi-stage
+states, both default-shader paths. 1m22s incremental build; gate
+identical both engines (48/6/63 with the two new tests); probe verdicts
+byte-identical; wheel live in pax3d-env, archived wheels_session_r.
+Day-one field catch: the warning fired on a REAL flattened combine
+state during a plain sfb2 boot smoke — the game team has a lead to
+chase. Window 4 mobile-glue deletion deliberately NOT taken (themed
+window deserves its own fresh session). Concurrent-session note:
+sfb2 Session 617 landed "Phobos walkable" mid-session — the
+walkable-ship adoption wave has begun game-side.
