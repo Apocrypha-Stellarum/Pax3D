@@ -711,3 +711,23 @@ requested in the PAX3D_FEEDBACK.md response. Instrument trap logged:
 cached bams bypass the loader — probe disables BamCache. test_skinning
 still 17/17 (no interference; the shim is opt-in and nothing in the
 pipeline calls it).
+
+**Session T update 2 (2026-07-19, same day):** the character dev's
+Session-626 field report crossed our measurement in transit — their
+"next engine session measures the morph head" had already happened.
+ENGINE RESPONSE 2 written (PAX3D_FEEDBACK.md, top entry): pointer to
+the verdict, the three asks (add `gltf_compat.install()` to the baker
+boot unconditionally — no-op on morph-less bakes; re-export the anim
+GLB with real weights values + the intended 30 fps; add a
+`max(weights) > 0` value check to their presence-only verifier). Their
+Lane 2 landed: all four characters re-baked keyed/151,
+`max_skinning_bones='auto'` + `refresh_skinning_budget()` live in the
+game (resolves 160 Mars / 128 village, 185 fps selftest), and the
+81-vs-151 A/B measured ≤0.33 mm vertex deviation on the pack's demo
+clips — the correctives are rigid to their parents, so the old
+weight-merge was already lossless for these clips. Queue updated on
+that evidence (CLAUDE.md): texture-palette skinning DEPRIORITIZED
+until richer anim packs; **GPU morph path added as a named
+build-window candidate** (Python/GLSL prototype first per canon;
+queued behind their re-export A/B). Morph lane confirmed as the
+character-quality bottleneck from both sides of the fence.

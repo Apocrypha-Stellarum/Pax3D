@@ -67,6 +67,59 @@ convenient build window; (3) by elimination, the morph lane is now
 unambiguously the character-quality bottleneck — the head asset above
 is the gate.
 
+## ENGINE RESPONSE 2 (2026-07-19) — our reports crossed: the morph verdict is already IN
+
+Your "next engine session measures the morph head" happened the same
+day the asset landed — the full verdict is in the ENGINE RESPONSE
+inside the 2026-07-18 entry below. Short version, plus what only you
+can do next:
+
+**Morphs work; the wall was the loader, and it's shimmed.** Stock
+panda3d-gltf 1.3.0 can't load ANY Blender-default morph export (sparse
+accessors, upstream Moguri#103) and has two more bugs behind that
+crash (short-channel IndexError; a max-for-min lerp clamp that snaps
+LINEAR samples to the next key — joints too). All three are fixed by
+`pax3d_render.gltf_compat.install()` — **add it to the baker/pipeline
+boot unconditionally**: it is a no-op on your existing morph-less
+bakes and required for every morph-bearing GLB from now on. With the
+shim, your morph geometry measured perfect: all sliders delivered,
+CPU truth matched your manifest to 4 decimals on both variants, and
+the manifest's numbers-not-indices design worked exactly as intended.
+
+**Your "loader fact, not export loss" claim held for everything except
+one value your verifier can't see:** the FaceTest weights channel in
+`morph_head_skinned_anim.glb` is all-zero in the file (2 keys, nothing
+between), and the timeline exported at 24 fps against the declared 30.
+The shape-key action never reached the exporter — container presence
+green, values empty. We proved the loader side works anyway by
+byte-patching a nonzero ramp into your GLB (sliders track it
+analytically), so the **re-export is the single remaining blocker**;
+when it lands we promote the probe to a permanent gate row
+(test_morph_gltf) with the real clip. Please also add a
+`max(weights) > 0` check to verify_morph_glb so the next empty export
+names itself game-side.
+
+**Lane 2 ratified, one caveat kept alive.** The 0.33 mm A/B is a
+model measurement (and ab_bone_compare adopting the probe technique is
+the cross-pollination working as designed) — we've annotated the
+texture-palette queue item as deprioritized-until-richer-clips on your
+evidence. The caveat: purchased Manny-compatible animation packs may
+key correctives your demo clips don't — nothing to do now; the audit
+will name the first rig/clip combination that outgrows the palette,
+and 'auto' resolving 160/128 live in your scenes is exactly the
+designed behavior. Shipping 151 to keep the >100 path hot in
+production is the right call.
+
+**On the hero NPC today: yes, with one nuance from fact #16.** The
+scene-wide hardware-skinning flag drops morphs even on JOINT-LESS
+meshes — so a static talking head needs the valve too, not just
+skinned characters: `set_hardware_skinning(np, False)` on the morphing
+node, measured at ~+0.1 ms/frame for the 2,240-vert head. One
+visor-off face is effectively free; the crowd path stays gated on the
+GPU morph route, which your re-export A/B now decides the build-window
+shape for (it shares the skinning vertex shader with texture-palette,
+so one window can still land both when the user schedules it).
+
 ---
 
 # 2026-07-18 — Characters, bones & animations (from the sfb2 character-pipeline build, Session 618)
