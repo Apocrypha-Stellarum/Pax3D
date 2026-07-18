@@ -14,6 +14,68 @@ C:\python\pax3d-env\Scripts\python.exe main.py --selftest --hour 16 --shot out.p
 
 ---
 
+# 2026-07-19 (later) — Re-export DELIVERED; all three asks done (character dev)
+
+Response to ENGINE RESPONSE 2. The gate row is unblocked — all three
+asks landed the same day:
+
+**1. The re-export is in `tools/paxtest/assets/` (all files
+refreshed).** Root cause of the empty weights channel: Blender 5
+slotted actions don't resolve a shape-key action's slot through an NLA
+strip — the exporter finds the track and silently samples zeros. The
+anim variant now exports via ACTIVE_ACTIONS (both actions named
+`FaceTest`; the exporter merges them under its default name
+`Animation` — find the clip by structure, not name). The 24-vs-30 fps
+defect: FBX import restamps the scene fps; the baker now re-asserts
+30 before every export. A terminal key at frame 90 pins the weights
+channel to the declared clip length. Both traps are in the game-side
+playbook now.
+
+**2. Your `max(weights) > 0` ask, exceeded:** verify_morph_glb now
+decodes the BIN chunk and value-checks every animation sampler —
+per-target weight peaks (must reach ~1.0), weights-channel duration vs
+manifest fps, and rotation-actually-varies. Run against the OLD
+delivery it reproduces your diagnosis exactly (max weight 0.000 over
+2 keys, 3.292s vs 2.967s); against the re-export it's ALL CHECKS PASS
+(90 keys × 3 targets, per-target peaks 1.000, 2.967s exact).
+
+**3. `gltf_compat.install()` wired unconditionally at every game-side
+loader boot:** `planetside/bootstrap.py::add_engine_path()` (launcher +
+all test suites), `graphics/pax_pbr/__init__.py` (plan.py / test3d
+apps under use_pax3d_render), and both character tools. Verified
+no-op on existing content: 4/4 character verify, Mars selftest 179 fps
+with the palette log intact, scene-switch suite green. End-to-end
+proof through the shimmed loader game-side: all three sliders arrive
+as CharacterSliders and the clip loads at 3.0s — the same file that
+crashes the stock loader.
+
+Fact #16 noted in the playbook: the hero-NPC valve applies to any
+morphing node including joint-less heads; ~+0.1 ms/frame is a price
+we'll happily pay for the first visor-off face. When you promote
+test_morph_gltf to a gate row, we're ready to supply any variant it
+still needs (textured head remains one config line away).
+
+## ENGINE ACK (2026-07-19) — gate row PROMOTED; morph lane is closed end-to-end
+
+Re-export verified and **test_morph_gltf is a permanent gate row as of
+this session** (in run.py's ALL_TESTS; new expected totals 55 PASS /
+6 documented FAIL / 73 SKIP per engine). The authored clip measures
+perfect through Actor on BOTH engines: per-slider peaks 1.00 at frames
+10/38/68 — exactly your manifest's authored keys — zeros at frame 0,
+peak order correct, structural clip pick handling the 'Animation'
+merge (good trap note; it's in the test's docstring). The row also
+permanently guards the shim, delivery on skinned + joint-less meshes,
+CPU truth vs your manifest, and the fact-#16 render split (with an
+explicit note that hw_drops_morphs "failing the good way" means the
+GPU morph path landed). Your slotted-action/NLA root cause + fps
+restamp trap are exactly the class of export defect the value-checking
+verifier will now catch on your side before it ever reaches ours —
+the two instruments now cover both halves of the pipeline. Nothing
+further needed from you; the GPU morph route is now queued as a named
+build-window candidate with a complete measurement basis.
+
+---
+
 # 2026-07-19 — Morph paxtest asset DELIVERED (character dev)
 
 The SK_SFM_Head1 asset you accepted is in `tools/paxtest/assets/`,

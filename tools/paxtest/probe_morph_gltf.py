@@ -343,16 +343,22 @@ def main():
         fact('anim_file_weights_authored', max(w_vals) > 0.0,
              f'weights sampler in the FILE: {out_acc["count"]} values, '
              f'{in_acc["count"]} keys ending {in_acc["max"][0]:.3f}s, '
-             f'min {min(w_vals):.2f} max {max(w_vals):.2f} — all-zero '
-             f'means the shape-key action did not reach the exporter '
-             f'(asset-side export defect, not a loader gap)')
+             f'min {min(w_vals):.2f} max {max(w_vals):.2f} (False = '
+             f'the shape-key action did not reach the exporter — '
+             f'asset-side export defect, not a loader gap; the '
+             f'2026-07-19 first delivery failed exactly this way)')
 
         actor = Actor(p3d.Filename.from_os_specific(
             anim_path).get_fullpath())
         actor.reparent_to(base.render)
         names = sorted(actor.get_anim_names())
-        fact('anim_clip_delivered', 'FaceTest' in names,
-             f'actor.get_anim_names() = {names}')
+        # Structural pick, not name: Blender 5 ACTIVE_ACTIONS export
+        # merges the clip under the exporter default 'Animation'
+        # (field note 2026-07-19) — one clip is the contract.
+        clip = 'FaceTest' if 'FaceTest' in names else (
+            names[0] if len(names) == 1 else None)
+        fact('anim_clip_delivered', clip is not None,
+             f'actor.get_anim_names() = {names} -> using {clip!r}')
 
         # b. engine truth on a byte-patched copy.
         tmpdir = tempfile.mkdtemp(prefix='paxtest_morph_')
@@ -363,7 +369,14 @@ def main():
             n_keys = in_acc['count']
             targets_per_key = out_acc['count'] // n_keys
             vals = [0.0] * out_acc['count']
-            vals[-targets_per_key:] = [1.0, 0.5, 0.25][:targets_per_key]
+            # Write the ramp target into the LAST TWO keys: the panda
+            # frame range ends at t=(num_frames-1)/fps, which can land
+            # exactly ON the penultimate key (dense-key clips) — one
+            # patched key would then never be sampled.
+            ramp = [1.0, 0.5, 0.25][:targets_per_key]
+            vals[-targets_per_key:] = ramp
+            if n_keys >= 2:
+                vals[-2 * targets_per_key:-targets_per_key] = ramp
             buf[w_off:w_off + 4 * out_acc['count']] = struct.pack(
                 f'<{out_acc["count"]}f', *vals)
             f.write(buf)
@@ -372,12 +385,15 @@ def main():
         pactor.reparent_to(base.render)
         pchar = pactor.find('**/+Character')
         _, psliders = find_sliders(pchar)
-        if all(psliders.values()) and 'FaceTest' in pactor.get_anim_names():
-            pactor.pose('FaceTest', 0)   # bind before frame queries
-            nf = pactor.get_num_frames('FaceTest')
+        pnames = pactor.get_anim_names()
+        pclip = 'FaceTest' if 'FaceTest' in pnames else (
+            pnames[0] if len(pnames) == 1 else None)
+        if all(psliders.values()) and pclip:
+            pactor.pose(pclip, 0)   # bind before frame queries
+            nf = pactor.get_num_frames(pclip)
             readings = {}
             for frame in (0, nf - 1):
-                pactor.pose('FaceTest', frame)
+                pactor.pose(pclip, frame)
                 h.step(2)
                 pchar.node().force_update()
                 readings[frame] = {n: s.get_value()
@@ -402,9 +418,9 @@ def main():
     # ------------------------------------------------------------------
     # 4. cost datapoint: one head, FaceTest looping, HW vs CPU opt-out
     # ------------------------------------------------------------------
-    if actor is not None and 'FaceTest' in actor.get_anim_names():
+    if actor is not None and clip:
         frame_head(h, base)
-        actor.loop('FaceTest')
+        actor.loop(clip)
         h.step(10)  # warm up
 
         def time_steps(n=120):
