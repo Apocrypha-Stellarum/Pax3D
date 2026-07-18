@@ -41,11 +41,6 @@ find_all_microphones() {
   if (initialized) return;
   initialized = true;
 
-#ifdef HAVE_DIRECTCAM
-  extern void find_all_microphones_ds();
-  find_all_microphones_ds();
-#endif
-
 #ifdef HAVE_ALSA
   extern void find_all_microphones_alsa();
   find_all_microphones_alsa();

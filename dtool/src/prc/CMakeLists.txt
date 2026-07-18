@@ -1,5 +1,4 @@
 set(P3PRC_HEADERS
-  androidLogStream.h
   bigEndian.h
   config_prc.h
   configDeclaration.I configDeclaration.h
@@ -63,11 +62,6 @@ set(P3PRC_SOURCES
 )
 
 configure_file(prc_parameters.h.in prc_parameters.h)
-
-if(ANDROID)
-  set(P3PRC_SOURCES ${P3PRC_SOURCES}
-    androidLogStream.cxx)
-endif()
 
 if(EMSCRIPTEN)
   set(P3PRC_SOURCES ${P3PRC_SOURCES}

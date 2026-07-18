@@ -20,7 +20,6 @@ set(P3VISION_SOURCES
   webcamVideoCursorOpenCV.cxx
   webcamVideoCursorV4L.cxx
   webcamVideo.cxx
-  webcamVideoDS.cxx
   webcamVideoOpenCV.cxx
   webcamVideoV4L.cxx
 )

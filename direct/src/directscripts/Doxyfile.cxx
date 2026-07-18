@@ -799,8 +799,6 @@ EXCLUDE                = dtool/src/parser-inc \
                          panda/src/linmath/dblnames.h \
                          panda/src/linmath/dbl2fltnames.h \
                          panda/src/linmath/flt2dblnames.h \
-                         panda/src/android \
-                         panda/src/iphone \
                          panda/src/tinydisplay \
                          panda/src/movies/dr_flac.h \
                          panda/src/wgldisplay/wglext.h \

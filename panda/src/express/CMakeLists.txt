@@ -52,7 +52,6 @@ set(P3EXPRESS_HEADERS
   virtualFileComposite.h virtualFileComposite.I
   virtualFile.h virtualFile.I
   virtualFileMount.h virtualFileMount.I
-  virtualFileMountAndroidAsset.h virtualFileMountAndroidAsset.I
   virtualFileMountMultifile.h virtualFileMountMultifile.I
   virtualFileMountRamdisk.h virtualFileMountRamdisk.I
   virtualFileMountSystem.h virtualFileMountSystem.I
@@ -124,10 +123,6 @@ set(P3EXPRESS_SOURCES
   zStream.cxx zStreamBuf.cxx
 )
 
-if(ANDROID)
-  list(APPEND P3EXPRESS_SOURCES virtualFileMountAndroidAsset.cxx)
-endif()
-
 set(P3EXPRESS_IGATEEXT
   datagram_ext.h
   memoryUsagePointers_ext.cxx
@@ -165,10 +160,6 @@ endif()
 
 if(WIN32)
   target_link_libraries(p3express advapi32.lib ws2_32.lib)
-endif()
-
-if(ANDROID)
-  target_link_libraries(p3express android)
 endif()
 
 if(NOT BUILD_METALIBS)

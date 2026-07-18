@@ -22,7 +22,6 @@
 #include "virtualFile.h"
 #include "virtualFileComposite.h"
 #include "virtualFileMount.h"
-#include "virtualFileMountAndroidAsset.h"
 #include "virtualFileMountMultifile.h"
 #include "virtualFileMountRamdisk.h"
 #include "virtualFileMountSystem.h"
@@ -111,9 +110,6 @@ init_libexpress() {
   VirtualFile::init_type();
   VirtualFileComposite::init_type();
   VirtualFileMount::init_type();
-#ifdef ANDROID
-  VirtualFileMountAndroidAsset::init_type();
-#endif
   VirtualFileMountMultifile::init_type();
   VirtualFileMountRamdisk::init_type();
   VirtualFileMountSystem::init_type();

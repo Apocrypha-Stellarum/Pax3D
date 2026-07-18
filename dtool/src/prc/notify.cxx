@@ -26,12 +26,6 @@
 #include <fcntl.h>
 #endif
 
-#ifdef ANDROID
-#include <sys/stat.h>
-#include <android/log.h>
-#include "androidLogStream.h"
-#endif
-
 #ifdef __EMSCRIPTEN__
 #include "emscriptenLogStream.h"
 #endif
@@ -281,8 +275,8 @@ get_category(std::string_view fullname) {
  */
 ostream &Notify::
 out(NotifySeverity severity) {
-#if defined(ANDROID) || defined(__EMSCRIPTEN__)
-  // Android and JavaScript have dedicated log systems.
+#if defined(__EMSCRIPTEN__)
+  // JavaScript has a dedicated log system.
   return *(ptr()->_log_streams[severity]);
 #else
   return *(ptr()->_ostream_ptr);
@@ -375,11 +369,6 @@ assert_failure(const char *expression, int line,
   if (self->has_assert_handler()) {
     return (*self->_assert_handler)(expression, line, source_file);
   }
-
-#ifdef ANDROID
-  // Write to Android log system.
-  __android_log_assert("assert", "Panda3D", "Assertion failed: %s", message.c_str());
-#endif
 
 #ifdef __EMSCRIPTEN__
   // Write to JavaScript console.
@@ -707,39 +696,6 @@ config_initialized() {
         }
 #endif  // BUILD_IPHONE
       }
-
-#ifdef ANDROID
-      for (int severity = 0; severity <= NS_fatal; ++severity) {
-        ptr->_log_streams[severity] = ptr->_ostream_ptr;
-      }
-
-    } else {
-      // By default, we always redirect the notify stream to the Android log,
-      // except if we are running from the adb shell.  We decide this based
-      // on whether stderr is redirected to /dev/null.
-      Notify *ptr = Notify::ptr();
-      struct stat a, b;
-      if (fstat(STDERR_FILENO, &a) == 0 && stat("/dev/null", &b) == 0 &&
-          a.st_dev == b.st_dev && a.st_ino == b.st_ino) {
-        // Android redirects stdio and stderr to /dev/null,
-        // but does provide its own logging system.  We use a special
-        // type of stream that redirects it to Android's log system.
-        for (int severity = 0; severity <= NS_fatal; ++severity) {
-          int priority = ANDROID_LOG_UNKNOWN;
-          if (severity != NS_unspecified) {
-            priority = severity + 1;
-          }
-          ptr->_log_streams[severity] = new AndroidLogStream(priority);
-        }
-        ptr->set_ostream_ptr(new AndroidLogStream(ANDROID_LOG_INFO), true);
-      } else {
-        // Running from the terminal, set all the log streams to point to the
-        // same output.
-        for (int severity = 0; severity <= NS_fatal; ++severity) {
-          ptr->_log_streams[severity] = &cerr;
-        }
-      }
-#endif
     }
   }
 #endif

@@ -28,7 +28,6 @@ set(P3MOVIES_SOURCES
   inkblotVideo.cxx
   inkblotVideoCursor.cxx
   microphoneAudio.cxx
-  microphoneAudioDS.cxx
   movieAudio.cxx
   movieAudioCursor.cxx
   movieTypeRegistry.cxx

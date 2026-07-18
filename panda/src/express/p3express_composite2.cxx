@@ -16,7 +16,6 @@
 #include "virtualFileComposite.cxx"
 #include "virtualFileList.cxx"
 #include "virtualFileMount.cxx"
-#include "virtualFileMountAndroidAsset.cxx"
 #include "virtualFileMountMultifile.cxx"
 #include "virtualFileMountRamdisk.cxx"
 #include "virtualFileMountSystem.cxx"

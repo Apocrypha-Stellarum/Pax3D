@@ -40,9 +40,6 @@ TARGET = None
 TARGET_ARCH = None
 HAS_TARGET_ARCH = False
 TOOLCHAIN_PREFIX = ""
-ANDROID_ABI = None
-ANDROID_TRIPLE = None
-ANDROID_API = None
 SYS_LIB_DIRS = []
 SYS_INC_DIRS = []
 DEBUG_DEPENDENCIES = False
@@ -67,13 +64,6 @@ else:
     # 64-bit build.  So we stick with platform.architecture in that
     # case.
     host_64 = (platform.architecture()[0] == '64bit')
-
-# On Android, get a list of all the public system libraries.
-ANDROID_SYS_LIBS = []
-if os.path.exists("/etc/public.libraries.txt"):
-    for line in open("/etc/public.libraries.txt", "r"):
-        line = line.strip()
-        ANDROID_SYS_LIBS.append(line)
 
 ########################################################################
 ##
@@ -283,20 +273,9 @@ def GetHost():
     elif sys.platform == 'darwin':
         return 'darwin'
     elif sys.platform.startswith('linux'):
-        try:
-            # Python versions before 3.13 reported android as "linux"
-            osname = subprocess.check_output(["uname", "-o"])
-            if osname.strip().lower() == b'android':
-                return 'android'
-            else:
-                return 'linux'
-        except:
-            return 'linux'
+        return 'linux'
     elif sys.platform.startswith('freebsd'):
         return 'freebsd'
-    # Handle for Python >= 3.13
-    elif sys.platform == 'android':
-        return 'android'
     else:
         exit('Unrecognized sys.platform: %s' % (sys.platform))
 
@@ -362,57 +341,6 @@ def SetTarget(target, arch=None):
             choices = ('i386', 'x86_64', 'ppc', 'ppc64', 'arm64')
             if arch not in choices:
                 exit('macOS architecture must be one of %s' % (', '.join(choices)))
-
-    elif target == 'android' or target.startswith('android-'):
-        if arch is None:
-            # If compiling on Android, default to same architecture.
-            if host == 'android':
-                arch = host_arch
-            else:
-                exit('Specify an Android architecture using --arch')
-
-        if arch == 'aarch64':
-            arch = 'arm64'
-
-        # Did we specify an API level?
-        global ANDROID_API
-        target, _, api = target.partition('-')
-        if api:
-            ANDROID_API = int(api)
-        else:
-            # Default to the lowest API level still supported by Google.
-            ANDROID_API = 21
-
-        # Determine the prefix for our gcc tools, eg. arm-linux-androideabi-gcc
-        global ANDROID_ABI, ANDROID_TRIPLE
-        if arch == 'armv7a':
-            ANDROID_ABI = 'armeabi-v7a'
-            ANDROID_TRIPLE = 'armv7a-linux-androideabi'
-        elif arch == 'arm':
-            ANDROID_ABI = 'armeabi'
-            ANDROID_TRIPLE = 'arm-linux-androideabi'
-        elif arch == 'arm64':
-            ANDROID_ABI = 'arm64-v8a'
-            ANDROID_TRIPLE = 'aarch64-linux-android'
-        elif arch == 'mips':
-            ANDROID_ABI = 'mips'
-            ANDROID_TRIPLE = 'mipsel-linux-android'
-        elif arch == 'mips64':
-            ANDROID_ABI = 'mips64'
-            ANDROID_TRIPLE = 'mips64el-linux-android'
-        elif arch == 'x86':
-            ANDROID_ABI = 'x86'
-            ANDROID_TRIPLE = 'i686-linux-android'
-        elif arch == 'x86_64':
-            ANDROID_ABI = 'x86_64'
-            ANDROID_TRIPLE = 'x86_64-linux-android'
-        else:
-            exit('Android architecture must be arm, armv7a, arm64, mips, mips64, x86 or x86_64, use --arch to specify')
-
-        ANDROID_TRIPLE += str(ANDROID_API)
-        TOOLCHAIN_PREFIX = ANDROID_TRIPLE + '-'
-        DEFAULT_CC = "clang"
-        DEFAULT_CXX = "clang++"
 
     elif target == 'linux':
         if arch is not None:
@@ -480,25 +408,13 @@ def GetCXX():
     return os.environ.get('CXX', TOOLCHAIN_PREFIX + DEFAULT_CXX)
 
 def GetStrip():
-    # Hack
-    if TARGET == 'android':
-        return 'llvm-strip'
-    else:
-        return 'strip'
+    return 'strip'
 
 def GetAR():
-    # Hack
-    if TARGET == 'android':
-        return TOOLCHAIN_PREFIX + DEFAULT_AR
-    else:
-        return DEFAULT_AR
+    return DEFAULT_AR
 
 def GetRanlib():
-    # Hack
-    if TARGET == 'android':
-        return TOOLCHAIN_PREFIX + DEFAULT_RANLIB
-    else:
-        return DEFAULT_RANLIB
+    return DEFAULT_RANLIB
 
 BISON = None
 def GetBison():
@@ -900,47 +816,6 @@ def CxxGetIncludes(path):
     CXXINCLUDECACHE[path] = [date, include]
     return include
 
-JAVAIMPORTCACHE = {}
-
-JavaImportRegex = re.compile('[ \t\r\n;]import[ \t]+([a-zA-Z][^;]+)[ \t\r\n]*;')
-
-def JavaGetImports(path):
-    date = GetTimestamp(path)
-    if path in JAVAIMPORTCACHE:
-        cached = JAVAIMPORTCACHE[path]
-        if cached[0] == date:
-            return cached[1]
-    try:
-        source = open(path, 'r').read()
-    except:
-        exit("Cannot open source file \"" + path + "\" for reading.")
-
-    imports = []
-    try:
-        for match in JavaImportRegex.finditer(source, 0):
-            impname = match.group(1).strip()
-            if not impname.startswith('java.') and \
-               not impname.startswith('dalvik.') and \
-               not impname.startswith('android.'):
-                imports.append(impname.strip())
-    except:
-        print("Failed to determine dependencies of \"" + path  +"\".")
-        raise
-
-    JAVAIMPORTCACHE[path] = [date, imports]
-    return imports
-
-########################################################################
-##
-## SaveDependencyCache / LoadDependencyCache
-##
-## This actually saves both the dependency and cxx-include caches.
-##
-########################################################################
-
-DCACHE_VERSION = 3
-DCACHE_BACKED_UP = False
-
 def SaveDependencyCache():
     global DCACHE_BACKED_UP
     if not DCACHE_BACKED_UP:
@@ -1029,26 +904,6 @@ def CxxFindHeader(srcfile, incfile, ipath):
             if GetTimestamp(full) > 0: return full
         return 0
 
-def JavaFindClasses(impspec, clspath):
-    path = clspath + '/' + impspec.replace('.', '/') + '.class'
-    if '*' in path:
-        return glob.glob(path)
-    else:
-        return [path]
-
-########################################################################
-##
-## CxxCalcDependencies(srcfile, ipath, ignore)
-##
-## Calculate the dependencies of a source file given a
-## particular include-path.  Any file in the list of files to
-## ignore is not considered.
-##
-########################################################################
-
-CxxIgnoreHeader = {}
-CxxDependencyCache = {}
-
 def CxxCalcDependencies(srcfile, ipath, ignore):
     if srcfile in CxxDependencyCache:
         return CxxDependencyCache[srcfile]
@@ -1067,37 +922,6 @@ def CxxCalcDependencies(srcfile, ipath, ignore):
     result = list(dep.keys())
     CxxDependencyCache[srcfile] = result
     return result
-
-global JavaDependencyCache
-JavaDependencyCache = {}
-
-def JavaCalcDependencies(srcfile, clspath):
-    if srcfile in JavaDependencyCache:
-        return JavaDependencyCache[srcfile]
-
-    deps = set((srcfile,))
-    JavaDependencyCache[srcfile] = deps
-
-    imports = JavaGetImports(srcfile)
-    for impspec in imports:
-        for cls in JavaFindClasses(impspec, clspath):
-            deps.add(cls)
-    return deps
-
-########################################################################
-##
-## Registry Key Handling
-##
-## Of course, these routines will fail if you call them on a
-## non win32 platform.  If you use them on a win64 platform, they
-## will look in the win32 private hive first, then look in the
-## win64 hive.
-##
-########################################################################
-
-if sys.platform == "win32":
-    # Note: not supported on cygwin.
-    import winreg
 
 def TryRegistryKey(path):
     try:
@@ -1349,9 +1173,6 @@ def MakeBuildTree():
     MakeDirectory(OUTPUTDIR + "/pandac/input")
     MakeDirectory(OUTPUTDIR + "/panda3d")
 
-    if GetTarget() == 'android':
-        MakeDirectory(OUTPUTDIR + "/classes")
-
 ########################################################################
 #
 # Make sure that you are in the root of the panda tree.
@@ -1432,12 +1253,6 @@ def GetThirdpartyDir():
             THIRDPARTYDIR = base + "/freebsd-libs-x64/"
         else:
             THIRDPARTYDIR = base + "/freebsd-libs-a/"
-
-    elif (target == 'android'):
-        THIRDPARTYDIR = base + "/android-libs-%s/" % (target_arch)
-
-        if target_arch == 'armv7a' and not os.path.isdir(THIRDPARTYDIR):
-            THIRDPARTYDIR = base + "/android-libs-arm/"
 
     elif (target == 'emscripten'):
         THIRDPARTYDIR = base + "/emscripten-libs/"
@@ -1731,9 +1546,6 @@ def SystemLibraryExists(lib):
     result = LocateLibrary(lib, SYS_LIB_DIRS)
     if result is not None:
         return True
-
-    if GetHost() == "android" and GetTarget() == "android":
-        return ('lib%s.so' % lib) in ANDROID_SYS_LIBS
 
     return False
 
@@ -2451,151 +2263,6 @@ def SdkLocateSpeedTree():
     SDK["SPEEDTREEAPI"] = "OpenGL"
     SDK["SPEEDTREEVERSION"] = '%s.%s' % (version[0], version[1])
 
-def SdkLocateAndroid():
-    """This actually locates the Android NDK, not the Android SDK.
-    NDK_ROOT must be set to its root directory."""
-
-    global TOOLCHAIN_PREFIX
-
-    if GetTarget() != 'android':
-        return
-
-    # Allow ANDROID_API/ANDROID_ABI to be used in makepanda.py.
-    if ANDROID_API is None:
-        SetTarget('android')
-    api = ANDROID_API
-    SDK["ANDROID_API"] = api
-
-    abi = ANDROID_ABI
-    SDK["ANDROID_ABI"] = abi
-    SDK["ANDROID_TRIPLE"] = ANDROID_TRIPLE
-
-    if GetHost() == 'android':
-        # Assume we're compiling from termux.
-        prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
-        SDK["ANDROID_JAR"] = prefix + "/share/aapt/android.jar"
-        return
-
-    # Find the location of the Android SDK.
-    sdk_root = os.environ.get('ANDROID_HOME')
-    if not sdk_root or not os.path.isdir(sdk_root):
-        sdk_root = os.environ.get('ANDROID_SDK_ROOT')
-
-        # Try the default installation location on Windows.
-        if not sdk_root and GetHost() == 'windows':
-            sdk_root = os.path.expanduser(os.path.join('~', 'AppData', 'Local', 'Android', 'Sdk'))
-
-        if not sdk_root:
-            exit('ANDROID_SDK_ROOT must be set when compiling for Android!')
-        elif not os.path.isdir(sdk_root):
-            exit('Cannot find %s.  Please install Android SDK and set ANDROID_SDK_ROOT or ANDROID_HOME.' % (sdk_root))
-
-    # Determine the NDK installation directory.
-    if os.environ.get('NDK_ROOT') or os.environ.get('ANDROID_NDK_ROOT'):
-        # We have an explicit setting from an environment variable.
-        ndk_root = os.environ.get('ANDROID_NDK_ROOT')
-        if not ndk_root or not os.path.isdir(ndk_root):
-            ndk_root = os.environ.get('NDK_ROOT')
-            if not ndk_root or not os.path.isdir(ndk_root):
-                exit("Cannot find %s.  Please install Android NDK and set ANDROID_NDK_ROOT." % (ndk_root))
-    else:
-        # Often, it's installed in the ndk-bundle subdirectory of the SDK.
-        ndk_root = os.path.join(sdk_root, 'ndk-bundle')
-
-        if not os.path.isdir(os.path.join(ndk_root, 'toolchains')):
-            exit('Cannot find the Android NDK.  Install it via the SDK manager or set the ANDROID_NDK_ROOT variable if you have installed it in a different location.')
-
-    SDK["ANDROID_NDK"] = ndk_root
-
-    # Determine the toolchain location.
-    prebuilt_dir = os.path.join(ndk_root, 'toolchains', 'llvm', 'prebuilt')
-    if not os.path.isdir(prebuilt_dir):
-        exit('Not found: %s (is the Android NDK installed?)' % (prebuilt_dir))
-
-    host_tag = GetHost() + '-x86'
-    if host_64:
-        host_tag += '_64'
-    elif host_tag == 'windows-x86':
-        host_tag = 'windows'
-
-    prebuilt_dir = os.path.join(prebuilt_dir, host_tag)
-    if host_tag == 'windows-x86_64' and not os.path.isdir(prebuilt_dir):
-        # Try the 32-bits toolchain instead.
-        host_tag = 'windows'
-        prebuilt_dir = os.path.join(prebuilt_dir, host_tag)
-
-    SDK["ANDROID_TOOLCHAIN"] = prebuilt_dir
-
-    # And locate the GCC toolchain, which is needed for some tools (eg. as/ld)
-    arch = GetTargetArch()
-    for opt in (TOOLCHAIN_PREFIX + '4.9', arch + '-4.9', TOOLCHAIN_PREFIX + '4.8', arch + '-4.8'):
-        if os.path.isdir(os.path.join(ndk_root, 'toolchains', opt)):
-            SDK["ANDROID_GCC_TOOLCHAIN"] = os.path.join(ndk_root, 'toolchains', opt, 'prebuilt', host_tag)
-            break
-
-    # The prebuilt binaries have no toolchain prefix.
-    TOOLCHAIN_PREFIX = ''
-
-    # Determine the sysroot directory.
-    if arch == 'armv7a':
-        arch_dir = 'arch-arm'
-    elif arch == 'aarch64':
-        arch_dir = 'arch-arm64'
-    else:
-        arch_dir = 'arch-' + arch
-    SDK["SYSROOT"] = os.path.join(ndk_root, 'platforms', 'android-%s' % (api), arch_dir).replace('\\', '/')
-    #IncDirectory("ALWAYS", os.path.join(SDK["SYSROOT"], 'usr', 'include'))
-
-    # We need to redistribute the C++ standard library.
-    stdlibc = os.path.join(ndk_root, 'sources', 'cxx-stl', 'llvm-libc++')
-    stl_lib = os.path.join(stdlibc, 'libs', abi, 'libc++_shared.so')
-    if not os.path.isfile(stl_lib):
-        stl_lib = os.path.join(prebuilt_dir, 'sysroot', 'usr', 'lib', ANDROID_TRIPLE.rstrip('0123456789'), 'libc++_shared.so')
-    CopyFile(os.path.join(GetOutputDir(), 'lib', 'libc++_shared.so'), stl_lib)
-
-    # The Android support library polyfills C++ features not available in the
-    # STL that ships with Android.
-    #support = os.path.join(ndk_root, 'sources', 'android', 'support', 'include')
-    #IncDirectory("ALWAYS", support.replace('\\', '/'))
-    if api < 21:
-        LibName("ALWAYS", "-landroid_support")
-
-    # Determine the location of android.jar.
-    SDK["ANDROID_JAR"] = os.path.join(sdk_root, 'platforms', 'android-%s' % (api), 'android.jar')
-    if not os.path.isfile(SDK["ANDROID_JAR"]):
-        exit("Cannot find %s.  Install platform API level %s via the SDK manager or change the targeted API level with --target=android-#" % (SDK["ANDROID_JAR"], api))
-
-    # Which build tools versions do we have?  Pick the latest.
-    versions = []
-    for version in os.listdir(os.path.join(sdk_root, "build-tools")):
-        match = re.match('([0-9]+)\\.([0-9]+)\\.([0-9]+)', version)
-        if match:
-            version_tuple = int(match.group(1)), int(match.group(2)), int(match.group(3))
-            versions.append(version_tuple)
-
-    versions.sort()
-    if versions:
-        version = versions[-1]
-        SDK["ANDROID_BUILD_TOOLS"] = os.path.join(sdk_root, "build-tools", "{0}.{1}.{2}".format(*version))
-
-    # And find the location of the Java compiler.
-    if GetHost() == "windows":
-        jdk_home = os.environ.get("JDK_HOME") or os.environ.get("JAVA_HOME")
-        if not jdk_home:
-            # Try to use the Java shipped with Android Studio.
-            studio_path = GetRegistryKey("SOFTWARE\\Android Studio", "Path", override64=False)
-            if studio_path and os.path.isdir(studio_path):
-                jdk_home = os.path.join(studio_path, "jre")
-
-        if not jdk_home or not os.path.isdir(jdk_home):
-            exit("Cannot find JDK.  Please set JDK_HOME or JAVA_HOME.")
-
-        javac = os.path.join(jdk_home, "bin", "javac.exe")
-        if not os.path.isfile(javac):
-            exit("Cannot find %s.  Install the JDK and set JDK_HOME or JAVA_HOME." % (javac))
-
-        SDK["JDK"] = jdk_home
-
 ########################################################################
 ##
 ## SDK Auto-Disables
@@ -2603,17 +2270,6 @@ def SdkLocateAndroid():
 ## Disable packages whose SDKs could not be found.
 ##
 ########################################################################
-
-def SdkAutoDisableDirectX():
-    for ver in ["DIRECTCAM"]:
-        if (PkgSkip(ver)==0):
-            if (ver not in SDK):
-                if (GetHost() == "windows"):
-                    WARNINGS.append("I cannot locate SDK for "+ver)
-                    WARNINGS.append("I have automatically added this command-line option: --no-"+ver.lower())
-                PkgDisable(ver)
-            else:
-                WARNINGS.append("Using "+ver+" sdk: "+SDK[ver])
 
 def SdkAutoDisableSpeedTree():
     if ("SPEEDTREE" not in SDK) and (PkgSkip("SPEEDTREE")==0):
@@ -2874,10 +2530,7 @@ def SetupBuildEnvironment(compiler):
         print("Host arch: %s" % GetHostArch())
 
     target = GetTarget()
-    if target != 'android':
-        print("Target OS: %s" % GetTarget())
-    else:
-        print("Target OS: %s (API level %d)" % (GetTarget(), ANDROID_API))
+    print("Target OS: %s" % GetTarget())
     print("Target arch: %s" % GetTargetArch())
 
     # Set to English so we can safely parse the result of gcc commands.
@@ -2886,16 +2539,6 @@ def SetupBuildEnvironment(compiler):
     os.environ["LC_ALL"] = "en_US.UTF-8"
     os.environ["LANGUAGE"] = "en"
 
-    # In the case of Android, we have to put the toolchain on the PATH in order to use it.
-    if GetTarget() == 'android' and GetHost() != 'android':
-        AddToPathEnv("PATH", os.path.join(SDK["ANDROID_TOOLCHAIN"], "bin"))
-
-        if "ANDROID_BUILD_TOOLS" in SDK:
-            AddToPathEnv("PATH", SDK["ANDROID_BUILD_TOOLS"])
-
-        if "JDK" in SDK:
-            AddToPathEnv("PATH", os.path.join(SDK["JDK"], "bin"))
-            os.environ["JAVA_HOME"] = SDK["JDK"]
 
     if compiler == "MSVC":
         # Add the visual studio tools to PATH et al.
@@ -2922,8 +2565,6 @@ def SetupBuildEnvironment(compiler):
             sysroot_flag = " -isysroot " + SDK["MACOSX"]
         #if SDK.get("SYSROOT"):
         #    sysroot_flag = ' --sysroot=%s -no-canonical-prefixes' % (SDK["SYSROOT"])
-        if GetTarget() == "android":
-            sysroot_flag = " -target " + ANDROID_TRIPLE
 
         # Extract the dirs from the line that starts with 'libraries: ='.
         # The -E is mostly to keep emscripten happy by preventing it from
@@ -2952,12 +2593,6 @@ def SetupBuildEnvironment(compiler):
             Warn("%s failed" % (cmd))
             SYS_LIB_DIRS += [SDK.get("SYSROOT", "") + "/usr/lib"]
 
-        # The Android toolchain on Windows doesn't actually add this one.
-        if target == 'android' and GetHost() == 'windows':
-            libdir = SDK.get("SYSROOT", "") + "/usr/lib"
-            if GetTargetArch() == 'x86_64':
-                libdir += '64'
-            SYS_LIB_DIRS += [libdir]
 
         # On multiarch systems, system libraries live under /usr/lib/<triplet>.
         # On some systems these don't show up in -print-search-dirs, so we try
@@ -3380,10 +3015,6 @@ def GetExtensionSuffix():
         abi = GetPythonABI()
         arch = GetTargetArch()
         return '.{0}-{1}-emscripten.so'.format(abi, arch)
-    elif target == 'android':
-        abi = GetPythonABI()
-        triple = ANDROID_TRIPLE.rstrip('0123456789')
-        return '.{0}-{1}.so'.format(abi, triple)
     elif CrossCompiling():
         return '.{0}.so'.format(GetPythonABI())
     else:
@@ -3409,14 +3040,11 @@ def CalcLocation(fn, ipath):
     if fn.startswith("panda3d/") and fn.endswith(".py"):
         return OUTPUTDIR + "/" + fn
 
-    if (fn.endswith(".class")):return OUTPUTDIR+"/classes/"+fn
     if (fn.count("/")): return fn
     dllext = ""
     target = GetTarget()
     if (GetOptimize() <= 2 and target == 'windows'): dllext = "_d"
 
-    if (fn == "AndroidManifest.xml"): return OUTPUTDIR+"/"+fn
-    if (fn == "classes.dex"): return OUTPUTDIR+"/"+fn
     if (fn.endswith(".cxx")): return CxxFindSource(fn, ipath)
     if (fn.endswith(".cpp")): return CxxFindSource(fn, ipath)
     if (fn.endswith(".I")):   return CxxFindSource(fn, ipath)
@@ -3686,9 +3314,6 @@ def TargetAdd(target, dummy=0, opts=[], input=[], dep=[], ipath=None, winrc=None
             (base,suffix) = os.path.splitext(x)
             if SUFFIX_INC.count(suffix):
                 for d in CxxCalcDependencies(fullinput, ipath, []):
-                    t.deps[d] = 1
-            elif suffix == '.java':
-                for d in JavaCalcDependencies(fullinput, OUTPUTDIR + "/classes"):
                     t.deps[d] = 1
 
         # If we are linking statically, add the source DLL's dynamic dependencies.

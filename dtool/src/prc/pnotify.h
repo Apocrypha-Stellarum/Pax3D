@@ -23,7 +23,6 @@
 #endif
 
 class NotifyCategory;
-class AndroidLogStream;
 class EmscriptenLogStream;
 
 /**
@@ -101,9 +100,7 @@ private:
   typedef std::map<std::string, NotifyCategory *, std::less<>> Categories;
   Categories _categories;
 
-#if defined(ANDROID)
-  std::ostream *_log_streams[NS_fatal + 1];
-#elif defined(__EMSCRIPTEN__)
+#if defined(__EMSCRIPTEN__)
   EmscriptenLogStream *_log_streams[NS_fatal + 1];
 #endif
 

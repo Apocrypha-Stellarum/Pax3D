@@ -115,7 +115,6 @@ ignoreImports = {
     'toml.encoder': ['numpy'],
     'py._builtin': ['__builtin__'],
 
-    'site': ['android_support'],
 }
 
 if sys.version_info >= (3, 8):
@@ -911,9 +910,7 @@ class Freezer:
 
         # Special hack for plyer, which has platform-specific hidden imports
         plyer_platform = None
-        if self.platform.startswith('android'):
-            plyer_platform = 'android'
-        elif self.platform.startswith('linux'):
+        if self.platform.startswith('linux'):
             plyer_platform = 'linux'
         elif self.platform.startswith('mac'):
             plyer_platform = 'macosx'
@@ -938,22 +935,7 @@ class Freezer:
             if sys.version_info < (3, 8):
                 abi_flags += 'm'
 
-            if 'android' in self.platform:
-                arch = self.platform.split('_', 1)[1]
-                if arch in ('arm64', 'aarch64'):
-                    suffixes.append(('.cpython-{0}{1}-aarch64-linux-android.so'.format(abi_version, abi_flags), 'rb', 3))
-                elif arch in ('arm', 'armv7l'):
-                    suffixes.append(('.cpython-{0}{1}-arm-linux-androideabi.so'.format(abi_version, abi_flags), 'rb', 3))
-                elif arch in ('x86_64', 'amd64'):
-                    suffixes.append(('.cpython-{0}{1}-x86_64-linux-android.so'.format(abi_version, abi_flags), 'rb', 3))
-                elif arch in ('i386', 'i686'):
-                    suffixes.append(('.cpython-{0}{1}-i686-linux-android.so'.format(abi_version, abi_flags), 'rb', 3))
-
-                suffixes += [
-                    ('.abi{0}.so'.format(sys.version_info[0]), 'rb', 3),
-                    ('.so', 'rb', 3),
-                ]
-            elif 'linux' in self.platform:
+            if 'linux' in self.platform:
                 suffixes += [
                     ('.cpython-{0}{1}-x86_64-linux-gnu.so'.format(abi_version, abi_flags), 'rb', 3),
                     ('.cpython-{0}{1}-i686-linux-gnu.so'.format(abi_version, abi_flags), 'rb', 3),
@@ -1177,9 +1159,6 @@ class Freezer:
         if addStartupModules:
             self.modules['_frozen_importlib'] = self.ModuleDef('importlib._bootstrap', implicit = True)
             self.modules['_frozen_importlib_external'] = self.ModuleDef('importlib._bootstrap_external', implicit = True)
-
-            if self.platform.startswith('android'):
-                self.modules['_android_support'] = self.ModuleDef('_android_support', implicit = True)
 
             for moduleName in startupModules:
                 if moduleName not in self.modules:
@@ -1937,7 +1916,7 @@ class Freezer:
             # If it is a submodule of a frozen module, Python will have
             # trouble importing it as a builtin module.  Synthesize a frozen
             # module that loads it dynamically.
-            if '.' in moduleName and not self.platform.startswith('android'):
+            if '.' in moduleName:
                 if self.platform.startswith("macosx") and not use_console:
                     # We write the Frameworks directory to sys.path[0].
                     direxpr = 'sys.path[0]'
@@ -1989,9 +1968,6 @@ class Freezer:
             blob_align = 32
         elif self.platform.endswith('_aarch64') or self.platform.endswith('_arm64'):
             # Most arm64 operating systems are configured with 16 KiB pages.
-            blob_align = 16384
-        elif self.platform.replace('-', '_') == 'android_x86_64':
-            # Android nowadays requires 16 KiB pages on 64-bit Intel as well.
             blob_align = 16384
         else:
             # Align to page size, so that it can be mmapped.

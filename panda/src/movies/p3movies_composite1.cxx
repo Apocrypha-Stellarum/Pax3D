@@ -4,7 +4,6 @@
 #include "inkblotVideo.cxx"
 #include "inkblotVideoCursor.cxx"
 #include "microphoneAudio.cxx"
-#include "microphoneAudioDS.cxx"
 #include "movieAudio.cxx"
 #include "movieAudioCursor.cxx"
 #include "movieTypeRegistry.cxx"

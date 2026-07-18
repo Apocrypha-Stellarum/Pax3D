@@ -125,7 +125,6 @@ it will show you the available command-line options:
   --universal       (build universal binaries (OSX only))
   --override "O=V"  (override dtool_config/prc option value)
   --static          (builds libraries for static linking)
-  --target X        (experimental cross-compilation (android only))
   --arch X          (target architecture for cross-compilation)
 
   --use-python      --no-python    (enable/disable use of PYTHON)

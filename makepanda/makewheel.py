@@ -391,11 +391,10 @@ class WheelFile(object):
                 print("Ignoring {0} (explicitly ignored)".format(dep))
             return
 
-        if not self.platform.startswith("android"):
-            if dep.lower().startswith("python") or os.path.basename(dep).startswith("libpython"):
-                if GetVerbose():
-                    print("Ignoring {0} (explicitly ignored)".format(dep))
-                return
+        if dep.lower().startswith("python") or os.path.basename(dep).startswith("libpython"):
+            if GetVerbose():
+                print("Ignoring {0} (explicitly ignored)".format(dep))
+            return
 
         if self.platform.startswith("macosx"):
             if dep.endswith(".so"):
@@ -531,29 +530,14 @@ class WheelFile(object):
                     if '/' in dep:
                         continue
 
-                    if self.platform.startswith('android') and '.so.' in dep:
-                        # Change .so.1.2 suffix to .so, to allow loading in .apk
-                        new_dep = dep.rpartition('.so.')[0] + '.so'
-                        subprocess.call(["patchelf", "--replace-needed", dep, new_dep, temp.name])
-                        target_dep = os.path.dirname(target_path) + '/' + new_dep
-                    else:
-                        target_dep = os.path.dirname(target_path) + '/' + dep
-
+                    target_dep = os.path.dirname(target_path) + '/' + dep
                     self.consider_add_dependency(target_dep, dep)
 
                 subprocess.call([GetStrip(), "-s", temp.name])
 
-                if self.platform.startswith('android'):
-                    # We must link explicitly with Python, because the usual
-                    # -rdynamic trick doesn't work from a shared library loaded
-                    # through ANativeActivity.
-                    if suffix == '.so' and not os.path.basename(source_path).startswith('lib'):
-                        pylib_name = "libpython" + get_config_var('LDVERSION') + ".so"
-                        subprocess.call(["patchelf", "--add-needed", pylib_name, temp.name])
-                else:
-                    # On other systems, we use the rpath to force it to locate
-                    # dependencies in the same directory.
-                    subprocess.call(["patchelf", "--force-rpath", "--set-rpath", "$ORIGIN", temp.name])
+                # Use the rpath to force it to locate dependencies in the
+                # same directory.
+                subprocess.call(["patchelf", "--force-rpath", "--set-rpath", "$ORIGIN", temp.name])
 
             source_path = temp.name
 
@@ -681,7 +665,6 @@ def makewheel(version, output_dir, platform=None):
         or platform.startswith('win_') \
         or platform.startswith('cygwin_')
     is_macosx = platform.startswith('macosx_')
-    is_android = platform.startswith('android_')
 
     # Global filepaths
     panda3d_dir = join(output_dir, "panda3d")
@@ -752,9 +735,6 @@ def makewheel(version, output_dir, platform=None):
     elif is_macosx:
         pylib_name = 'libpython{0}.{1}{2}.dylib'.format(sys.version_info[0], sys.version_info[1], suffix)
         pylib_path = os.path.join(get_config_var('LIBDIR'), pylib_name)
-    elif is_android and CrossCompiling():
-        pylib_name = 'libpython{0}.{1}{2}.so'.format(sys.version_info[0], sys.version_info[1], suffix)
-        pylib_path = os.path.join(GetThirdpartyDir(), 'python', 'lib', pylib_name)
     else:
         pylib_name = get_config_var('LDLIBRARY')
         pylib_arch = get_config_var('MULTIARCH')
@@ -799,9 +779,6 @@ if __debug__:
             if file.endswith('.pyd') and platform.startswith('cygwin'):
                 # Rename it to .dll for cygwin Python to be able to load it.
                 target_path = 'panda3d/' + os.path.splitext(file)[0] + '.dll'
-            elif file.endswith(ext_suffix) and platform.startswith('android'):
-                # Strip the extension suffix on Android.
-                target_path = 'panda3d/' + file[:-len(ext_suffix)] + '.so'
             else:
                 target_path = 'panda3d/' + file
 
@@ -854,15 +831,6 @@ if __debug__:
         plugin_path = os.path.join(libs_dir, plugin_name)
         if os.path.isfile(plugin_path):
             whl.write_file('panda3d/' + plugin_name, plugin_path)
-
-    if platform.startswith('android'):
-        deploy_stub_path = os.path.join(libs_dir, 'libdeploy-stubw.so')
-        if os.path.isfile(deploy_stub_path):
-            whl.write_file('deploy_libs/libdeploy-stubw.so', deploy_stub_path)
-
-        classes_dex_path = os.path.join(output_dir, 'classes.dex')
-        if os.path.isfile(classes_dex_path):
-            whl.write_file('deploy_libs/classes.dex', classes_dex_path)
 
     # Add the .data directory, containing additional files.
     data_dir = 'panda3d-{0}.data'.format(version)

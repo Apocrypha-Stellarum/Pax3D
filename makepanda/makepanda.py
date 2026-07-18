@@ -88,7 +88,7 @@ PkgListSet(["PYTHON", "DIRECT",                        # Python support
   "FREETYPE", "HARFBUZZ",                              # Text rendering
   "VRPN", "OPENSSL",                                   # Transport
   "FFTW",                                              # Algorithm helpers
-  "ARTOOLKIT", "OPENCV", "DIRECTCAM", "VISION",        # Augmented Reality
+  "ARTOOLKIT", "OPENCV", "VISION",                     # Augmented Reality
   "GTK3",                                              # GTK3 is used for PStats on Unix
   "MFC", "WX", "FLTK",                                 # Used for web plug-in only
   "X11",                                               # Unix platform support
@@ -139,7 +139,6 @@ def usage(problem):
     print("  --universal       (build universal binaries (macOS 11.0+ only))")
     print("  --override \"O=V\"  (override dtool_config/prc option value)")
     print("  --static          (builds libraries for static linking)")
-    print("  --target X        (experimental cross-compilation (android only))")
     print("  --arch X          (target architecture for cross-compilation)")
     print("")
     for pkg in PkgListGet():
@@ -476,8 +475,6 @@ elif not CrossCompiling():
 else:
     if target_arch == 'amd64':
         target_arch = 'x86_64'
-    if target_arch == 'arm' and target == 'android':
-        target_arch = 'armv7a'
     PLATFORM = '{0}-{1}'.format(target, target_arch)
 
 
@@ -523,9 +520,7 @@ SdkLocateMacOSX(OSX_ARCHS)
 SdkLocatePython(False)
 SdkLocateWindows(WINDOWS_SDK)
 SdkLocateSpeedTree()
-SdkLocateAndroid()
 
-SdkAutoDisableDirectX()
 SdkAutoDisableSpeedTree()
 
 if not PkgSkip("PYTHON") and SDK["PYTHONVERSION"] == "python2.7":
@@ -604,10 +599,6 @@ if (COMPILER == "MSVC"):
     LibName("SETUPAPI", "setupapi.lib")
     LibName("GL", "opengl32.lib")
     LibName("MSIMG", "msimg32.lib")
-    if (PkgSkip("DIRECTCAM")==0): LibName("DIRECTCAM", "strmiids.lib")
-    if (PkgSkip("DIRECTCAM")==0): LibName("DIRECTCAM", "quartz.lib")
-    if (PkgSkip("DIRECTCAM")==0): LibName("DIRECTCAM", "odbc32.lib")
-    if (PkgSkip("DIRECTCAM")==0): LibName("DIRECTCAM", "odbccp32.lib")
     if (PkgSkip("MIMALLOC")==0): LibName("MIMALLOC", GetThirdpartyDir() + "mimalloc/lib/mimalloc-static.lib")
     if (PkgSkip("OPENSSL")==0):
         if os.path.isfile(GetThirdpartyDir() + "openssl/lib/libpandassl.lib"):
@@ -793,9 +784,6 @@ if (COMPILER=="GCC"):
             IncDirectory("ALWAYS", "/usr/PCBSD/local/include")
             LibDirectory("ALWAYS", "/usr/PCBSD/local/lib")
         SmartPkgEnable("INOTIFY", "libinotify", ("inotify"), "sys/inotify.h")
-
-    if GetTarget() != "windows":
-        PkgDisable("DIRECTCAM")
 
     fcollada_libs = ("FColladaD", "FColladaSD", "FColladaS")
     # WARNING! The order of the ffmpeg libraries matters!
@@ -1017,10 +1005,7 @@ if (COMPILER=="GCC"):
         # CgGL is covered by the Cg framework, and we don't need X11 components on OSX
         if not PkgSkip("NVIDIACG"):
             SmartPkgEnable("CGGL", "", ("CgGL"), "Cg/cgGL.h", thirdparty_dir = "nvidiacg")
-        if GetTarget() != "android":
-            SmartPkgEnable("X11", "x11", "X11", ("X11", "X11/Xlib.h", "X11/XKBlib.h"))
-        else:
-            PkgDisable("X11")
+        SmartPkgEnable("X11", "x11", "X11", ("X11", "X11/Xlib.h", "X11/XKBlib.h"))
 
     if GetHost() != "darwin":
         # Workaround for an issue where pkg-config does not include this path
@@ -1054,20 +1039,12 @@ if (COMPILER=="GCC"):
         if not PkgSkip("VRPN"):
             LibName("VRPN", "-undefined dynamic_lookup")
 
-    if GetTarget() == 'android':
-        LibName("ALWAYS", '-llog')
-        LibName("ANDROID", '-landroid')
-        LibName("JNIGRAPHICS", '-ljnigraphics')
-        LibName("OPENSLES", '-lOpenSLES')
-
     if GetTarget() == 'freebsd':
         LibName("EXECINFO", "-lexecinfo")
 
 DefSymbol("WITHINPANDA", "WITHIN_PANDA", "1")
 if GetLinkAllStatic() or GetTarget() == 'emscripten':
     DefSymbol("ALWAYS", "LINK_ALL_STATIC")
-if GetTarget() == 'android':
-    DefSymbol("ALWAYS", "ANDROID")
 
 if not PkgSkip("EIGEN"):
     if GetOptimize() >= 3:
@@ -1323,54 +1300,12 @@ def CompileCxx(obj,src,opts):
             cmd += " -fno-semantic-interposition"
 
         if "SYSROOT" in SDK:
-            if GetTarget() != "android":
-                cmd += ' --sysroot=%s' % (SDK["SYSROOT"])
+            cmd += ' --sysroot=%s' % (SDK["SYSROOT"])
             cmd += ' -no-canonical-prefixes'
 
-        # Android-specific flags.
         arch = GetTargetArch()
 
-        if GetTarget() == "android":
-            # Most of the specific optimization flags here were
-            # just copied from the default Android Makefiles.
-            if "ANDROID_GCC_TOOLCHAIN" in SDK:
-                cmd += ' -gcc-toolchain ' + SDK["ANDROID_GCC_TOOLCHAIN"].replace('\\', '/')
-            cmd += ' -ffunction-sections -funwind-tables'
-            cmd += ' -target ' + SDK["ANDROID_TRIPLE"]
-            if arch in ('armv7a', 'arm'):
-                cmd += ' -march=armv7-a -mfloat-abi=softfp -mfpu=vfpv3-d16'
-            #elif arch == 'arm':
-            #    cmd += ' -march=armv5te -mtune=xscale -msoft-float'
-            elif arch == 'mips':
-                cmd += ' -mips32'
-            elif arch == 'mips64':
-                cmd += ' -fintegrated-as'
-            elif arch == 'x86':
-                cmd += ' -march=i686 -mssse3 -mfpmath=sse'
-                cmd += ' -mstackrealign'
-            elif arch == 'x86_64':
-                cmd += ' -march=x86-64 -msse4.2 -mpopcnt'
-
-            cmd += " -Wa,--noexecstack"
-
-            # Silence the flood of -Wdeprecated-declarations warnings from
-            # Eigen's use of std::result_of (deprecated in C++17) under the
-            # NDK's libc++.  These are third-party headers we don't control.
-            if not PkgSkip("EIGEN"):
-                cmd += " -Wno-deprecated-declarations"
-
-            # Do we want thumb or arm instructions?
-            if arch != 'arm64' and arch.startswith('arm'):
-                if optlevel >= 3:
-                    cmd += ' -mthumb'
-                else:
-                    cmd += ' -marm'
-
-            # Enable SIMD instructions if requested
-            if arch != 'arm64' and arch.startswith('arm') and PkgSkip("NEON") == 0:
-                cmd += ' -mfpu=neon'
-
-        elif GetTarget() == 'emscripten':
+        if GetTarget() == 'emscripten':
             if GetOptimize() <= 1:
                 cmd += " -s ASSERTIONS=2"
             elif GetOptimize() <= 2:
@@ -1394,8 +1329,7 @@ def CompileCxx(obj,src,opts):
 
             target = GetTarget()
             if 'RTTI' not in opts and target != "darwin":
-                # We always disable RTTI on Android for memory usage reasons.
-                if optlevel >= 4 or target == "android":
+                if optlevel >= 4:
                     cmd += " -fno-rtti"
 
         if ('SSE2' in opts or not PkgSkip("SSE2")) and arch.find('86') > 0:
@@ -1564,8 +1498,6 @@ def CompileIgate(woutd,wsrc,opts):
         target = GetTarget()
         if target == 'darwin':
             cmd += ' -D__APPLE__'
-        elif target == 'android':
-            cmd += ' -D__ANDROID__'
 
     if GetTarget() == "emscripten":
         cmd += ' -D__EMSCRIPTEN__'
@@ -1812,9 +1744,6 @@ def CompileLink(dll, obj, opts):
         cxx = GetCXX()
         if GetOrigExt(dll) == ".exe":
             cmd = cxx + ' -o ' + dll + ' -L' + GetOutputDir() + '/lib -L' + GetOutputDir() + '/tmp'
-            if GetTarget() == "android":
-                # Necessary to work around an issue with libandroid depending on vendor libraries
-                cmd += ' -Wl,--allow-shlib-undefined'
         else:
             if (GetTarget() == "darwin"):
                 cmd = cxx
@@ -1829,8 +1758,7 @@ def CompileLink(dll, obj, opts):
                 cmd += ' -o ' + dll + ' -L' + GetOutputDir() + '/lib -L' + GetOutputDir() + '/tmp'
             else:
                 cmd = cxx + ' -shared'
-                # Always set soname on Android to avoid a linker warning when loading the library.
-                if GetTarget() == 'android' or ("MODULE" not in opts and GetTarget() != 'emscripten'):
+                if "MODULE" not in opts and GetTarget() != 'emscripten':
                     cmd += " -Wl,-soname=" + os.path.basename(dll)
                 cmd += ' -o ' + dll + ' -L' + GetOutputDir() + '/lib -L' + GetOutputDir() + '/tmp'
 
@@ -1864,23 +1792,6 @@ def CompileLink(dll, obj, opts):
                 if 'NOARCH:' + arch.upper() not in opts:
                     cmd += " -arch %s" % arch
 
-        elif GetTarget() == 'android':
-            arch = GetTargetArch()
-            if "ANDROID_GCC_TOOLCHAIN" in SDK:
-                cmd += ' -gcc-toolchain ' + SDK["ANDROID_GCC_TOOLCHAIN"].replace('\\', '/')
-            cmd += " -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now"
-            cmd += ' -target ' + SDK["ANDROID_TRIPLE"]
-            if arch in ('armv7a', 'arm'):
-                cmd += " -march=armv7-a -Wl,--fix-cortex-a8"
-            elif arch == 'mips':
-                cmd += ' -mips32'
-
-            if arch.endswith('64'):
-                # See https://developer.android.com/guide/practices/page-sizes
-                cmd += ' -Wl,-z,max-page-size=16384'
-
-            cmd += ' -lc -lm'
-
         elif GetTarget() == 'emscripten':
             cmd += " -s WARN_ON_UNDEFINED_SYMBOLS=1 -mbulk-memory"
 
@@ -1898,8 +1809,8 @@ def CompileLink(dll, obj, opts):
         if LDFLAGS != "":
             cmd += " " + LDFLAGS
 
-        # Don't link libraries with Python, except on Android.
-        if "PYTHON" in opts and GetOrigExt(dll) != ".exe" and GetTarget() != 'android':
+        # Don't link libraries with Python.
+        if "PYTHON" in opts and GetOrigExt(dll) != ".exe":
             opts = opts[:]
             opts.remove("PYTHON")
 
@@ -1928,7 +1839,7 @@ def CompileLink(dll, obj, opts):
 
         oscmd(cmd)
 
-        if GetOptimizeOption(opts) == 4 and GetTarget() in ('linux', 'android'):
+        if GetOptimizeOption(opts) == 4 and GetTarget() == 'linux':
             oscmd(GetStrip() + " --strip-unneeded " + BracketNameWithQuotes(dll))
 
         os.system("chmod +x " + BracketNameWithQuotes(dll))
@@ -2045,38 +1956,6 @@ def CompileRsrc(target, src, opts):
 
 ##########################################################################################
 #
-# CompileJava (Android only)
-#
-##########################################################################################
-
-def CompileJava(target, src, opts):
-    """Compiles a .java file into a .class file."""
-    if GetHost() == 'android':
-        cmd = "ecj "
-    else:
-        cmd = "javac "
-        home = os.environ.get('JAVA_HOME')
-        if home:
-            javac_path = os.path.join(home, 'bin', 'javac')
-            if GetHost() == 'windows':
-                javac_path += '.exe'
-            if os.path.isfile(javac_path):
-                cmd = BracketNameWithQuotes(javac_path) + " "
-
-        cmd += "-Xlint:deprecation "
-
-    optlevel = GetOptimizeOption(opts)
-    if optlevel >= 4:
-        cmd += "-debug:none "
-
-    classpath = BracketNameWithQuotes(SDK["ANDROID_JAR"] + ":" + GetOutputDir() + "/classes")
-    cmd += "-cp " + classpath + " "
-    cmd += "-d " + GetOutputDir() + "/classes "
-    cmd += BracketNameWithQuotes(src)
-    oscmd(cmd)
-
-##########################################################################################
-#
 # FreezePy
 #
 ##########################################################################################
@@ -2179,31 +2058,6 @@ def CompileMIDL(target, src, opts):
 
 ##########################################################################################
 #
-# CompileDalvik
-#
-##########################################################################################
-
-def CompileDalvik(target, inputs, opts):
-    cmd = "d8 --output " + os.path.dirname(target)
-
-    if GetOptimize() <= 2:
-        cmd += " --debug"
-    else:
-        cmd += " --release"
-
-    if "ANDROID_API" in SDK:
-        cmd += " --min-api %d" % (SDK["ANDROID_API"])
-
-    if "ANDROID_JAR" in SDK:
-        cmd += " --lib %s" % (SDK["ANDROID_JAR"])
-
-    for i in inputs:
-        cmd += " " + BracketNameWithQuotes(i)
-
-    oscmd(cmd)
-
-##########################################################################################
-#
 # CompileAnything
 #
 ##########################################################################################
@@ -2259,7 +2113,7 @@ def CompileAnything(target, inputs, opts, progress = None):
                 if target.lower().endswith(".dylib"):
                     target = target[:-5] + MAJOR_VERSION + ".dylib"
                     SetOrigExt(target, origsuffix)
-            elif tplatform not in ("windows", "android", "emscripten"):
+            elif tplatform not in ("windows", "emscripten"):
                 # On Linux, libraries are named like libpanda.so.1.2
                 target += "." + MAJOR_VERSION
                 SetOrigExt(target, origsuffix)
@@ -2285,9 +2139,6 @@ def CompileAnything(target, inputs, opts, progress = None):
     elif origsuffix == ".rsrc":
         ProgressOutput(progress, "Building resource object", target)
         return CompileRsrc(target, infile, opts)
-    elif origsuffix == ".class":
-        ProgressOutput(progress, "Building Java class", target)
-        return CompileJava(target, infile, opts)
     elif origsuffix == ".obj":
         if infile.endswith(".cxx") or infile.endswith(".cpp"):
             ProgressOutput(progress, "Building C++ object", target)
@@ -2313,9 +2164,6 @@ def CompileAnything(target, inputs, opts, progress = None):
         elif infile.endswith(".r"):
             ProgressOutput(progress, "Building resource object", target)
             return CompileRsrc(target, infile, opts)
-    elif origsuffix == ".dex":
-        ProgressOutput(progress, "Building Dalvik object", target)
-        return CompileDalvik(target, inputs, opts)
     exit("Don't know how to compile: %s from %s" % (target, inputs))
 
 ##########################################################################################
@@ -2422,7 +2270,6 @@ DTOOL_CONFIG=[
     ("HAVE_CG",                        'UNDEF',                  'UNDEF'),
     ("HAVE_CGGL",                      'UNDEF',                  'UNDEF'),
     ("HAVE_ARTOOLKIT",                 'UNDEF',                  'UNDEF'),
-    ("HAVE_DIRECTCAM",                 'UNDEF',                  'UNDEF'),
     ("HAVE_SQUISH",                    'UNDEF',                  'UNDEF'),
     ("HAVE_OPENAL_FRAMEWORK",          'UNDEF',                  'UNDEF'),
     ("USE_TAU",                        'UNDEF',                  'UNDEF'),
@@ -2490,7 +2337,7 @@ def WriteConfigSettings():
         dtool_config["HAVE_CG"] = '1'
         dtool_config["HAVE_CGGL"] = '1'
 
-    if GetTarget() not in ("linux", "android"):
+    if GetTarget() != "linux":
         dtool_config["HAVE_PROC_SELF_EXE"] = 'UNDEF'
         dtool_config["HAVE_PROC_SELF_MAPS"] = 'UNDEF'
         dtool_config["HAVE_PROC_SELF_CMDLINE"] = 'UNDEF'
@@ -2517,14 +2364,6 @@ def WriteConfigSettings():
         dtool_config["HAVE_PROC_CURPROC_FILE"] = '1'
         dtool_config["HAVE_PROC_CURPROC_MAP"] = '1'
         dtool_config["HAVE_PROC_CURPROC_CMDLINE"] = '1'
-
-    if (GetTarget() == "android"):
-        # Android does have RTTI, but we disable it anyway.
-        dtool_config["HAVE_RTTI"] = 'UNDEF'
-        dtool_config["PHAVE_GLOB_H"] = 'UNDEF'
-        dtool_config["PHAVE_LOCKF"] = 'UNDEF'
-        dtool_config["HAVE_VIDEO4LINUX"] = 'UNDEF'
-        dtool_config["PHAVE_EXECINFO_H"] = 'UNDEF'
 
     if (GetTarget() == "emscripten"):
         # There are no threads in JavaScript, so don't bother using them.
@@ -3282,8 +3121,6 @@ if not PkgSkip("EGG"):
     CopyAllHeaders('panda/metalibs/pandaegg')
 if GetTarget() == 'windows':
     CopyAllHeaders('panda/src/wgldisplay')
-elif GetTarget() == 'android':
-    CopyAllHeaders('panda/src/android')
 if not PkgSkip('X11'):
     CopyAllHeaders('panda/src/x11display')
     if not PkgSkip('GL'):
@@ -3566,7 +3403,7 @@ TargetAdd('libpandaexpress.dll', input='p3express_composite1.obj')
 TargetAdd('libpandaexpress.dll', input='p3express_composite2.obj')
 TargetAdd('libpandaexpress.dll', input='p3pandabase_pandabase.obj')
 TargetAdd('libpandaexpress.dll', input=COMMON_DTOOL_LIBS)
-TargetAdd('libpandaexpress.dll', opts=['ADVAPI', 'WINSOCK2', 'OPENSSL', 'ZLIB', 'WINGDI', 'WINUSER', 'ANDROID'])
+TargetAdd('libpandaexpress.dll', opts=['ADVAPI', 'WINSOCK2', 'OPENSSL', 'ZLIB', 'WINGDI', 'WINUSER'])
 
 #
 # DIRECTORY: panda/src/pipeline/
@@ -4190,18 +4027,17 @@ if not PkgSkip("VISION"):
         if OPENCV_VER_23:
             DefSymbol("OPENCV", "OPENCV_VER_23")
 
-    OPTS=['DIR:panda/src/vision', 'BUILDING:VISION', 'ARTOOLKIT', 'OPENCV', 'DIRECTCAM', 'JPEG', 'EXCEPTIONS']
+    OPTS=['DIR:panda/src/vision', 'BUILDING:VISION', 'ARTOOLKIT', 'OPENCV', 'JPEG', 'EXCEPTIONS']
     TargetAdd('p3vision_composite1.obj', opts=OPTS, input='p3vision_composite1.cxx', dep=[
         'dtool_have_ffmpeg.dat',
         'dtool_have_opencv.dat',
-        'dtool_have_directcam.dat',
     ])
 
     TargetAdd('libp3vision.dll', input='p3vision_composite1.obj')
     TargetAdd('libp3vision.dll', input=COMMON_PANDA_LIBS)
     TargetAdd('libp3vision.dll', opts=OPTS)
 
-    OPTS=['DIR:panda/src/vision', 'ARTOOLKIT', 'OPENCV', 'DIRECTCAM', 'JPEG', 'EXCEPTIONS']
+    OPTS=['DIR:panda/src/vision', 'ARTOOLKIT', 'OPENCV', 'JPEG', 'EXCEPTIONS']
     IGATEFILES=GetDirectoryContents('panda/src/vision', ["*.h", "*_composite*.cxx"])
     TargetAdd('libp3vision.in', opts=OPTS, input=IGATEFILES)
     TargetAdd('libp3vision.in', opts=['IMOD:panda3d.vision', 'ILIB:libp3vision', 'SRCDIR:panda/src/vision'])
@@ -4713,59 +4549,6 @@ if not PkgSkip("PVIEW"):
 
     if GetLinkAllStatic() and not PkgSkip("GL"):
         TargetAdd('pview.exe', input='libpandagl.dll')
-
-#
-# DIRECTORY: panda/src/android/
-#
-
-if GetTarget() == 'android':
-    OPTS=['DIR:panda/src/android', 'PNG']
-    TargetAdd('org/panda3d/android/NativeIStream.class', opts=OPTS, input='NativeIStream.java')
-    TargetAdd('org/panda3d/android/NativeOStream.class', opts=OPTS, input='NativeOStream.java')
-    TargetAdd('org/panda3d/android/PandaActivity.class', opts=OPTS, input='PandaActivity.java')
-    TargetAdd('org/panda3d/android/PandaActivity$1.class', opts=OPTS+['DEPENDENCYONLY'], input='PandaActivity.java')
-    TargetAdd('org/panda3d/android/PandaActivity$2.class', opts=OPTS+['DEPENDENCYONLY'], input='PandaActivity.java')
-    TargetAdd('org/panda3d/android/PythonActivity.class', opts=OPTS, input='PythonActivity.java')
-    TargetAdd('org/panda3d/android/PythonActivity$ActivityResultListener.class', opts=OPTS+['DEPENDENCYONLY'], input='PythonActivity.java')
-
-    TargetAdd('classes.dex', input='org/panda3d/android/NativeIStream.class')
-    TargetAdd('classes.dex', input='org/panda3d/android/NativeOStream.class')
-    TargetAdd('classes.dex', input='org/panda3d/android/PandaActivity.class')
-    TargetAdd('classes.dex', input='org/panda3d/android/PandaActivity$1.class')
-    TargetAdd('classes.dex', input='org/panda3d/android/PandaActivity$2.class')
-    TargetAdd('classes.dex', input='org/panda3d/android/PythonActivity.class')
-    TargetAdd('classes.dex', input='org/panda3d/android/PythonActivity$ActivityResultListener.class')
-
-    TargetAdd('p3android_composite1.obj', opts=OPTS, input='p3android_composite1.cxx')
-    TargetAdd('libp3android.dll', input='p3android_composite1.obj')
-    TargetAdd('libp3android.dll', input=COMMON_PANDA_LIBS)
-    TargetAdd('libp3android.dll', opts=['JNIGRAPHICS'])
-
-    TargetAdd('android_native_app_glue.obj', opts=OPTS + ['NOHIDDEN'], input='android_native_app_glue.c')
-    TargetAdd('android_main.obj', opts=OPTS, input='android_main.cxx')
-
-    if not PkgSkip("PVIEW"):
-        TargetAdd('libpview_pview.obj', opts=OPTS, input='pview.cxx')
-        TargetAdd('libpview.dll', input='android_native_app_glue.obj')
-        TargetAdd('libpview.dll', input='android_main.obj')
-        TargetAdd('libpview.dll', input='libpview_pview.obj')
-        TargetAdd('libpview.dll', input='libp3framework.dll')
-        if not PkgSkip("EGG"):
-            TargetAdd('libpview.dll', input='libpandaegg.dll')
-        TargetAdd('libpview.dll', input='libp3android.dll')
-        TargetAdd('libpview.dll', input=COMMON_PANDA_LIBS)
-        TargetAdd('libpview.dll', opts=['MODULE', 'ANDROID'])
-
-    if not PkgSkip("PYTHON"):
-        OPTS += ['PYTHON']
-        TargetAdd('ppython_ppython.obj', opts=OPTS, input='python_main.cxx')
-        TargetAdd('libppython.dll', input='android_native_app_glue.obj')
-        TargetAdd('libppython.dll', input='android_main.obj')
-        TargetAdd('libppython.dll', input='ppython_ppython.obj')
-        TargetAdd('libppython.dll', input='libp3framework.dll')
-        TargetAdd('libppython.dll', input='libp3android.dll')
-        TargetAdd('libppython.dll', input=COMMON_PANDA_LIBS)
-        TargetAdd('libppython.dll', opts=['MODULE', 'ANDROID', 'PYTHON'])
 
 #
 # DIRECTORY: panda/src/tinydisplay/
@@ -5702,7 +5485,7 @@ if PkgSkip("PYTHON") == 0:
     PyTargetAdd('deploy-stub.exe', input='deploy-stub.obj')
     if GetTarget() == 'windows':
         PyTargetAdd('deploy-stub.exe', input='frozen_dllmain.obj')
-    PyTargetAdd('deploy-stub.exe', opts=['WINSHELL', 'DEPLOYSTUB', 'NOICON', 'ANDROID'])
+    PyTargetAdd('deploy-stub.exe', opts=['WINSHELL', 'DEPLOYSTUB', 'NOICON'])
 
     if GetTarget() == 'emscripten':
         PyTargetAdd('deploy-stub.exe', opts=['ZLIB'])
@@ -5717,18 +5500,6 @@ if PkgSkip("PYTHON") == 0:
         PyTargetAdd('deploy-stubw.obj', opts=OPTS, input='deploy-stub.c')
         PyTargetAdd('deploy-stubw.exe', input='deploy-stubw.obj')
         PyTargetAdd('deploy-stubw.exe', opts=['MACOS_APP_BUNDLE', 'DEPLOYSTUB', 'NOICON'])
-    elif GetTarget() == 'android':
-        TargetAdd('org/jnius/NativeInvocationHandler.class', opts=OPTS, input='NativeInvocationHandler.java')
-        TargetAdd('classes.dex', input='org/jnius/NativeInvocationHandler.class')
-
-        PyTargetAdd('deploy-stubw_android_main.obj', opts=OPTS, input='android_main.cxx')
-        PyTargetAdd('deploy-stubw_android_support.obj', opts=OPTS, input='android_support.cxx')
-        PyTargetAdd('libdeploy-stubw.dll', input='android_native_app_glue.obj')
-        PyTargetAdd('libdeploy-stubw.dll', input='deploy-stubw_android_main.obj')
-        PyTargetAdd('libdeploy-stubw.dll', input='deploy-stubw_android_support.obj')
-        PyTargetAdd('libdeploy-stubw.dll', input=COMMON_PANDA_LIBS)
-        PyTargetAdd('libdeploy-stubw.dll', input='libp3android.dll')
-        PyTargetAdd('libdeploy-stubw.dll', opts=['DEPLOYSTUB', 'ANDROID'])
 
 #
 # Build the test runner for static builds
