@@ -355,6 +355,15 @@ class Pipeline:
         # deactivation restores colors and scopes exactly.
         self._model_lights = []
 
+        # Orbital scattering (Session R / R5.5): per-planet atmosphere
+        # shells registered via set_orbital_atmosphere(). Each entry owns
+        # a camera-facing quad pair (extinction + inscatter passes) placed
+        # every frame by _update. Empty list = the shipped scene graph,
+        # byte-identical (guarded by paxtest test_orbital).
+        self._orbital_atmos = []
+        self._orbital_shaders = None
+        self._orbital_sort_next = 1000
+
         # Sun light mode (R2)
         if sun_light_mode not in ('uniforms', 'directional'):
             print(f'[Pax3DRender] Unknown sun_light_mode "{sun_light_mode}", '
@@ -522,6 +531,12 @@ class Pipeline:
         # would leave glass rendering with stale defines.
         self._glass_shader = None
         self._reapply_glass_shaders()
+        # Orbital-atmosphere quads carry their own shader pair whose
+        # USE_330/LOG_DEPTH defines must track the pipeline's (same
+        # recompile-tracking rule as glass) — a log-depth toggle with
+        # stale quad shaders would break their depth testing.
+        self._orbital_shaders = None
+        self._reapply_orbital_shaders()
 
     def _set_env_map_uniforms(self):
         """Set IBL-related shader inputs.
@@ -1263,9 +1278,34 @@ class Pipeline:
             return p3d.BitMask32.bit(mask)
         return p3d.BitMask32(mask)
 
+    # Draw-mask bit reserved for pipeline-owned overlay geometry (orbital
+    # atmosphere quads) that must NEVER rasterize into the sun's shadow
+    # map — a billboard between the sun and the planet would otherwise
+    # blanket the surface in shadow. The shadow camera's mask always
+    # clears this bit; every other camera sees the bit as usual. Games
+    # picking a shadow_caster_mask bit must choose a different one.
+    ORBITAL_HIDE_BIT = 30
+
     def _apply_shadow_caster_mask(self):
-        if self.sun_light_np is not None and self.shadow_caster_mask is not None:
-            self.sun_light_np.node().set_camera_mask(self.shadow_caster_mask)
+        if self.sun_light_np is None:
+            return
+        if self.shadow_caster_mask is not None:
+            mask = p3d.DrawMask(self.shadow_caster_mask)
+        else:
+            # Default camera mask (all normal bits), made explicit so the
+            # reserved bit can be cleared from it.
+            mask = p3d.DrawMask.all_on() & ~p3d.DrawMask(
+                p3d.PandaNode.get_overall_bit())
+        cleared = mask & ~p3d.DrawMask.bit(self.ORBITAL_HIDE_BIT)
+        if cleared.is_zero():
+            # A caster mask of exactly the reserved bit: keep shadows
+            # working and warn instead of silently blanking the map.
+            print(f'[Pax3DRender] shadow_caster_mask is exactly bit '
+                  f'{self.ORBITAL_HIDE_BIT}, which is reserved for '
+                  f'pipeline overlay geometry — pick another bit')
+        else:
+            mask = cleared
+        self.sun_light_np.node().set_camera_mask(mask)
 
     def set_shadow_caster_mask(self, mask):
         """Restrict the sun's shadow camera to a dedicated camera-mask bit
@@ -1686,6 +1726,244 @@ class Pipeline:
         self._push_atmosphere_uniforms()
 
     # ------------------------------------------------------------------
+    # Orbital scattering (Session R / R5.5) — planet limb + halo seen
+    # from space
+    # ------------------------------------------------------------------
+
+    def _get_orbital_shaders(self):
+        """The (extinction, inscatter) shader pair for the CURRENT
+        pipeline defines (compiled lazily, invalidated by _recompile_pbr
+        — same tracking rule as the glass variant)."""
+        if self._orbital_shaders is None:
+            base_defines = {'USE_330': self._use_330,
+                            'LOG_DEPTH': self.enable_log_depth}
+            ext = shaderutils.make_shader(
+                'pax_orbital_ext', 'orbital_atmo.vert', 'orbital_atmo.frag',
+                dict(base_defines))
+            ins_defines = dict(base_defines)
+            ins_defines['ORB_INSCATTER'] = True
+            ins = shaderutils.make_shader(
+                'pax_orbital_ins', 'orbital_atmo.vert', 'orbital_atmo.frag',
+                ins_defines)
+            self._orbital_shaders = (ext, ins)
+        return self._orbital_shaders
+
+    def _reapply_orbital_shaders(self):
+        """Re-push the (freshly invalidated) shader pair onto every
+        registered orbital-atmosphere quad after a pipeline recompile."""
+        live = []
+        for entry in self._orbital_atmos:
+            if entry['planet'].is_empty():
+                entry['holder'].remove_node()
+                continue
+            live.append(entry)
+        self._orbital_atmos = live
+        if not live:
+            return
+        ext, ins = self._get_orbital_shaders()
+        for entry in live:
+            entry['ext_np'].set_shader(ext)
+            entry['ins_np'].set_shader(ins)
+
+    def set_orbital_atmosphere(self, planet_np, planet_radius=None,
+                               scale_height=None, thickness=None,
+                               density=None, scatter_tint=None,
+                               intensity=None):
+        """Give a planet an atmosphere as seen FROM SPACE: limb glow, a
+        halo beyond the disk, aerial haze over the disk, and terminator
+        tinting (R5.5, the spaceflight half of the R5 signature look).
+
+        Single scattering through an exponential shell, rendered as a
+        camera-facing quad pair (extinction, then additive inscatter)
+        the pipeline places over the planet every frame — no recompile
+        of anything, per-planet, unlimited planets. First call registers
+        (planet_radius required); later calls update any subset of
+        parameters (uniform-only). Unregistered = byte-identical scene
+        (paxtest test_orbital opt-out checks; density=0 is also an exact
+        no-op).
+
+        Args:
+            planet_np:     NodePath whose ORIGIN is the planet center.
+                           Its world position is tracked every frame;
+                           radii below are WORLD units (node scale is
+                           not tracked — pass scaled-up values instead).
+            planet_radius: sphere radius, world units. REQUIRED on the
+                           first call.
+            scale_height:  e-folding altitude H of the density falloff.
+                           Default 0.02 * radius — a stylized ~15x
+                           thicker than Earth-true (0.0013 * R), which
+                           reads as a visible limb at game distances.
+            thickness:     shell top above the surface. Default 6 * H
+                           (density 0.25% of surface — visually black).
+            density:       extinction per world unit at the surface
+                           (scalar; per-channel via scatter_tint).
+                           Default 4 / sqrt(2*pi*R*H), which puts the
+                           tangent-ray optical depth at ~4 * tint per
+                           channel — an Earth-like limb for any radius.
+            scatter_tint:  relative per-channel scattering (the color
+                           physics). Default (0.175, 0.41, 1.0) —
+                           Rayleigh lambda^-4 for RGB — gives blue haze
+                           over the disk and a reddened terminator.
+                           Mars-ish dust: try (1.0, 0.55, 0.35).
+            intensity:     inscatter brightness multiplier (the phase
+                           function is normalized to sphere-average 1,
+                           so this scales mean halo brightness against
+                           u_sun_color directly).
+
+        Boundary with the planetside haze (R5.1): this is the ORBITAL
+        half only. It composes with scene content between camera and
+        planet imperfectly (objects INSIDE the shell get full-path haze
+        drawn over them — the quad sits at the shell's near surface).
+        The fly-down handoff to enable_atmosphere is game-paced R4.2-era
+        work: pick a handoff altitude and cross-fade density there.
+        """
+        entry = next((e for e in self._orbital_atmos
+                      if e['planet'] == planet_np), None)
+        if entry is None:
+            if planet_radius is None:
+                raise ValueError('set_orbital_atmosphere needs '
+                                 'planet_radius on first registration')
+            entry = self._make_orbital_entry(planet_np)
+            self._orbital_atmos.append(entry)
+        if planet_radius is not None:
+            entry['radius'] = float(planet_radius)
+        if scale_height is not None:
+            entry['scale_height'] = max(1e-6, float(scale_height))
+        if thickness is not None:
+            entry['thickness'] = max(1e-6, float(thickness))
+        if density is not None:
+            entry['density'] = max(0.0, float(density))
+        if scatter_tint is not None:
+            entry['tint'] = tuple(scatter_tint)
+        if intensity is not None:
+            entry['intensity'] = float(intensity)
+        self._push_orbital_uniforms(entry)
+        # Place immediately so the registration frame renders correctly
+        # (the per-frame task keeps it updated afterwards).
+        self._place_orbital_quads(
+            entry, self.camera_node.get_pos(self.render_node))
+
+    def clear_orbital_atmosphere(self, planet_np):
+        """Undo set_orbital_atmosphere() for this planet: the quads are
+        removed and the scene graph is restored exactly (byte-identical
+        opt-out — paxtest test_orbital)."""
+        entry = next((e for e in self._orbital_atmos
+                      if e['planet'] == planet_np), None)
+        if entry is None:
+            return
+        entry['holder'].remove_node()
+        self._orbital_atmos.remove(entry)
+
+    def _make_orbital_entry(self, planet_np):
+        """Build the quad pair for one planet: extinction (multiplies the
+        framebuffer by per-channel transmittance) then inscatter
+        (additive), both depth-tested but not depth-written, drawn after
+        the opaque scene in the 'fixed' bin."""
+        holder = self.render_node.attach_new_node('pax3d_orbital_atmo')
+        # Never rasterize into the sun's shadow map (see ORBITAL_HIDE_BIT)
+        holder.hide(p3d.DrawMask.bit(self.ORBITAL_HIDE_BIT))
+        cm = p3d.CardMaker('pax3d_orbital_quad')
+        cm.set_frame(-1, 1, -1, 1)
+        ext_np = holder.attach_new_node(cm.generate())
+        ins_np = holder.attach_new_node(cm.generate())
+        sort_base = self._orbital_sort_next
+        self._orbital_sort_next += 2
+        ext, ins = self._get_orbital_shaders()
+        for quad, shader, sort, blend in (
+                (ext_np, ext, sort_base, p3d.ColorBlendAttrib.make(
+                    p3d.ColorBlendAttrib.M_add,
+                    p3d.ColorBlendAttrib.O_zero,
+                    p3d.ColorBlendAttrib.O_incoming_color)),
+                (ins_np, ins, sort_base + 1, p3d.ColorBlendAttrib.make(
+                    p3d.ColorBlendAttrib.M_add,
+                    p3d.ColorBlendAttrib.O_one,
+                    p3d.ColorBlendAttrib.O_one))):
+            quad.set_shader(shader)
+            quad.set_bin('fixed', sort)
+            quad.set_depth_write(False)
+            quad.set_two_sided(True)
+            quad.set_attrib(blend)
+        return {
+            'planet': planet_np,
+            'holder': holder,
+            'ext_np': ext_np,
+            'ins_np': ins_np,
+            'radius': 1.0,
+            'scale_height': None,   # None = derived default
+            'thickness': None,
+            'density': None,
+            'tint': (0.175, 0.41, 1.0),
+            'intensity': 1.0,
+        }
+
+    def _orbital_resolved(self, entry):
+        """(radius, scale_height, top_radius, density) with the
+        documented defaults derived from the radius."""
+        radius = entry['radius']
+        h = entry['scale_height']
+        if h is None:
+            h = 0.02 * radius
+        thickness = entry['thickness']
+        if thickness is None:
+            thickness = 6.0 * h
+        density = entry['density']
+        if density is None:
+            density = 4.0 / math.sqrt(2.0 * math.pi * radius * h)
+        return radius, h, radius + thickness, density
+
+    def _push_orbital_uniforms(self, entry):
+        radius, h, top, density = self._orbital_resolved(entry)
+        entry['_top'] = top
+        tint = entry['tint']
+        holder = entry['holder']
+        holder.set_shader_input('u_orb_planet_radius', radius)
+        holder.set_shader_input('u_orb_top_radius', top)
+        holder.set_shader_input('u_orb_inv_scale_height', 1.0 / h)
+        holder.set_shader_input(
+            'u_orb_beta', p3d.Vec3(density * tint[0], density * tint[1],
+                                   density * tint[2]))
+        holder.set_shader_input('u_orb_intensity', entry['intensity'])
+
+    def _place_orbital_quads(self, entry, cam_pos):
+        """Aim and size one planet's quad pair for this frame's camera:
+        the quad sits at the shell's near surface (in front of every
+        in-shell depth), faces the camera, and covers the shell's
+        projected disc with margin. Falls back to a near-camera
+        fullscreen quad when the camera is inside/near the shell."""
+        center = entry['planet'].get_pos(self.render_node)
+        holder = entry['holder']
+        holder.set_shader_input('u_orb_center', center)
+        to_c = center - cam_pos
+        dist = to_c.length()
+        if dist <= 1e-6:
+            return
+        u = to_c / dist
+        top = entry.get('_top') or self._orbital_resolved(entry)[2]
+        near = self.camera_node.node().get_lens().get_near()
+        quad_dist = max(dist - top * 1.05, near * 2.0)
+        holder.set_pos(cam_pos + u * quad_dist)
+        up = (p3d.Vec3(0, 1, 0) if abs(u.z) > 0.99
+              else p3d.Vec3(0, 0, 1))
+        holder.look_at(p3d.Point3(cam_pos + u * (quad_dist + 1.0)), up)
+        if dist > top * 1.05:
+            sin_a = top / dist
+            half = (sin_a / math.sqrt(max(1.0 - sin_a * sin_a, 1e-6))
+                    ) * quad_dist * 1.1
+        else:
+            half = quad_dist * 6.0
+        holder.set_scale(half)
+
+    def _update_orbital_atmos(self, cam_pos):
+        live = []
+        for entry in self._orbital_atmos:
+            if entry['planet'].is_empty():
+                entry['holder'].remove_node()
+                continue
+            live.append(entry)
+            self._place_orbital_quads(entry, cam_pos)
+        self._orbital_atmos = live
+
+    # ------------------------------------------------------------------
     # Environment-driven ambient (Session J / R5.2) — irradiance SH
     # ------------------------------------------------------------------
 
@@ -1826,6 +2104,10 @@ class Pipeline:
         # Camera world position for IBL reflections — raw Z-up, no CS conversion
         cam_pos = self.camera_node.get_pos(self.render_node)
         self.render_node.set_shader_input('camera_world_position', cam_pos)
+
+        # Orbital-atmosphere quads follow the camera (R5.5)
+        if self._orbital_atmos:
+            self._update_orbital_atmos(cam_pos)
 
         # Log-depth coefficient tracks the camera lens far plane (R4.1) —
         # the game may change near/far at runtime (regime switches)

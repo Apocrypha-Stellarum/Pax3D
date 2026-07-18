@@ -20,7 +20,7 @@ ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows',
              'shadows_gltf', 'shadow_quality', 'shadow_grazing',
              'shadow_snap', 'ftl_blur', 'scale', 'skinning',
              'atmosphere', 'ambient_sh', 'glass', 'doublesided',
-             'ambient_scale', 'env_map', 'local_lights']
+             'ambient_scale', 'env_map', 'local_lights', 'orbital']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 
@@ -114,6 +114,11 @@ def main():
                 # openworld P0: skinned casters must work on the CPU-skinning
                 # path too (enable_hardware_skinning=False)
                 jobs.append((test, pipeline, passthrough + ['--soft-skin']))
+            if test == 'orbital' and pipeline == 'pax3d_render':
+                # R5.5: the atmosphere quads write log-space gl_FragDepth
+                # when LOG_DEPTH is on — prove they still depth-compose
+                # with the planet/backdrop geometry
+                jobs.append((test, pipeline, passthrough + ['--log-depth']))
 
     results = []
     print(f'paxtest: {len(jobs)} jobs, python={sys.executable}, '
