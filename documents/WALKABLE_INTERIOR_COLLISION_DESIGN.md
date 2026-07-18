@@ -123,3 +123,28 @@ collision traverser; (4) masks agree (`from` on the segment ==
 `into` on the collision node); (5) world transform: after parenting
 to the pad, `col_np.get_pos(render)` must be the pad, not the origin;
 (6) eyeball with `col_np.show()` + `ctrav.show_collisions(render)`.
+
+## 8. Walls — measured on the real asset (2026-07-18)
+
+The GLB has NO blocker meshes yet, so as shipped nothing stops a
+walker at a wall. The mechanism, tested by converting the RENDER
+`Int_Walls` shell (27,161 tris → 27,151 CollisionPolygons, 0.1 s
+one-time conversion; a handful of sliver polys auto-rejected):
+
+- The pusher DOES stop the walker at the real cabin wall (x=2.0 →
+  pushed to 1.662; from inside the wall shell 2.4 → 1.759).
+- **But author low-poly `block_*` quads anyway**, for three measured
+  reasons: (1) the sphere-vs-27k-poly traverse costs **2.3 ms/frame**
+  — real frame budget, vs ~µs for a few dozen authored quads;
+  (2) the dense mesh contains degenerate slivers (rejected, but
+  noisy); (3) thin-wall escape: a discrete step fully PAST the shell
+  (x=2.8) is no longer intersecting and is not pushed back — simple
+  thick/inset blocker quads are robust against this; normal per-frame
+  walk deltas against them cannot tunnel.
+- Doorways: leave gaps in the blockers; the door meshes themselves
+  (ArmoryDoor1/2, DoorRoot, CockpitDoor — all plain PandaNodes) get
+  their own small collision pieces riding the animated nodes, so a
+  closed door blocks and an open one doesn't, for free. Ceiling: one
+  or two quads, BLOCK mask.
+- Reminder: the pusher is NEW walk-mode code (their current loop is
+  heightfield + eye height only) — §5 shows where it slots in.
