@@ -22,6 +22,19 @@ Checks:
   5. sh_from_cubemap of a synthetic L = avg + delta*dir_z cubemap
      reproduces the analytic hemisphere coefficients (bands 0-1) with
      near-zero band 2.
+  6. FILE-loaded skybox face table (the Session P pin, closing the
+     orientation question): six solid-color face images written to disk,
+     loaded with loader.load_cube_map('..._#.png') — file N must land on
+     GL face N with content intact (readback), matching the compass
+     convention the openworld marker rig validated in-app 2026-07-18
+     (PAX3D_FEEDBACK_2.md): file 0 = +x east, 1 = -x west, 2 = +y north,
+     3 = -y south, 4 = +z up, 5 = -z down.
+  7. The same skybox through sh_from_cubemap: irradiance evaluated with
+     the shader's own basis names the correct marker color along every
+     compass direction.
+  8. In-face orientation of a file-loaded UP face: a top-red/bottom-blue
+     face-4 image must tilt irradiance red toward SOUTH (-y) — i.e. the
+     top row of the up-face image file is the southern sky.
 
 Only meaningful for pipelines exposing set_hemisphere_ambient
 (pax3d_render).
@@ -228,6 +241,88 @@ def main():
     h.report.check('cubemap_sh_stray_bands', stray < 0.05 * want_c0,
                    f'non-z bands stay ~zero for a pure z-gradient env '
                    f'(max stray {stray:.4f})')
+
+    # --- 6-8. FILE-loaded skybox: face table + orientation pin ----------
+    # Shader irradiance evaluation — deliberately DUPLICATED from
+    # pax_pbr.frag irradiance_from_sh (same slot order and constants).
+    def eval_irradiance(c, d):
+        x, y, z = d
+        w = (0.282095,
+             0.488603 * x, 0.488603 * z, 0.488603 * y,
+             1.092548 * x * z, 1.092548 * y * z, 1.092548 * y * x,
+             0.946176 * z * z - 0.315392,
+             0.546274 * (x * x - y * y))
+        return tuple(sum(c[i][ch] * w[i] for i in range(9)) for ch in range(3))
+
+    # The compass marker rig from the openworld validation: RED east,
+    # GREEN north, BLUE west, YELLOW south; white up, dim down.
+    face_colors = [(1, 0, 0), (0, 0, 1), (0, 1, 0),
+                   (1, 1, 0), (1, 1, 1), (0.1, 0.1, 0.1)]
+    out_dir = p3d.Filename.from_os_specific(common.OUTPUT_DIR).get_fullpath()
+    fsize = 16
+    for face, rgb in enumerate(face_colors):
+        img = p3d.PNMImage(fsize, fsize, 3)
+        img.fill(*rgb)
+        img.write(p3d.Filename(f'{out_dir}/skyface_{face}.png'))
+    sky_tex = base.loader.load_cube_map(f'{out_dir}/skyface_#.png')
+    ok = sky_tex is not None
+    worst = 0.0
+    if ok:
+        img = p3d.PNMImage()
+        for face, rgb in enumerate(face_colors):
+            if not sky_tex.store(img, face, 0):
+                ok = False
+                break
+            got = img.get_xel(fsize // 2, fsize // 2)
+            worst = max(worst, max(abs(got[i] - rgb[i]) for i in range(3)))
+        ok = ok and worst < 0.02
+    h.report.check('skybox_file_face_table', ok,
+                   f'load_cube_map file N -> GL face N, content intact '
+                   f'(worst center-texel err {worst:.4f})')
+
+    comp = sh_from_cubemap(sky_tex)
+    dirs = {'east_red': ((1, 0, 0), 0), 'west_blue': ((-1, 0, 0), 2),
+            'north_green': ((0, 1, 0), 1)}
+    all_ok = True
+    detail = []
+    for name, (d, ch) in dirs.items():
+        e = eval_irradiance(comp, d)
+        good = e[ch] == max(e) and e[ch] > 1.2 * min(e)
+        all_ok = all_ok and good
+        detail.append(f'{name}=({e[0]:.2f},{e[1]:.2f},{e[2]:.2f})')
+    e_s = eval_irradiance(comp, (0, -1, 0))
+    good_s = min(e_s[0], e_s[1]) > 1.2 * e_s[2]
+    all_ok = all_ok and good_s
+    detail.append(f'south_yellow=({e_s[0]:.2f},{e_s[1]:.2f},{e_s[2]:.2f})')
+    h.report.check('skybox_file_sh_compass', all_ok,
+                   'file skybox -> SH names every marker: ' + '; '.join(detail))
+
+    # Up-face image: top half red, bottom half blue (fresh filenames — the
+    # loader caches by path).
+    for face, rgb in enumerate(face_colors[:4]):
+        img = p3d.PNMImage(fsize, fsize, 3)
+        img.fill(0.1, 0.1, 0.1)
+        img.write(p3d.Filename(f'{out_dir}/skygrad_{face}.png'))
+    img = p3d.PNMImage(fsize, fsize, 3)
+    for py in range(fsize):
+        rgb = (1, 0, 0) if py < fsize // 2 else (0, 0, 1)
+        for px in range(fsize):
+            img.set_xel(px, py, *rgb)
+    img.write(p3d.Filename(f'{out_dir}/skygrad_4.png'))
+    img = p3d.PNMImage(fsize, fsize, 3)
+    img.fill(0.1, 0.1, 0.1)
+    img.write(p3d.Filename(f'{out_dir}/skygrad_5.png'))
+    grad_tex = base.loader.load_cube_map(f'{out_dir}/skygrad_#.png')
+    gc = sh_from_cubemap(grad_tex)
+    e_south = eval_irradiance(gc, (0, -1, 0))
+    e_north = eval_irradiance(gc, (0, 1, 0))
+    h.report.check('skybox_file_up_orientation',
+                   e_south[0] > 1.2 * e_south[2] and
+                   e_north[2] > 1.2 * e_north[0],
+                   f'up-face image TOP row = SOUTHERN sky: E(south)='
+                   f'({e_south[0]:.2f},{e_south[1]:.2f},{e_south[2]:.2f}) '
+                   f'red-tilted, E(north)=({e_north[0]:.2f},{e_north[1]:.2f},'
+                   f'{e_north[2]:.2f}) blue-tilted')
 
     h.report.finish()
 

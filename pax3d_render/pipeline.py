@@ -113,14 +113,17 @@ def sh_from_cubemap(tex, band_factors=(math.pi, 2.0 * math.pi / 3.0,
     """Project a cube-map Texture to 9 irradiance-SH coefficients for
     Pipeline.set_ambient_sh() — the R5 "ambient from the skybox" path.
 
-    EXPERIMENTAL (Session J): the face-direction table follows the standard
-    GL cube-map convention with Panda's Z-up lookup vectors (face 4 = +z =
-    up, face 5 = -z = down). The up/down axis and the DC term are exact;
-    validate the horizontal orientation against your actual skybox before
-    shipping content tuned to it. Runs on the CPU from the texture's RAM
-    image (loaded skyboxes have one) — call once at scene setup, not per
-    frame; cost scales with face area (a 64px cubemap is plenty for
-    irradiance).
+    Face table (PINNED, Session Q 2026-07-18 — do not re-derive): standard
+    GL cube-map convention with Panda's Z-up lookup vectors — face 0 = +x
+    east, 1 = -x west, 2 = +y north, 3 = -y south, 4 = +z up, 5 = -z down;
+    in a file-loaded up-face image the TOP row is the SOUTHERN sky. Proven
+    on all three legs: shader sampling (test_env_map mirror proof),
+    win.makeCubeMap captures (openworld marker rig, PAX3D_FEEDBACK_2.md
+    2026-07-18 — parent the rig to render, not the camera), and
+    loader.load_cube_map image files (test_ambient_sh checks 6-8). Runs on
+    the CPU from the texture's RAM image (loaded skyboxes have one) — call
+    once at scene setup, not per frame; cost scales with face area (a 64px
+    cubemap is plenty for irradiance).
 
     Returns a list of 9 (r, g, b) tuples, or raises RuntimeError if a face
     cannot be read back.
