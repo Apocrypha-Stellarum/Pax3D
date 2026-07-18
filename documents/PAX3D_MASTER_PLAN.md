@@ -36,12 +36,12 @@ Identical paxtest results on both engines = the defect is Python/GLSL, not C++.
 
 | Phase | What | Status (evidence) |
 |---|---|---|
-| R0 harness | `tools/paxtest/` — 17 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; +2 Session G, +1 Session I, +3 Session J, +2 Session K, +1 Session L) |
+| R0 harness | `tools/paxtest/` — 18 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; +2 Session G, +1 Session I, +3 Session J, +2 Session K, +1 Session L, +1 Session M) |
 | R1 unified renderer | `pax3d_render/` (pax_pbr ⊕ pax3d_simplepbr merge), color contract, `register_scene_camera()` | **Core done** (Sessions B, D — game flag flipped, boots clean). Open: in-game parity eyeball (user), sRGB linearization experiment, GLSL-120 path removal (needs game `gl-version 3 2`) |
 | R2 directional sun + shadows | Pipeline-owned DirectionalLight, HPR-driven; shadows with world-space extent center; **hardened Session E**: world-unit bias, 3×3 PCF, no-cast API, skinned casters proven; **hardened Session G**: glTF caster darkening is a hard assertion, glTF caster+receiver test (angled sun), per-node `set_hardware_skinning()` opt-out; **Session I**: slope-scaled bias (`shadow_normal_bias_world`, opt-in) kills grazing-angle acne (fact 14) | **Core done + hardened** (test_shadows 13+13, test_shadow_quality 9, test_shadows_gltf 6, test_shadow_grazing 6, test_skinning 12). Open: in-game validation — set `shadow_bias_world` (~0.5 IEU) first; openworld dev A/Bs `shadow_normal_bias_world` at az 240 low sun |
 | R3 bloom + HDR | F3 root-caused (8-bit intermediate FBOs) and fixed; float fbprops everywhere | **Core done** (Session D; test_bloom green both sizes). Open: content retune, light units, auto-exposure stretch |
 | R4 space scale | R4.0 acceptance tests; R4.1 log depth opt-in (`enable_log_depth`, @logdepth row green); R4.2 camera-relative DECIDED (game-side; parent-cancel trap measured); doubles wheel **built + verified 2026-07-17**: precision 0.000e+00 at Neptune offsets, `test3d_ftl --selftest` green, but stock simplepbr crashes on it (stays quarantined in `pax3d-double-env`) | **Engine side essentially done.** Open: game-side R4.2 implementation, frustum flip, then sky-camera retirement; doubles perf A/B + user flight |
-| R5 atmosphere + signature look | Scattering, SH-from-skybox ambient, height fog, lens polish | **Planetside slice LANDED opt-in (Session J, user-directed):** R5.1 aerial perspective/height haze (`enable_atmosphere`, analytic exponential-height medium + sunward scatter tint), R5.2 env ambient via the existing SH path (`set_hemisphere_ambient`/`set_ambient_sh`, `sh_from_cubemap` experimental), plus backlog shadow texel snapping (`shadow_texel_snap`). All default-off = byte-identical; gated by test_atmosphere/test_ambient_sh/test_shadow_snap, green both engines × both baselines. Open: field tuning in openworld Mars colony (`PLANETSIDE_LOOK_GUIDE.md`), orbital scattering + specular IBL + lens polish |
+| R5 atmosphere + signature look | Scattering, SH-from-skybox ambient, height fog, lens polish | **Planetside slice LANDED opt-in (Session J, user-directed):** R5.1 aerial perspective/height haze (`enable_atmosphere`, analytic exponential-height medium + sunward scatter tint), R5.2 env ambient via the existing SH path (`set_hemisphere_ambient`/`set_ambient_sh`, `sh_from_cubemap` experimental), plus backlog shadow texel snapping (`shadow_texel_snap`). All default-off = byte-identical; gated by test_atmosphere/test_ambient_sh/test_shadow_snap, green both engines × both baselines. **Session M: R5.3 specular IBL first slice landed** (`set_env_map` + real BRDF LUT, test_env_map analytics exact). Open: field tuning in openworld Mars colony (`PLANETSIDE_LOOK_GUIDE.md`), orbital scattering + lens polish, GGX prefilter tool |
 | R6 engine surgery | DX9 + dead-backend deletion | **Windows 2+3 DONE 2026-07-17** (`d29183ce42`, `3912762dd9` — −35k lines, both fully gated). Window 4 (mobile-target extraction) queued — `ENGINE_SURGERY_PLAN.md` |
 
 Engine changes to date: the makepanda oscmd fix, the Route A catch-up merge
@@ -160,6 +160,15 @@ toggleable off for space scenes):
 - Also landed from the backlog: **shadow texel snapping**
   (`shadow_texel_snap`, arch doc §5.7, test_shadow_snap) — the planetside
   camera-following-frustum shimmer fix.
+- ~~**Specular IBL env map**~~ — **LANDED first slice (Session M /
+  R5.3):** `set_env_map(cubemap)` + the real split-sum BRDF LUT
+  (`textures/brdf_lut.txo`, `tools/gen_brdf_lut.py` — the shipped 1×1
+  white fallback would have corrupted the term the moment a real env
+  bound; set_env_map refuses to run on it). Mip chain = roughness
+  ladder (feed a GGX-prefiltered chain for correctness; box mips are
+  the documented approximation). Gated by test_env_map (analytics
+  exact vs LUT peek; ladder, orientation, glass composition). Open:
+  offline GGX prefilter tool; per-scene cubemap authoring.
 - **Atmospheric scattering** for orbital views (single-scattering analytic
   limb model per planet type; Bruneton LUTs as stretch) — not started.
 - Lens flare/dirt polish on the bloom chain — not started.
@@ -216,7 +225,7 @@ when off, paxtest-gated.
 | ~~Specular-preserving glass~~ (`set_glass(np)`) — premultiplied-alpha PBR variant: alpha attenuates transmission terms only; specular (sun/local/IBL) and emission at full strength | **DONE Session K** — test_glass, analytics exact, green both engines × both baselines × both sun modes + the routed pax_pbr path; arch doc §9. Pair with `exclude_from_shadows()` on canopies (depth pass is opaque by design) |
 | ~~`gl_FrontFacing` normal flip for doubleSided glTF materials~~ (backfaces were lit from the wrong side — thin panels, decals, seat fabric) | **DONE Session K** — `double_sided_lighting` init kwarg + `set_double_sided_lighting()` (recompile-class); test_doublesided (backface 0.108→0.705 analytic exact, front faces bit-identical under the flag, opt-out byte-identical), green both engines × baselines × sun modes. Opt-in because existing two-sided content (foliage cards, FX quads) WOULD change look — games eyeball then flip it on |
 | ~~Per-node ambient scale~~ — keep the global SH sky ambient out of hull interiors | **DONE Session L** — `set_ambient_scale(np, k)`/`clear_ambient_scale(np)`: inherited `u_ambient_scale` input folded into the AO factor (scales SH/IBL + flat ambient ONLY; direct light and emission untouched — sun shafts still work). Root default 1.0 = exact no-op. test_ambient_scale (per-channel analytics exact ×3 states incl. the sun-shaft case), green both engines × baselines. Ship-dev-prioritized #1: "the interior is unlit without it" |
-| Specular IBL first slice (`set_env_map()`, static prefiltered cubemap + `max_reflection_lod`) — canopy/hull reflections; also settles the sh_from_cubemap horizontal-orientation question (Session J open item) | Queued (LAST per ship-dev ranking — "pure polish"); promotes the existing R5 remainder; glass is its motivating consumer |
+| ~~Specular IBL first slice~~ (`set_env_map()`) — canopy/hull reflections | **DONE Session M / R5.3** — see §4.4; test_env_map's mirror checks also prove the shader's cube-sampling orientation is GL-standard (evidence toward the Session J sh_from_cubemap question, sampling side; the loaded-skybox file-orientation half stays open) |
 | **Interior collision / local walkable-mesh story** (registered 2026-07-18 from the ship dev: game walk mode is heightfield-only; a ship interior is a floor above terrain with walls and a ceiling — "walk around inside" is blocked on this) | **NEW — DESIGN WITH GAME DEV** (not a rendering feature; no paxtest — outside the harness's scope). Engine-side position below |
 
 Ship-dev priority ranking (2026-07-18, recorded): ambient scale →

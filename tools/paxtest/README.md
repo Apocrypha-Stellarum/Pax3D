@@ -170,6 +170,19 @@ the view axis (the sun-shaft case — direct light must NOT be scaled).
 Also asserts the scale survives a recompile-class toggle and that
 `clear_ambient_scale()` restores the baseline byte-identically.
 
+**`test_env_map.py`** (Session M / R5.3) — specular IBL
+(`set_env_map()` + the real BRDF LUT that ships with it). Sun black,
+flat metallic card, expected values computed with (A,B) peeked from
+the pipeline's own LUT at the texel centers the shader's clamped
+bilinear fetch resolves to (material roughness chosen ON a texel
+center). Asserts: the real LUT is loaded (the 1×1 white fallback would
+add the whole env color as a bias — set_env_map refuses it), constant-
+cubemap per-channel analytics, the LOD ladder addresses hand-loaded
+per-mip colors (roughness 0 → mip 0, roughness 1 → top mip), mirror
+ORIENTATION (normal incidence → -Y face, 45° pitch → +Z face: cube
+sampling is GL-standard), glass composition (reflections unattenuated
+through alpha), recompile survival, and byte-identical clear.
+
 **`test_skinning.py`** (Session G, openworld P1) — hardware vs CPU
 skinning correctness plus the per-node opt-out API. Three layers: the
 egg sheet posed and rendered GPU vs `set_hardware_skinning(np, False)`
@@ -208,7 +221,7 @@ the correct surface's favor and mimic a working depth buffer.
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Results snapshot (post Session L, 2026-07-18)
+## Results snapshot (post Session M, 2026-07-18)
 
 Same results on stock 1.10.16 and Pax3D 1.11.0 (Window-3 wheel), both
 baselines. Note: with the game's `use_pax3d_render` flag flipped
@@ -232,6 +245,7 @@ attach pattern, which fails by design).
 | glass | skip | skip | PASS | **PASS (spec survives alpha, 2.07× vs M_alpha; both sun modes; opt-out byte-identical)** |
 | doublesided | skip | skip | PASS | **PASS (backface 0.108→0.705 analytic; front faces bit-identical; opt-out byte-identical)** |
 | ambient_scale | skip | skip | PASS | **PASS (per-channel analytics exact ×3 states; direct light unscaled; opt-out byte-identical)** |
+| env_map | skip | skip | PASS | **PASS (analytics exact vs LUT peek; LOD ladder + orientation + glass composition; opt-out byte-identical)** |
 | ftl_blur | skip | skip | PASS | PASS |
 | scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)**; **@logdepth PASS (R4.1)** |
 | skinning | skip | skip | skip | **PASS (opt-out API + both openworld packs)** |

@@ -1,0 +1,276 @@
+"""paxtest: specular IBL env map (Session M / R5.3 first slice).
+
+`pipeline.set_env_map(cubemap)` feeds the shader's until-now-black
+`filtered_env_map` + `max_reflection_lod` path:
+
+  ibl_spec = textureCubeLod(env, reflect(-view, normal),
+                            perceptual_roughness * max_lod)
+             * (F * brdf_lut.x + brdf_lut.y)
+
+The slice also ships the REAL split-sum BRDF LUT
+(pax3d_render/textures/brdf_lut.txo, tools/gen_brdf_lut.py) — the old
+1x1 white fallback made lut.y = 1, which would ADD the whole env color
+the moment a real cubemap bound (harmless only while env was black).
+
+Scene: flat card facing the camera (test_glass geometry), sun BLACK —
+everything measured is IBL + the tiny flat ambient. Expected values
+peek (A, B) from the same LUT texture the pipeline loaded, at the
+texel centers the shader's clamped bilinear fetch resolves to; the
+material roughness is chosen ON a texel center so the fetch is exact.
+
+Checks:
+  1. The real LUT is loaded (not the white fallback) and its mirror
+     corner integrates to (A~1, B~0).
+  2. Baseline (no env map): card shows only the flat ambient.
+  3. Constant-color cubemap: per-channel analytic C*(F*A+B) + amb
+     (metallic 1: F = 1) — catches channel swaps and LUT misuse.
+  4. Survives a shader-recompile-class toggle (rms 0).
+  5. Hand-loaded per-mip colors: roughness 0 reads mip 0, roughness 1
+     reads the top mip — proves the LOD ladder actually addresses the
+     chain (mip colors chosen red-ish vs blue-ish for dominance).
+  6. Face-colored cubemap, mirror card: normal incidence reflects the
+     -Y face; pitched 45 degrees it reflects the +Z face — sampling
+     ORIENTATION is correct (the Session J sh_from_cubemap soft spot,
+     shader-sampling side).
+  7. Glass composition: on a set_glass node the reflection term rides
+     at FULL strength through alpha 0.15 (the canopy case).
+  8. clear_env_map() restores the baseline byte-identically.
+
+Only meaningful for pipelines exposing set_env_map (pax3d_render and
+the routed pax_pbr adapter).
+"""
+import argparse
+import math
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import panda3d.core as p3d
+
+import common
+
+
+AMB = 0.02          # tiny AmbientLight (harness gotcha: none => white flood)
+ALPHA = 0.15        # glass-check alpha
+F0 = 0.04
+C_ENV = (0.5, 0.3, 0.15)                 # constant-cubemap color
+MIP_COLORS = [(0.6, 0.1, 0.1), (0.3, 0.3, 0.1),
+              (0.1, 0.5, 0.1), (0.1, 0.1, 0.6)]   # mips 0..3 (8,4,2,1)
+FACE_COLORS = [(0.7, 0.1, 0.1), (0.1, 0.7, 0.1),  # +X, -X
+               (0.7, 0.7, 0.1), (0.7, 0.1, 0.7),  # +Y, -Y (magenta)
+               (0.1, 0.1, 0.7), (0.1, 0.7, 0.7)]  # +Z (blue), -Z
+
+
+def lut_ab(lut, ndv, rough):
+    """(A, B) as the shader's clamped bilinear fetch resolves them,
+    peeked at the nearest texel center of the pipeline's own LUT."""
+    n = lut.get_x_size()
+    peek = lut.peek()
+    c = p3d.LColor()
+    u = (min(int(ndv * n), n - 1) + 0.5) / n
+    v = (min(int(rough * n), n - 1) + 0.5) / n
+    peek.lookup(c, u, v)
+    return c[0], c[1]
+
+
+def make_float_cube(size, mip_colors=None, face_colors=None, const=None):
+    """Cubemap with: one constant color (auto mips), per-mip colors
+    (explicit chain), or per-face colors (auto mips)."""
+    tex = p3d.Texture('paxtest_env')
+    tex.setup_cube_map(size, p3d.Texture.T_float, p3d.Texture.F_rgb32)
+    levels = ([(0, size)] if mip_colors is None else
+              [(n, size >> n) for n in range(int(math.log2(size)) + 1)])
+    for mip, msize in levels:
+        for face in range(6):
+            rgb = (const if const is not None else
+                   mip_colors[mip] if mip_colors is not None else
+                   face_colors[face])
+            img = p3d.PNMImage(msize, msize, 3, 65535)
+            img.fill(*rgb)
+            tex.load(img, face, mip)
+    return tex
+
+
+def make_card(parent, half, roughness, metallic, alpha=1.0):
+    cm = p3d.CardMaker('paxtest_env_card')
+    cm.set_frame(-half, half, -half, half)
+    np = parent.attach_new_node(cm.generate())
+    apply_surface(np, roughness, metallic, alpha)
+
+    white = p3d.Texture('paxtest_white')
+    white.setup_2d_texture(1, 1, p3d.Texture.T_unsigned_byte,
+                           p3d.Texture.F_rgb8)
+    white.set_clear_color(p3d.LColor(1, 1, 1, 1))
+    np.set_texture(white, 1)
+    mr_stage = p3d.TextureStage('paxtest_mr')
+    mr_stage.set_mode(p3d.TextureStage.M_selector)
+    np.set_texture(mr_stage, white, 1)
+    return np
+
+
+def apply_surface(np, roughness, metallic, alpha=1.0):
+    mat = p3d.Material('paxtest_env_mat')
+    mat.set_base_color(p3d.LColor(1, 1, 1, alpha))
+    mat.set_roughness(roughness)
+    mat.set_metallic(metallic)
+    np.set_material(mat, 1)
+
+
+def avg_rgb(img, cx, cy, half=2):
+    r = g = b = 0.0
+    n = 0
+    for dy in range(-half, half + 1):
+        for dx in range(-half, half + 1):
+            c = img.get_xel(int(cx + dx), int(cy + dy))
+            r += c[0]
+            g += c[1]
+            b += c[2]
+            n += 1
+    return r / n, g / n, b / n
+
+
+def check_rgb(h, name, got, want, tol=0.05, extra=''):
+    err = max(abs(g - w) for g, w in zip(got, want))
+    h.report.check(name, err < tol,
+                   f'rgb=({got[0]:.3f},{got[1]:.3f},{got[2]:.3f}) expected '
+                   f'({want[0]:.3f},{want[1]:.3f},{want[2]:.3f}), max err '
+                   f'{err:.3f}{extra}')
+
+
+def main():
+    parser = common.add_common_args(argparse.ArgumentParser())
+    args = parser.parse_args()
+
+    h = common.Harness(args, 'env_map')
+    h.init_pipeline(exposure=0.0, tonemap='hejl_dawson')
+    pipeline = getattr(h.adapter, 'pipeline', None)
+    if pipeline is None or not hasattr(pipeline, 'set_env_map'):
+        h.report.skip('pipeline has no set_env_map (Session M / R5.3)')
+    base = h.base
+    curve = common.CURVES['hejl_dawson']
+
+    lut = pipeline._brdf_lut
+    # Material roughness ON a LUT texel center -> the shader's clamped
+    # bilinear fetch lands exactly on the peeked texel.
+    n_lut = max(lut.get_x_size(), 1)
+    rough_tc = (int(0.4 * n_lut) + 0.5) / n_lut
+
+    alight = p3d.AmbientLight('paxtest_ambient')
+    alight.set_color(p3d.LColor(AMB, AMB, AMB, 1))
+    base.render.set_light(base.render.attach_new_node(alight))
+    h.adapter.update_sun((0, -1, 0), (0, 0, 0))    # sun BLACK: IBL only
+
+    card = make_card(base.render, 6, roughness=rough_tc, metallic=1.0)
+    base.camera.set_pos(0, -30, 0)
+    base.camera.set_hpr(0, 0, 0)
+    cx, cy = h.win_w // 2, h.win_h // 2
+
+    # --- 1. Real LUT loaded, mirror corner sane -------------------------
+    a0, b0 = lut_ab(lut, 1.0, 0.0)
+    h.report.check('real_brdf_lut',
+                   lut.get_x_size() > 1 and abs(a0 - 1.0) < 0.05
+                   and abs(b0) < 0.05,
+                   f'{lut.get_x_size()}x{lut.get_y_size()} LUT; mirror '
+                   f'corner (A,B)=({a0:.3f},{b0:.3f}) ~ (1, 0)')
+
+    # --- 2. Baseline: no env map -> flat ambient only -------------------
+    h.step(5)
+    img_base = h.capture()
+    h.save_capture(img_base, 'baseline')
+    # metallic 1: diffuse_color = 0, flat amb = spec_color * AMB = AMB
+    check_rgb(h, 'baseline_no_env', avg_rgb(img_base, cx, cy),
+              (curve(AMB),) * 3, extra=' (shipped behavior: ibl_spec 0)')
+
+    # --- 3. Constant cubemap: per-channel analytic ----------------------
+    env_const = make_float_cube(8, const=C_ENV)
+    pipeline.set_env_map(env_const)
+    a, b = lut_ab(lut, 1.0, rough_tc)
+    h.step(5)
+    img_env = h.capture()
+    h.save_capture(img_env, 'constant_env')
+    want = tuple(curve(c * (a + b) + AMB) for c in C_ENV)   # F = 1
+    check_rgb(h, 'constant_env_analytic', avg_rgb(img_env, cx, cy), want,
+              extra=f' (A={a:.3f} B={b:.3f} @ ndv=1, rough={rough_tc:.3f})')
+
+    # --- 4. Survives a recompile-class toggle ---------------------------
+    pipeline.set_shadow_filter_size(3)
+    h.step(5)
+    img_recompiled = h.capture()
+    pipeline.set_shadow_filter_size(1)
+    h.step(2)
+    rms = common.image_rms_diff(img_env, img_recompiled, step=1)
+    h.report.check('env_survives_recompile', rms == 0.0,
+                   f'shader recompile with env map bound: rms={rms:.2e}')
+
+    # --- 5. LOD ladder: roughness picks the mip -------------------------
+    env_mips = make_float_cube(8, mip_colors=MIP_COLORS)
+    pipeline.set_env_map(env_mips)          # max_lod = 3 (8->1 chain)
+    apply_surface(card, 0.0, 1.0)
+    a, b = lut_ab(lut, 1.0, 0.0)
+    h.step(5)
+    got0 = avg_rgb(h.capture(), cx, cy)
+    want0 = tuple(curve(c * (a + b) + AMB) for c in MIP_COLORS[0])
+    check_rgb(h, 'lod_zero_reads_base', got0, want0,
+              extra=' (roughness 0 -> mip 0, red)')
+    apply_surface(card, 1.0, 1.0)
+    a, b = lut_ab(lut, 1.0, 1.0)
+    h.step(5)
+    got3 = avg_rgb(h.capture(), cx, cy)
+    want3 = tuple(curve(c * (a + b) + AMB) for c in MIP_COLORS[3])
+    check_rgb(h, 'lod_max_reads_top', got3, want3,
+              extra=' (roughness 1 -> top mip, blue)')
+
+    # --- 6. Mirror orientation: which face does the world see? ----------
+    env_faces = make_float_cube(8, face_colors=FACE_COLORS)
+    pipeline.set_env_map(env_faces)
+    apply_surface(card, 0.0, 1.0)
+    a, b = lut_ab(lut, 1.0, 0.0)
+    h.step(5)
+    img_mirror = h.capture()
+    h.save_capture(img_mirror, 'mirror_neg_y')
+    want_my = tuple(curve(c * (a + b) + AMB) for c in FACE_COLORS[3])
+    check_rgb(h, 'mirror_reflects_neg_y', avg_rgb(img_mirror, cx, cy),
+              want_my, extra=' (normal incidence -> -Y face, magenta)')
+    card.set_p(-45)                          # normal -> (0,-.707,+.707)
+    a, b = lut_ab(lut, math.sqrt(0.5), 0.0)
+    h.step(5)
+    img_tilt = h.capture()
+    h.save_capture(img_tilt, 'mirror_pos_z')
+    got = avg_rgb(img_tilt, cx, cy)
+    want_pz = tuple(curve(c * (a + b) + AMB) for c in FACE_COLORS[4])
+    check_rgb(h, 'mirror_reflects_pos_z', got, want_pz, tol=0.06,
+              extra=' (45-degree pitch -> +Z face, blue)')
+    card.set_p(0)
+
+    # --- 7. Glass composition: reflections survive alpha ----------------
+    pipeline.set_env_map(env_const)
+    apply_surface(card, rough_tc, 0.0, alpha=ALPHA)
+    pipeline.set_glass(card)
+    a, b = lut_ab(lut, 1.0, rough_tc)
+    h.step(5)
+    img_glass = h.capture()
+    h.save_capture(img_glass, 'glass_env')
+    # metallic 0 glass: ibl_f = F0; spec bucket unattenuated, ambient
+    # split diffuse*alpha + F0-part unattenuated (see pax_pbr GLASS)
+    want_g = tuple(curve(ALPHA * ((1 - F0) * AMB) + c * (F0 * a + b)
+                         + F0 * AMB) for c in C_ENV)
+    check_rgb(h, 'glass_reflections_full', avg_rgb(img_glass, cx, cy),
+              want_g, extra=f' (alpha {ALPHA}: env term NOT scaled)')
+    pipeline.set_glass(card, False)
+
+    # --- 8. clear_env_map restores the baseline exactly -----------------
+    apply_surface(card, rough_tc, 1.0)
+    pipeline.clear_env_map()
+    h.step(5)
+    img_cleared = h.capture()
+    rms = common.image_rms_diff(img_base, img_cleared, step=1)
+    h.report.check('clear_restores_baseline', rms == 0.0,
+                   f'clear_env_map(): rms vs baseline = {rms:.2e} '
+                   f'(byte-identical opt-out)')
+
+    h.report.finish()
+
+
+if __name__ == '__main__':
+    main()
