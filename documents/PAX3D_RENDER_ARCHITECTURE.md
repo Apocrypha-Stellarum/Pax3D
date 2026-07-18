@@ -438,11 +438,32 @@ Verified by `paxtest test_gamma` (both engines, both GL baselines):
   content is sRGB-encoded and hand-tuned around Hejl-Dawson, which is why
   correct operators look washed out on it.
 
-Remaining R1 work: roll out input linearization —
-`make_base_color_textures_srgb(nodepath)` flags modulate-stage textures as
-`F_srgb`/`F_srgb_alpha` (normal/metal-rough stay linear!), then retune
-sun/ambient/exposure. This is a content-facing change; keep it opt-in and
-A/B it in the testbed (`G` key toggles it live).
+**R1.3 input linearization: EXPERIMENT LANDED, gated (Session R).**
+`pipeline.set_srgb_inputs(True)` (+ init kwarg `srgb_inputs`) flags
+base-color (M_modulate) AND emission (M_emission) stage textures under
+render as `F_srgb`/`F_srgb_alpha`; normal/metal-rough/data textures
+stay linear. Disabling restores every format exactly. Content loaded
+after enabling needs a re-call (idempotent walk). Two measured traps
+baked into the implementation: prepared textures must be RELEASED on
+format change or the GPU keeps sampling the old internal format
+(`release_all()` — silently inert otherwise), and clear-color-only
+textures (no RAM image) round-trip their value regardless of format —
+they cannot carry the decode (real content always has RAM images).
+
+Gate: `test_srgb` — metallic-1 cards collapse the ambient term to
+`base * A`, so an 8-bit 128 texel must land on curve(0.2159) decoded vs
+curve(0.5020) raw, exactly, through hejl/aces/reinhard/uncharted2;
+opt-out rms exactly 0.0. Green both engines x both baselines.
+**The Session A ACES prediction is VERIFIED in the testbed**
+(`--tonemap aces --srgb` A/B): linear inputs kill the wash-out —
+saturation and filmic contrast return — while overall brightness drops
+(content was authored raw; adoption needs a sun/exposure retune).
+DEFAULT STAYS OFF until the game signs off content-side; the
+`gen_env_prefilter` raw-value note holds unchanged (this flag touches
+stage textures at runtime, not baked artifacts).
+The older module-level `make_base_color_textures_srgb(nodepath)`
+remains for pipeline-less callers; the flag is the canonical path
+(testbed: `G` toggles live, `--srgb` at boot).
 
 GLSL: sources are 120 with a mechanical 330 upgrade in `shaderutils`
 (`--baseline modern` / `gl-version 3 2`). R1.4 plans to delete the 120 path

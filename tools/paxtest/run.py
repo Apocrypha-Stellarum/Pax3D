@@ -20,7 +20,8 @@ ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows',
              'shadows_gltf', 'shadow_quality', 'shadow_grazing',
              'shadow_snap', 'ftl_blur', 'scale', 'skinning',
              'atmosphere', 'ambient_sh', 'glass', 'doublesided',
-             'ambient_scale', 'env_map', 'local_lights', 'orbital']
+             'ambient_scale', 'env_map', 'local_lights', 'orbital',
+             'srgb']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 

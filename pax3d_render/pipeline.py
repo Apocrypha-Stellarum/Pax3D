@@ -236,6 +236,7 @@ class Pipeline:
                  radial_blur_strength=0.0,
                  chromatic_aberration_strength=0.0,
                  radial_blur_center=(0.5, 0.5),
+                 srgb_inputs=False,
                  **_kwargs):
         base = builtins.base
 
@@ -364,6 +365,17 @@ class Pipeline:
         self._orbital_shaders = None
         self._orbital_sort_next = 1000
 
+        # sRGB input linearization EXPERIMENT (Session R / R1.3): when
+        # enabled, base-color and emission textures under render_node are
+        # flagged sRGB so the GPU decodes them to linear on sampling.
+        # Off (default) = the shipped raw-sampling contract; the game
+        # never flips this without content sign-off. State applied at the
+        # end of __init__ (content usually loads later — re-call
+        # set_srgb_inputs(True) after loading; it re-walks idempotently).
+        self._srgb_inputs = False
+        self._srgb_converted = []
+        self._srgb_inputs_requested = bool(srgb_inputs)
+
         # Sun light mode (R2)
         if sun_light_mode not in ('uniforms', 'directional'):
             print(f'[Pax3DRender] Unknown sun_light_mode "{sun_light_mode}", '
@@ -473,6 +485,11 @@ class Pipeline:
 
         # Per-frame update task
         self.taskmgr.add(self._update, 'pax3d_render_update', sort=49)
+
+        # Apply the sRGB-inputs experiment last (walks whatever content
+        # already exists; loaders usually run later — see set_srgb_inputs)
+        if self._srgb_inputs_requested:
+            self.set_srgb_inputs(True)
 
         if self._debug:
             bloom_str = (f"bloom=ON strength={self.bloom_strength} "
@@ -1582,6 +1599,75 @@ class Pipeline:
         self._recompile_pbr()
         if self.sun_light_np is not None:
             self._configure_sun_shadows(enabled)
+
+    def set_srgb_inputs(self, enabled):
+        """EXPERIMENT (Session R / R1.3): linearize color inputs at
+        sample time by flagging base-color (M_modulate) and emission
+        (M_emission) stage textures under render_node as sRGB formats.
+        Data textures — normal (M_normal), metal-rough (M_selector),
+        occlusion, LUTs — are untouched; only F_rgb -> F_srgb and
+        F_rgba -> F_srgb_alpha conversions are made.
+
+        This is the input half of the R1 color contract (Session A
+        finding: ACES looks washed out because inputs are sampled RAW,
+        not because of the tonemap). All game content is tuned around
+        raw sampling + Hejl-Dawson, so the DEFAULT stays off and the
+        game flips it only with content sign-off.
+
+        Enabling walks the CURRENT subtree; content loaded later is not
+        auto-converted — call set_srgb_inputs(True) again after loading
+        (idempotent: already-converted textures are skipped). Disabling
+        restores every converted texture's original format exactly
+        (byte-identical opt-out — paxtest test_srgb). Returns the number
+        of textures converted by this call."""
+        enabled = bool(enabled)
+        if enabled:
+            first = not self._srgb_inputs
+            self._srgb_inputs = True
+            n = self._srgb_convert_subtree()
+            if self._debug and (first or n):
+                print(f'[Pax3DRender] srgb_inputs: {n} textures '
+                      f'converted to sRGB formats')
+            return n
+        if not self._srgb_inputs:
+            return 0
+        self._srgb_inputs = False
+        for tex, fmt in self._srgb_converted:
+            tex.set_format(fmt)
+            tex.release_all()
+        n = len(self._srgb_converted)
+        self._srgb_converted = []
+        if self._debug:
+            print(f'[Pax3DRender] srgb_inputs off: {n} texture formats '
+                  f'restored')
+        return n
+
+    def _srgb_convert_subtree(self):
+        converted = 0
+        color_modes = (p3d.TextureStage.M_modulate,
+                       p3d.TextureStage.M_emission)
+        for np_ in self.render_node.find_all_matches('**'):
+            for stage in np_.find_all_texture_stages():
+                if stage.get_mode() not in color_modes:
+                    continue
+                tex = np_.get_texture(stage)
+                if tex is None:
+                    continue
+                fmt = tex.get_format()
+                new = None
+                if fmt in (p3d.Texture.F_rgb, p3d.Texture.F_rgb8):
+                    new = p3d.Texture.F_srgb
+                elif fmt in (p3d.Texture.F_rgba, p3d.Texture.F_rgba8):
+                    new = p3d.Texture.F_srgb_alpha
+                if new is not None:
+                    self._srgb_converted.append((tex, fmt))
+                    tex.set_format(new)
+                    # Already-prepared textures keep their old internal
+                    # format until re-uploaded — release so the sRGB
+                    # internal format actually reaches the GPU.
+                    tex.release_all()
+                    converted += 1
+        return converted
 
     def set_enable_log_depth(self, enabled):
         """Toggle logarithmic depth at runtime (R4.1). Recompiles the PBR
