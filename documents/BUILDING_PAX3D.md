@@ -262,6 +262,7 @@ C:\python\pax3d-env\Scripts\python.exe tools\paxtest\run.py
 | `makepanda/makepandacore.py` | `oscmd()` respects `ignoreError` for binary-not-found | `mt.exe` not in PATH caused hard crash on optional step |
 | `makepanda/*` (Window 2, `d29183ce42`) | DX9 build rules, SDK locator, `HAVE_DX9`/`HAVE_CGDX9`, installer refs removed | R6 surgery: DX9 deleted from the tree |
 | `makepanda/*` (Window 3, `3912762dd9`) | GLES/GLES2/EGL/COCOA packages, build sections, config.in display lines, DX9 flag machinery removed | R6 surgery: dead platform backends deleted; `--no-dx9`/`--directx-sdk` no longer parse |
+| `makepanda/*` (Window 4, `c627e2d0bc`+fixups) | Android cross-compile machinery (SdkLocateAndroid, SetTarget android mapping, CompileJava/CompileDalvik, ANDROID_* globals, flag blocks), DIRECTCAM package + SdkAutoDisableDirectX, MakeInstallerAndroid, makewheel android handling removed; `--target` option help dropped | R6 surgery: mobile-target extraction; `--target android` no longer exists. Trap discovered: excising a block between two anchors can swallow ADJACENT globals (CxxDependencyCache, DCACHE_VERSION) — audit removed top-level names vs remaining references before building |
 
 ---
 
@@ -300,4 +301,4 @@ cd C:\python\sfb2; C:\python\pax3d-env\Scripts\python.exe plan.py
 | System Python | `C:\Python313\python.exe` |
 | VS Build Tools 2026 | `C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\` |
 | Windows SDK 10 | `C:\Program Files (x86)\Windows Kits\10\` (10.0.26100) |
-| Wheels | `wheels_window1\{float,double}\`, `wheels_window2\`, `wheels_window3\` (current), `wheels_float\` (pre-merge rollback) |
+| Wheels | `wheels_window1\{float,double}\`, `wheels_window2\`, `wheels_window3\`, `wheels_session_r\`, `wheels_window4\` (current), `wheels_float\` (pre-merge rollback) |

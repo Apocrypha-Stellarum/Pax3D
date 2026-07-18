@@ -1,7 +1,7 @@
 # Engine Surgery Plan — Deletions, Windows 2+
 
-**Date:** 2026-07-17 · **Status:** Windows 2+3 EXECUTED same day (see
-Sequencing at the bottom); Window 4 queued · **Policy basis:** Pax3D is
+**Date:** 2026-07-17 · **Status:** Windows 2+3 EXECUTED 2026-07-17;
+**Window 4 EXECUTED 2026-07-19** (see Sequencing) · **Policy basis:** Pax3D is
 sovereign (no upstream sync — see CLAUDE.md); deletions no longer carry
 merge-friction cost. **Audience:** the AI dev running a build window.
 
@@ -85,24 +85,47 @@ Window 3  DONE     Mobile/GLES/WebGL/macOS backend removal + DX9 flag
                    −18,546 lines, own build + full gate green.
                    x11/glx HOLD confirmed kept; tinydisplay kept
                    (its macOS tinyCocoa* flavor removed with the theme)
-Window 4  QUEUED   Mobile-TARGET extraction: panda/src/android +
-                   panda/src/iphone app glue, makepanda's Android
-                   cross-compile machinery, direct/dist mobile deploy
-                   logic (still references pandagles — deploy-tool only,
-                   no build impact), DIRECTCAM (permanently
-                   auto-disabled; its SDK came from the DX SDK)
-Window 5+          R2.3 DirectionalLight conveniences (additive C++,
-                   separate from deletions); any Language-Canon
-                   promotions that have profiled hot by then
+Window 4  DONE     Mobile-TARGET extraction — commit c627e2d0bc
+                   (2026-07-19), 72 files, −8,112 lines: panda/src/android
+                   + panda/src/iphone, express Android asset mount, prc
+                   androidLogStream, deploy-stub android glue, dist
+                   _android.py/_proto/ + android branches in commands/
+                   installers/FreezeTool, makepanda Android cross-compile
+                   machinery (SdkLocateAndroid, SetTarget mapping,
+                   CompileJava/CompileDalvik), DIRECTCAM (gated sources +
+                   plumbing). Two fixup commits (84d9fa3f33, 16321d8894)
+                   restored Cxx-cache globals over-cut beside the Java
+                   block — LESSON: when excising a block between two
+                   anchors, audit ALL top-level names removed vs still
+                   referenced (the audit script pattern is in the session
+                   log). Own build (10m54s clean) + full gate green:
+                   134-row paxtest matrix identical stock vs Pax3D on
+                   BOTH baselines (@game 55/6/73 — the post-morph-gate
+                   totals; @modern 54/7/73, the extra FAIL being
+                   lighting/none — fixed-function control vs core
+                   profile, pre-existing on stock), testbed selftest,
+                   openworld selftest, sfb2 30s boot smoke clean.
+                   x11/glx HOLD revisited and MAINTAINED (plausible
+                   Linux CI future); tinydisplay KEEP. Inert #ifdef
+                   ANDROID/BUILD_IPHONE guards in core dtool files
+                   survive by design (out-of-scope rule). Wheel:
+                   wheels_window4\
+Window 5+          Any Language-Canon promotions that have profiled hot;
+                   R2.3 DirectionalLight conveniences ONLY after its own
+                   design pass (Window-4 planning found the queued
+                   strip-translation xform() conflicts with the
+                   pipeline's set_pos() shadow centering — see the
+                   master plan §4.7 queue row)
 Unscheduled        Cg — only via a shaderpipeline port decision
 ```
 
-Each window: one themed change-set, one build, one full gate. Windows 2
-and 3 each got their own build + gate (paxtest both baselines identical
+Each window: one themed change-set, one build, one full gate. Windows 2,
+3 and 4 each got their own build + gate (paxtest both baselines identical
 incl. the none/simplepbr canaries, testbed + openworld selftests, sfb2
-boot). Post-surgery the tree is ~35k lines lighter and ships exactly one
+boot). Post-surgery the tree is ~43k lines lighter and ships exactly one
 graphics reality: OpenGL core on Windows, with X11/GLX held and
-tinydisplay as GPU-less insurance.
+tinydisplay as GPU-less insurance. No mobile target machinery remains
+anywhere in the tree.
 
 Note for Window 4: `--no-dx9` / `--directx-sdk` already ceased to exist
 in Window 3 — any script still passing them fails fast.

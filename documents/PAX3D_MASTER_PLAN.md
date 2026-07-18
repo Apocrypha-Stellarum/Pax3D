@@ -244,7 +244,7 @@ Evaluate ONLY when it can run the paxtest suite. No cadence; check when curious.
 | `shaderAttrib.cxx:471` intermittent assert | engine | Needs a repro (fires when a shader reads an unbound input; the known recompile-wipe class is fixed) |
 | Planet analytic tangents | sfb2 `planet_factory.py` | When normal-mapped planets arrive |
 | GLSL-120 dual-path removal (R1.4) | pax3d_render | The game sets `gl-version 3 2` |
-| R2.3 DirectionalLight C++ conveniences | engine | Window 4+, if ever — the pipeline owns orientation |
+| R2.3 DirectionalLight C++ conveniences | engine | If ever — the pipeline owns orientation. Window-4 planning (2026-07-19) scoped it and found a DESIGN CONFLICT: the queued strip-translation `xform()` clashes with the pipeline's deliberate lighting-neutral `set_pos()` shadow-frustum centering (pipeline.py `_apply_shadow_center`, guarded by test_shadows `recenter_keeps_lighting`), and test_lighting's SunRig intentionally uses raw `set_direction()`. Needs its own design pass (DIRECTIONAL_LIGHTING_PLAN.md §4) before any window takes it |
 
 ### 4.8 Asset enablement — walkable ships (Session K+, user-directed)
 

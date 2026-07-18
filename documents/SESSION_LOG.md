@@ -731,3 +731,37 @@ until richer anim packs; **GPU morph path added as a named
 build-window candidate** (Python/GLSL prototype first per canon;
 queued behind their re-export A/B). Morph lane confirmed as the
 character-quality bottleneck from both sides of the fence.
+
+**Session T update 3 (2026-07-19): BUILD WINDOW 4 EXECUTED.** User
+authorized the next C++ window with full conn ("commence the build").
+Planning: three explore agents mapped the surgery-plan procedure, the
+mobile-glue inventory (coupling map incl. composite-cxx unconditional
+includes), and R2.3 scope — R2.3 DROPPED from the window on surgery
+ground rule 2 plus a real design conflict found during scoping (queue
+row annotated). Pre-window: the character dev's re-export landed
+mid-planning, so test_morph_gltf was promoted to a GATE ROW first
+(`eb23617239`, new totals 55/6/73) — clip drives sliders at the
+authored frames 10/38/68 on both engines. Surgery: `c627e2d0bc`, 72
+files, −8,112 lines (android/iphone dirs, express Android mount, prc
+androidLogStream, deploy-stub glue, dist _android/_proto + android
+branches in commands/installers/FreezeTool, makepanda Android
+cross-compile + CompileJava/CompileDalvik, DIRECTCAM incl. gated
+DirectShow sources). Two fixups (`84d9fa3f33`, `16321d8894`): the
+Java-block excision swallowed adjacent Cxx-cache globals — first build
+died at dependency scan, second at the FINAL cache save; the removed-
+name audit (all top-level names removed vs still referenced, run on
+all four makepanda files) is now the mandatory step before building a
+surgery window. Clean build 10m54s; wheel archived `wheels_window4\`
+and live in pax3d-env. FULL GAUNTLET GREEN: 134-row paxtest matrix
+identical stock vs Pax3D on both baselines (@game 55 PASS / 6
+documented FAIL / 73 SKIP — exactly the predicted post-morph-gate
+totals; @modern 54/7/73, the extra FAIL = lighting/none, the
+fixed-function control pipeline under core profile, pre-existing on
+stock); testbed selftest OK; openworld selftest exit 0 (full village);
+sfb2 30s boot smoke clean with the Session-R combine warning firing as
+documented. x11/glx HOLD maintained, tinydisplay kept. The tree now
+ships zero mobile machinery; R6 remaining = Vulkan watch only.
+Operational note: background tool tasks get killed at ~10 min — long
+builds/gates run detached via Start-Process with a re-armed watcher;
+stale wheel copies in the repo root are a trap for the archive step
+(delete or compare before Move-Item).
