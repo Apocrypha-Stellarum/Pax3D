@@ -139,3 +139,41 @@ Recommended order of adoption (each step is independently revertible):
 
 Report back what values you settle on (and any sh_from_cubemap
 orientation surprises) — they seed the sfb2 planet-landing presets.
+
+## 5. Retuning for EXPANDED terrain (surround maps, deep valleys — Session P field note)
+
+The original Mars values were tuned for a 660 m colony map at one
+altitude datum. Two things break when the world grows:
+
+1. **Distance:** `density=0.0018` (1/density ≈ 555 m) EATS ~99% at
+   2 km by design — an expanded desert is invisible from the ground
+   (airborne-only reveal, as MARS_SURROUND_TERRAIN.md observed).
+2. **Depth:** the exponential height medium multiplies density by
+   `exp(-(z - base_height)/scale_height)` BELOW the datum. With
+   `base_height=0, scale_height=50`, a −158 m valley floor runs at
+   e^{158/50} ≈ **24× density** — visibility ~23 m, whiteout at your
+   feet. (This is the "haze looks centered on the map middle" field
+   report: the middle IS the high datum ground; the physics is doing
+   exactly what it was configured to do.)
+
+Retune recipe — all three knobs are `set_atmosphere_params` uniforms,
+free to tune LIVE in-game:
+
+- `scale_height`: raise to ~3× the terrain's altitude span (e.g. 180
+  for ±160 m) so valleys/peaks swing density by ~e^{±1} instead of
+  e^{±3}.
+- `base_height`: move the datum to mid-terrain (e.g. −80), not the
+  highest ground.
+- `density`: pick by target visibility — haze fraction at distance d
+  is `1 − exp(−density·d·amp)`. Candidate presets for the expanded
+  Mars map (amp ≈ 0.64 at the colony with base −80/H 180):
+
+| Intent | density | H | base | Colony ring (600 m) | Surround (2 km) | Valley floor amp |
+|---|---|---|---|---|---|---|
+| Keep thick colony dust, just fix valleys | 0.0025 | 180 | −80 | ~62% (as tuned) | ~96% (airborne reveal) | 1.5× |
+| Balanced (massif emerges from dust) | 0.0012 | 180 | −80 | ~37% | ~79% | 1.5× |
+| Ground-visible desert | 0.0008 | 200 | −80 | ~27% | ~64% | 1.5× |
+
+The "which" is aesthetic — the surround author deliberately left it
+open. Whatever wins, the valley fix (scale_height + base_height) is
+non-negotiable for walkable low ground.

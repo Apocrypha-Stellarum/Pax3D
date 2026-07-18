@@ -441,3 +441,40 @@ local lights cast NO shadows (point-light shadows are explicitly
 disabled — cube maps unsupported; acceptable for cabins); emissive
 strips glow but do not illuminate (they are not light sources); values
 are linear HDR through the tonemap.
+
+**Session P update (2026-07-18):** Three field asks answered in one
+session. (1) **Blender/glTF-authored lights work now** — the classic
+simplepbr annoyance root-caused: panda3d-gltf DOES convert
+KHR_lights_punctual into real PointLight/Spotlight nodes (with
+physical units: color * I*4pi/683, attenuation (1,0,1)), but a light
+node is INERT until something calls set_light() with it. New
+`activate_model_lights(model_np, root=None, scale=1.0,
+include_directional=False)` / `deactivate_model_lights()`:
+DirectionalLights excluded by default (the pipeline owns the sun),
+`scale` is the physical-to-scene brightness knob (~0.05-0.3),
+deactivation restores colors/scopes byte-identically. Gated by
+test_local_lights checks 7-9: a synthesized KHR asset loads inert
+(rms 0), activates to the exact analytic through the converter's unit
+chain (0.219 vs 0.220), restores at rms 0 — green both engines x
+baselines x sun modes. (2) **"Hard wall" at the expanded map edge**:
+game-side by design — the player is clamped to SceneConfig.half_extent
+(planetside controller), and the expanded surround terrain is
+deliberately non-walkable backdrop; growing the playfield means
+raising half_extent (the heightfield rasterizer follows it). (3)
+**"Haze centered on the map middle"**: NOT origin-centered and NOT an
+engine defect — both haze systems are camera-relative by construction
+(fog: |v_view_position|; atmosphere: fragment-camera ray). Root cause
+is the exponential HEIGHT medium doing what it was configured to do:
+mars_colony runs base_height=0/scale_height=50 while the expanded
+terrain descends to -158 m valley floors -> e^{158/50} ~ 24x density
+at the low ground (whiteout at your feet), colony at the z=0 datum
+stays clear from anywhere -> reads as "centered on the middle" because
+the middle IS the datum ground; plus density=0.0018 eats ~99% at 2 km
+by original design (555 m visibility target for a 660 m map — the
+surround author's own caveat). Fix is scene tuning, live-tunable
+(set_atmosphere_params is uniform-only): retune recipe + three
+candidate presets added to PLANETSIDE_LOOK_GUIDE.md §5 (raise
+scale_height to ~3x the terrain span, re-datum base_height to
+mid-terrain, pick density by target visibility). Engine offer on file:
+an optional density-amplification clamp if varied terrain keeps
+fighting the exponential — not needed if the retune lands.

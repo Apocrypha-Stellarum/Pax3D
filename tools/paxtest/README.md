@@ -191,7 +191,14 @@ exact (1/(1+q·d²)), per-subtree `set_light` scoping (unlit sibling
 stays ambient-only), Spotlight in-cone exact / outside-cone dark, and
 the full ship-interior recipe measured (lamp at full strength + sky
 hemisphere ambient damped by `set_ambient_scale`, composition to
-0.002). `@directional` runs the loop with the sun occupying slot 0.
+0.002). Session P adds the Blender/glTF-authored lights checks: a
+synthesized KHR_lights_punctual asset loads INERT (the classic
+simplepbr annoyance, measured at rms 0), `activate_model_lights()`
+lights it to the exact analytic through panda3d-gltf's unit chain
+(I·4π/683, quadratic attenuation), the authored DirectionalLight stays
+excluded (the pipeline owns the sun), and deactivation restores
+byte-identically. `@directional` runs the loop with the sun occupying
+slot 0.
 
 **`test_skinning.py`** (Session G, openworld P1) — hardware vs CPU
 skinning correctness plus the per-node opt-out API. Three layers: the

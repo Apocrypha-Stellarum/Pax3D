@@ -347,6 +347,11 @@ class Pipeline:
         self._glass_nodes = []
         self._glass_shader = None
 
+        # Model-authored lights turned on via activate_model_lights():
+        # (light_np, original color, root it was set_light on) — so
+        # deactivation restores colors and scopes exactly.
+        self._model_lights = []
+
         # Sun light mode (R2)
         if sun_light_mode not in ('uniforms', 'directional'):
             print(f'[Pax3DRender] Unknown sun_light_mode "{sun_light_mode}", '
@@ -1287,6 +1292,79 @@ class Pipeline:
         if self.shadow_caster_mask is None:
             raise ValueError('shadow_caster_mask is not configured')
         nodepath.show(self.shadow_caster_mask)
+
+    # ------------------------------------------------------------------
+    # Model-authored lights (Blender/glTF KHR_lights_punctual)
+    # ------------------------------------------------------------------
+
+    def activate_model_lights(self, model_np, root=None, scale=1.0,
+                              include_directional=False):
+        """Turn ON the lights authored inside a loaded model (Session P).
+
+        The classic simplepbr annoyance: Blender lights export fine
+        (KHR_lights_punctual) and panda3d-gltf converts them to real
+        PointLight/Spotlight nodes — but a light node in the scene graph
+        illuminates NOTHING until something calls set_light() with it.
+        This finds every point/spot light under `model_np` and activates
+        it on `root` (default: the model itself, so a ship's lights
+        light the ship; pass a wider node to spill onto surroundings).
+
+        `scale` multiplies each light's color at activation —
+        panda3d-gltf converts Blender intensities through physical units
+        (candela -> color * I*4pi/683) with inverse-square attenuation
+        (1, 0, 1), which reads bright/hot in our unitless linear-HDR
+        scene; start around 0.05-0.3 and tune by eye. Original colors
+        are restored by deactivate_model_lights().
+
+        DirectionalLights are EXCLUDED by default: the pipeline owns the
+        sun, and a stray Blender sun lamp would double-light the scene
+        in directional sun mode (uniforms mode ignores it either way).
+
+        Notes: glTF `range` is not consumed by the shader — falloff is
+        the quadratic attenuation only. Keep per-root light counts
+        within max_lights (init kwarg; the shader array size). Returns
+        the list of activated light NodePaths (idempotent — already-
+        active lights are skipped, not re-scaled)."""
+        root = root or model_np
+        patterns = ['**/+PointLight', '**/+Spotlight']
+        if include_directional:
+            patterns.append('**/+DirectionalLight')
+        activated = []
+        for pat in patterns:
+            for light_np in model_np.find_all_matches(pat):
+                if any(light_np == e[0] for e in self._model_lights):
+                    continue
+                node = light_np.node()
+                orig = p3d.LColor(node.get_color())
+                if scale != 1.0:
+                    node.set_color(p3d.LColor(orig[0] * scale,
+                                              orig[1] * scale,
+                                              orig[2] * scale, orig[3]))
+                root.set_light(light_np)
+                self._model_lights.append((light_np, orig, root))
+                activated.append(light_np)
+        if self._debug and len(activated) > self.max_lights:
+            print(f'[Pax3DRender] activate_model_lights: {len(activated)} '
+                  f'lights on one root exceeds max_lights='
+                  f'{self.max_lights} — the shader will drop the excess')
+        return activated
+
+    def deactivate_model_lights(self, model_np):
+        """Undo activate_model_lights() for every light under `model_np`:
+        clear_light + restore the pre-scale colors. Byte-identical
+        restore (paxtest test_local_lights)."""
+        kept = []
+        for entry in self._model_lights:
+            light_np, orig, root = entry
+            if (not light_np.is_empty()
+                    and (model_np.is_ancestor_of(light_np)
+                         or light_np == model_np)):
+                if not root.is_empty():
+                    root.clear_light(light_np)
+                light_np.node().set_color(orig)
+            else:
+                kept.append(entry)
+        self._model_lights = kept
 
     # ------------------------------------------------------------------
     # Per-node ambient scale (hull interiors)

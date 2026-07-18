@@ -405,7 +405,7 @@ Three cost classes — keep new parameters within this taxonomy:
 
 | Class | Cost | Parameters / methods |
 |---|---|---|
-| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_env_map`/`clear_env_map` (§9 R5.3), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input) |
+| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_env_map`/`clear_env_map` (§9 R5.3), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input), `activate_model_lights`/`deactivate_model_lights` (§9 Session P; scene-graph state only) |
 | Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere`, `set_double_sided_lighting` (§9 Session K) |
 | FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, (`bloom_levels`, `msaa_samples` at init) |
 
@@ -731,6 +731,32 @@ cube sampling is GL-standard; evidence toward the Session J
 sh_from_cubemap orientation question, sampling side), glass
 composition (env term unattenuated through alpha 0.15), recompile
 survival and opt-out both rms 0.
+
+### Session P — Model-authored lights: `activate_model_lights(np)` (LANDED)
+
+The classic simplepbr annoyance closed: Blender lights export via
+KHR_lights_punctual and panda3d-gltf converts them into REAL
+PointLight/Spotlight nodes — which illuminate nothing, because a light
+node is inert until something calls `set_light()` with it.
+`activate_model_lights(model_np, root=None, scale=1.0,
+include_directional=False)` finds and activates every point/spot light
+under a loaded model on `root` (default: the model — a ship's lights
+light the ship); `deactivate_model_lights(model_np)` restores colors
+and scopes byte-identically.
+
+Units: panda3d-gltf converts Blender intensity through physical units
+(`color * I * 4π/683`, attenuation `(1,0,1)` inverse-square) — bright
+in our unitless linear-HDR scene; `scale` ~0.05–0.3 is the tuning
+knob. DirectionalLights are excluded by default (the pipeline owns the
+sun — a stray Blender sun lamp would double-light directional mode).
+glTF `range` is not consumed (quadratic falloff only). Keep per-root
+counts within `max_lights`.
+
+Measured record: `test_local_lights` checks 7–9 — a synthesized
+KHR_lights_punctual asset loads inert (rms 0 vs no-asset), activates
+to the exact analytic through the converter's unit chain
+(lum 0.219 vs 0.220), the authored directional stays excluded, and
+deactivation restores the inert capture at rms 0.
 
 ---
 

@@ -26,6 +26,15 @@ Checks:
   5. The ship-interior recipe: hemisphere sky ambient + ambient scale
      0.1 + the lamp — lamp term at FULL strength, ambient damped to
      0.1 (direct light is not indirect; measured composition).
+  6. Blender/glTF-authored lights (Session P): a synthesized
+     KHR_lights_punctual asset loads as REAL light nodes but is INERT
+     (the classic simplepbr annoyance, measured), then
+     activate_model_lights() lights the scene to the exact analytic —
+     including panda3d-gltf's unit conversion (color * I*4pi/683,
+     attenuation (1,0,1)) — with the authored DirectionalLight
+     EXCLUDED (the pipeline owns the sun), and
+     deactivate_model_lights() restores the inert capture
+     byte-identically.
 
 Runs in both sun modes (run.py adds @directional): the loop must
 behave with the sun occupying light slot 0 (directional mode) and
@@ -226,6 +235,90 @@ def main():
     else:
         h.report.info('interior_recipe_composes',
                       'pipeline lacks ambient_scale/hemisphere APIs')
+
+    # --- 6. Blender/glTF-authored lights (KHR_lights_punctual) ----------
+    if hasattr(pipeline, 'activate_model_lights'):
+        card.clear_light(lamp_np)
+        lamp_np.remove_node()
+        h.step(2)
+        img_inert = h.capture()
+
+        # Synthesized asset: a point lamp at Panda (0,-4,0) (glTF Y-up
+        # translation [0,0,4]) + a directional that must stay excluded.
+        # Intensity chosen so the converted color is exactly S:
+        # panda3d-gltf: color * I / 683 * 4pi, attenuation (1, 0, 1).
+        intensity = S * 683.0 / (4.0 * math.pi)
+        gltf_json = {
+            'asset': {'version': '2.0'},
+            'extensionsUsed': ['KHR_lights_punctual'],
+            'extensions': {'KHR_lights_punctual': {'lights': [
+                {'type': 'point', 'color': [1, 1, 1],
+                 'intensity': intensity, 'name': 'ship_lamp'},
+                {'type': 'directional', 'color': [1, 1, 1],
+                 'intensity': 3.0, 'name': 'blender_sun'},
+            ]}},
+            'scene': 0,
+            'scenes': [{'nodes': [0, 1]}],
+            'nodes': [
+                {'name': 'lamp', 'translation': [0, 0, 4],
+                 'extensions': {'KHR_lights_punctual': {'light': 0}}},
+                {'name': 'sun',
+                 'extensions': {'KHR_lights_punctual': {'light': 1}}},
+            ],
+        }
+        import json as _json
+        gltf_path = os.path.join(common.OUTPUT_DIR, 'paxtest_lights.gltf')
+        os.makedirs(common.OUTPUT_DIR, exist_ok=True)
+        with open(gltf_path, 'w', encoding='utf8') as f:
+            _json.dump(gltf_json, f)
+        try:
+            ship = base.loader.load_model(
+                p3d.Filename.from_os_specific(gltf_path).get_fullpath(),
+                noCache=True)
+        except IOError:
+            ship = None
+        if ship is None:
+            h.report.info('gltf_lights', 'panda3d-gltf not available — '
+                          'authored-light checks skipped')
+        else:
+            ship.reparent_to(base.render)
+            n_lights = len(ship.find_all_matches('**/+PointLight')) + len(
+                ship.find_all_matches('**/+DirectionalLight'))
+            h.step(3)
+            img_loaded = h.capture()
+            rms = common.image_rms_diff(img_inert, img_loaded, step=1)
+            h.report.check('gltf_lights_inert',
+                           n_lights == 2 and rms == 0.0,
+                           f'{n_lights} authored lights loaded, scene '
+                           f'unchanged (rms={rms:.2e}) — light nodes are '
+                           f'INERT until activated')
+
+            active = pipeline.activate_model_lights(ship, root=card)
+            only_point = (len(active) == 1 and isinstance(
+                active[0].node(), p3d.PointLight))
+            h.step(5)
+            img_active = h.capture()
+            h.save_capture(img_active, f'{tag}_gltf_activated')
+            lum = common.avg_lum(img_active, cx, cy)
+            att = 1.0 / (1.0 + DIST * DIST)      # converter atten (1,0,1)
+            want = curve(att * S * brdf_terms() + AMB)
+            h.report.check('activate_model_lights_analytic',
+                           only_point and abs(lum - want) < 0.04,
+                           f'activated {len(active)} light(s) (directional '
+                           f'excluded): lum={lum:.3f}, analytic {want:.3f} '
+                           f'(I*4pi/683 units, quadratic att x{att:.4f})')
+
+            pipeline.deactivate_model_lights(ship)
+            h.step(5)
+            img_off = h.capture()
+            rms = common.image_rms_diff(img_inert, img_off, step=1)
+            h.report.check('deactivate_restores', rms == 0.0,
+                           f'deactivate_model_lights(): rms vs inert '
+                           f'baseline = {rms:.2e} (colors + scopes '
+                           f'restored)')
+    else:
+        h.report.info('gltf_lights',
+                      'pipeline has no activate_model_lights (Session P)')
 
     h.report.finish()
 
