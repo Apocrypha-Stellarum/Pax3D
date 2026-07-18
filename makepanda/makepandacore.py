@@ -816,6 +816,9 @@ def CxxGetIncludes(path):
     CXXINCLUDECACHE[path] = [date, include]
     return include
 
+DCACHE_VERSION = 3
+DCACHE_BACKED_UP = False
+
 def SaveDependencyCache():
     global DCACHE_BACKED_UP
     if not DCACHE_BACKED_UP:
