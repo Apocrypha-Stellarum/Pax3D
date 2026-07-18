@@ -765,3 +765,46 @@ Operational note: background tool tasks get killed at ~10 min — long
 builds/gates run detached via Start-Process with a re-armed watcher;
 stale wheel copies in the repo root are a trap for the archive step
 (delete or compare before Move-Item).
+
+**Session U (2026-07-19): the terrain lane opens — three ERs answered,
+ER-003 data-texture contract IMPLEMENTED + GATED same-session.** The
+game repo's ENGINE_REQUESTS folder (ER-001 splatting, ER-002 scatter,
+ER-003 Unity terrain-asset standard) was read, positions formed by
+source measurement, interfaces pinned in a chat with the terrain dev
+(no redirects), and all three stamped IN DISCUSSION with engine notes.
+Discoveries that shaped the answers: (1) **ER-002's answer is hardware
+instancing with zero new C++** — the 1.11 tree already ships upstream
+`InstancedNode`/`InstanceList` + GSG instanced draws with a
+per-instance `p3d_InstanceMatrix` mat4x3 vertex attrib
+(glShaderContext_src.cxx:538); pipeline needs only an INSTANCING
+define in pax_pbr.vert AND shadow.vert plus a set_glass-pattern
+`set_instanced()`. InstanceList has NO bulk-fill (per-instance appends
++ reserve; get_array_data caches the GPU array in C++) — bulk fill
+queued as a C++ candidate on profile evidence only. (2) **ER-003's
+"never compressed" clause was one config flag from false**: global
+`compressed-textures 1` drives CM_default textures into RGTC1/BC4
+(F_r16/F_r32) and DXT1 (F_luminance) — per-texture CM_off is the only
+immunity. (3) **the `texture-scale` prc rescales INSIDE
+Texture.read()** (gated only by exclude-texture-scale name globs; ATS
+does NOT exempt it; no post-hoc stamp can undo it) — but the
+tex.load(PNMImage/PfmFile) route never applies it. (4) **Panda's TIFF
+writer hard-crashes on 16-bit output** (native, no traceback, BOTH
+engines — upstream behavior; reads are fine; intake must write PNG16).
+Landed: `pax3d_render.data_texture(tex)` (post-hoc contract stamp:
+CM_off + ATS_none + sRGB unflag + single-channel ushort/float
+normalized to F_r16/F_r32; multi-channel formats untouched so RGBA8
+splat weights ride clauses 1–3 only) and `load_data_texture(path)`
+(PNMImage/PfmFile + tex.load route — texture-scale-immune,
+VFS/multifile-capable). Gate: test_data_texture, 13 checks, run with
+`compressed-textures 1` LIVE — 16-bit PNG + hand-rolled 16-bit TIFF
+load at native precision; the anti-terracing probe renders a 1022-code
+gradient at 161 distinct levels vs 9 for the 8-bit negative control
+(probe proven able to fail); GPU round-trips byte-identical for R16
+(file) and R32F (procedural set_ram_image) while an unstamped RGB8
+canary comes back DXT1 (threat proven live); set_srgb_inputs leaves
+stamped data alone on an M_modulate stage; texture-scale trap measured
+real (512→128) with load_data_texture immune (512, byte-identical).
+Identical results both engines × both baselines. ER-003 →
+IMPLEMENTED ENGINE-SIDE; next: ER-001 TERRAIN_SPLAT variant (texture
+arrays, splat-driven, v2 define seam), then ER-002 instancing
+prototype + test_instancing.

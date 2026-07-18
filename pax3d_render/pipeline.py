@@ -189,6 +189,100 @@ def sh_from_cubemap(tex, band_factors=(math.pi, 2.0 * math.pi / 3.0,
              coeffs[i][2] * slot_factor[i]) for i in range(9)]
 
 
+def data_texture(tex):
+    """Stamp the ER-003 data-texture contract onto a Texture (idempotent).
+
+    For heightfields, stamps, masks, and splat/weight maps — any texture
+    whose texels are DATA, not color. Works on any Texture regardless of
+    origin (loader/VFS/multifile or procedural set_ram_image), from any
+    thread, before or after first use:
+
+      1. Compression pinned CM_off. A texture left at CM_default is
+         driver-compressed whenever the global `compressed-textures` prc
+         is set: F_r16/F_r32 fall to RGTC1/BC4 and F_luminance to DXT1
+         (glgsg get_internal_image_format) — the 2025 terracing class.
+         CM_off is the only per-texture immunity.
+      2. Auto-texture-scale pinned ATS_none (no power-2 resampling under
+         any textures-power-2 policy). NOTE: this does NOT guard the
+         `texture-scale` prc — that rescale happens inside Texture.read()
+         itself, before any stamp can exist. File loads should use
+         load_data_texture(), whose PNMImage/PfmFile route never applies
+         it (measured; gated by test_data_texture).
+      3. sRGB transfer formats unflagged — data is linear by definition.
+      4. Single-channel >=16-bit formats normalized to F_r16/F_r32 so the
+         GL internal format is the sized single-channel one (1-channel
+         images load as F_luminance by default); shader consumers read
+         `.r`. Multi-channel textures keep their format: RGBA8 splat
+         weights ride clauses 1-3 only, by design.
+
+    Returns the texture (for chaining). Guarded by paxtest
+    test_data_texture.
+    """
+    changed = False
+    if tex.get_compression() != p3d.Texture.CM_off:
+        tex.set_compression(p3d.Texture.CM_off)
+        changed = True
+    if tex.get_auto_texture_scale() != p3d.ATS_none:
+        tex.set_auto_texture_scale(p3d.ATS_none)
+        changed = True
+    fmt = tex.get_format()
+    new_fmt = None
+    if fmt == p3d.Texture.F_srgb:
+        new_fmt = p3d.Texture.F_rgb8
+    elif fmt == p3d.Texture.F_srgb_alpha:
+        new_fmt = p3d.Texture.F_rgba8
+    elif tex.get_num_components() == 1:
+        ctype = tex.get_component_type()
+        if ctype == p3d.Texture.T_unsigned_short:
+            new_fmt = p3d.Texture.F_r16
+        elif ctype == p3d.Texture.T_float:
+            new_fmt = p3d.Texture.F_r32
+    if new_fmt is not None and new_fmt != fmt:
+        tex.set_format(new_fmt)
+        changed = True
+    if changed:
+        # An already-prepared texture keeps its old internal format until
+        # re-uploaded (same trap as set_srgb_inputs) — release so the
+        # contract reaches the GPU even when stamping after first use.
+        tex.release_all()
+    return tex
+
+
+def load_data_texture(path, name=None):
+    """Load a data texture from disk/VFS with the ER-003 contract enforced
+    end to end, and return it stamped (see data_texture()).
+
+    Use this instead of Texture.read()/loader.loadTexture() for
+    heightfields, stamps, and masks: Texture.read() applies the
+    `texture-scale` prc rescale DURING the read (gated only by
+    exclude-texture-scale name globs — a stamp afterwards cannot undo
+    it), while this route decodes via PNMImage/PfmFile and tex.load(),
+    which never rescales (measured; gated by test_data_texture).
+
+    Wire formats: anything PNMImage reads (16-bit PNG/TIFF stay
+    T_unsigned_short) plus float EXR/PFM via PfmFile (T_float). R16 RAW
+    has no header and is an intake-tool concern, not a loader one.
+    Reads through the VFS, so multifile-packed assets work. Raises
+    ValueError if the file cannot be read.
+    """
+    if isinstance(path, p3d.Filename):
+        fn = path
+    else:
+        fn = p3d.Filename.from_os_specific(str(path))
+    tex = p3d.Texture(name or fn.get_basename())
+    if fn.get_extension().lower() in ('exr', 'pfm'):
+        pfm = p3d.PfmFile()
+        if not pfm.read(fn):
+            raise ValueError(f'load_data_texture: cannot read {fn}')
+        tex.load(pfm)
+    else:
+        img = p3d.PNMImage()
+        if not img.read(fn):
+            raise ValueError(f'load_data_texture: cannot read {fn}')
+        tex.load(img)
+    return data_texture(tex)
+
+
 class _SceneCameraRegistration:
     """Internal record of an auxiliary camera attached to the scene buffer."""
 

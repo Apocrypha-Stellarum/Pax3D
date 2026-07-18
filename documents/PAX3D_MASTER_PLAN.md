@@ -297,6 +297,53 @@ only, game side: `use_normal_maps=True`, `use_occlusion_maps=True` for
 this asset class; multi-layer glass stays separate geoms (per-geom
 transparent-bin sorting).
 
+### 4.9 Terrain lane — the Unity terrain-asset standard (ER-001/002/003, Session U+)
+
+The game's eye-level terrain push, driven from
+`C:\python\sfb2\documents\ENGINE_REQUESTS\` (one file per ask, statuses
+maintained in place — engine notes written into each ER, 2026-07-19).
+User direction: the Unity terrain-asset standard is the terrain data
+interchange (120 owned Gaia/PW stamps + ~35 PBR layer sets + scatter
+palettes become drop-in). Sequencing agreed with the terrain dev:
+**003 → 001 → 002-interleaved**, all Python/GLSL, no build window.
+
+1. **ER-003 — data-texture contract. IMPLEMENTED ENGINE-SIDE +
+   GATED (Session U).** `pax3d_render.data_texture(tex)`: post-hoc,
+   idempotent contract stamp (CM_off, ATS_none, sRGB unflag,
+   single-channel ushort/float → F_r16/F_r32; multi-channel untouched —
+   RGBA8 splat weights deliberately ride only the compression/sRGB
+   clauses). `load_data_texture(path)`: PNMImage/PfmFile + `tex.load()`
+   file route — immune to the `texture-scale` prc, which rescales INSIDE
+   `Texture.read()` (name-glob-gated only; ATS does not exempt; measured).
+   test_data_texture (13 checks) runs with `compressed-textures 1` LIVE:
+   anti-terracing probe (1022-code gradient → 161 distinct levels vs 9 for
+   the 8-bit negative control), byte-exact GPU round-trips (R16 file +
+   R32F procedural) beside a DXT1-compressed canary, sRGB-walk
+   non-interference, and the texture-scale trap + immunity pair.
+   Identical both engines × both baselines. Upstream fact for intake
+   tooling: Panda's 16-bit TIFF WRITER hard-crashes (native, both
+   engines); reads are fine — intake writes PNG16.
+2. **ER-001 — terrain splatting. NEXT.** A `TERRAIN_SPLAT` per-subtree
+   variant of pax_pbr (set_glass mechanism → sun/shadows/haze/IBL compose
+   free). Pinned with the game side: splat-map-driven (option (a)
+   skipped), 4 layers via three 2D texture arrays (albedo sRGB +
+   normal/ORM linear, 4×2048² slices, intake-built, compression-eligible
+   — color textures are deliberately outside the ER-003 no-compression
+   clause), per-layer uv_scale uniforms, macro-variation sampler slot,
+   detail-normal distance fade, and an isolated layer-weight GLSL
+   function as the v2 define seam (hex-tiling, height-blend sharpening).
+3. **ER-002 — scatter. Hardware instancing; the C++ already exists.**
+   `InstancedNode`/`InstanceList` + `p3d_InstanceMatrix` (mat4x3
+   per-instance attrib) shipped with the 1.11 base and have never been
+   exercised here. Pipeline work: INSTANCING define in pax_pbr.vert AND
+   shadow.vert (depth pass follows, skinning discipline) +
+   `set_instanced()`; gate `test_instancing` (instanced vs N-copy
+   byte-compare + shadow pass). v1 = transform-only instances; shadows
+   via existing caster tiering; NO flatten fallback (agreed) — C++ gaps
+   block on a build window instead. InstanceList has no bulk fill
+   (append+reserve; the GPU array is C++-cached) — bulk fill is queued
+   on profile evidence only (CLAUDE.md queue).
+
 ---
 
 ## 5. Risks

@@ -23,7 +23,8 @@ Recommended PRC (before ShowBase) — GLSL 330 core:
 """
 import panda3d.core as p3d
 
-from .pipeline import Pipeline, sh_from_cubemap
+from .pipeline import (Pipeline, sh_from_cubemap, data_texture,
+                       load_data_texture)
 
 # Drop-in alias matching simplepbr's / pax_pbr's API
 init = Pipeline
@@ -31,7 +32,8 @@ init = Pipeline
 __version__ = '0.1.0'
 
 __all__ = ['init', 'Pipeline', 'configure_prc',
-           'make_base_color_textures_srgb', 'sh_from_cubemap']
+           'make_base_color_textures_srgb', 'sh_from_cubemap',
+           'data_texture', 'load_data_texture']
 
 
 def configure_prc():
