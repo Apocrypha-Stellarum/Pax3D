@@ -297,7 +297,11 @@ def main():
     if os.path.exists(glb):
         from direct.actor.Actor import Actor
         actor = Actor(p3d.Filename.from_os_specific(glb).get_fullpath())
-        anims = actor.get_anim_names()
+        # Deterministic pose (fact #12): get_anim_names() ordering varies
+        # run-to-run — the unsorted pick here made this check flake
+        # (height 1.82 pose lum 0.239 vs height 1.84 pose lum 0.415,
+        # threshold 0.373). Sort, like test_shadows.py has since G.
+        anims = sorted(actor.get_anim_names())
         if anims:
             actor.pose(anims[0], 10)   # frozen pose: comparable captures
         actor.reparent_to(base.render)
