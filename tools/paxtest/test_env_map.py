@@ -34,7 +34,19 @@ Checks:
      shader-sampling side).
   7. Glass composition: on a set_glass node the reflection term rides
      at FULL strength through alpha 0.15 (the canopy case).
-  8. clear_env_map() restores the baseline byte-identically.
+  8-11. The GGX prefilter tool (Session Q / R5.4, tools/
+     gen_env_prefilter.py, run here as a real subprocess — requires pip
+     simplepbr, else reported as INFO and skipped):
+       8. face-colored input -> .txo: complete mip chain, mip 0 an exact
+          identity (roughness 0 preserves the env);
+       9. uniform input -> every level stays exactly that color (GGX
+          weight normalization = energy preservation);
+      10. the ladder actually blurs: face-center color walks
+          monotonically from its own face color toward the blend;
+      11. the .txo drives the SHADER: mirror card reflects mip 0, a
+          roughness-1 card reads the top of the tool's ladder
+          (disk -> GPU -> textureCubeLod, end to end).
+  12. clear_env_map() restores the baseline byte-identically.
 
 Only meaningful for pipelines exposing set_env_map (pax3d_render and
 the routed pax_pbr adapter).
@@ -259,7 +271,125 @@ def main():
               want_g, extra=f' (alpha {ALPHA}: env term NOT scaled)')
     pipeline.set_glass(card, False)
 
-    # --- 8. clear_env_map restores the baseline exactly -----------------
+    # --- 8-11. The GGX prefilter tool (gen_env_prefilter.py) ------------
+    try:
+        import simplepbr  # noqa: F401
+        have_simplepbr = True
+    except ImportError:
+        have_simplepbr = False
+        h.report.info('prefilter_tool',
+                      'pip simplepbr unavailable in this env - tool checks '
+                      'not run (dev-time dependency)')
+    if have_simplepbr:
+        import subprocess
+        tool = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), 'gen_env_prefilter.py')
+        out_dir = common.OUTPUT_DIR
+        pf_dir = p3d.Filename.from_os_specific(out_dir).get_fullpath()
+        psize = 16
+        levels = int(math.log2(psize)) + 1
+        for face, rgb in enumerate(FACE_COLORS):
+            img = p3d.PNMImage(psize, psize, 3, 65535)
+            img.fill(*rgb)
+            img.write(p3d.Filename(f'{pf_dir}/pfface_{face}.png'))
+        txo = os.path.join(out_dir, 'pf_faces.txo')
+        r = subprocess.run(
+            [sys.executable, tool, os.path.join(out_dir, 'pfface_#.png'),
+             txo, '--size', str(psize), '--samples', '16'],
+            capture_output=True, text=True, timeout=300)
+        pf_tex = p3d.TexturePool.load_texture(
+            p3d.Filename.from_os_specific(txo)) if r.returncode == 0 else None
+
+        # 8. Complete chain; mip 0 is the identity.
+        img = p3d.PNMImage()
+        ok = (pf_tex is not None
+              and pf_tex.get_num_ram_mipmap_images() == levels)
+        worst = 1.0
+        if ok:
+            worst = 0.0
+            for face, rgb in enumerate(FACE_COLORS):
+                pf_tex.store(img, face, 0)
+                got = img.get_xel(psize // 2, psize // 2)
+                worst = max(worst,
+                            max(abs(got[i] - rgb[i]) for i in range(3)))
+            ok = worst < 0.01
+        h.report.check(
+            'prefilter_chain_identity', ok,
+            f'tool .txo: {levels}-level chain, mip 0 face centers exact '
+            f'(worst err {worst:.4f})'
+            + ('' if r.returncode == 0 else
+               f' — TOOL FAILED: {r.stderr.strip()[-200:]}'))
+
+        # 9. Uniform input -> uniform at every level (energy preserved).
+        for face in range(6):
+            img = p3d.PNMImage(psize, psize, 3, 65535)
+            img.fill(*C_ENV)
+            img.write(p3d.Filename(f'{pf_dir}/pfuni_{face}.png'))
+        txo_u = os.path.join(out_dir, 'pf_uniform.txo')
+        r2 = subprocess.run(
+            [sys.executable, tool, os.path.join(out_dir, 'pfuni_#.png'),
+             txo_u, '--size', str(psize), '--samples', '16'],
+            capture_output=True, text=True, timeout=300)
+        worst_u = 1.0
+        if r2.returncode == 0:
+            uni = p3d.TexturePool.load_texture(
+                p3d.Filename.from_os_specific(txo_u))
+            worst_u = 0.0
+            for mip in range(levels):
+                for face in range(6):
+                    uni.store(img, face, mip)
+                    got = img.get_xel(img.get_x_size() // 2,
+                                      img.get_y_size() // 2)
+                    worst_u = max(worst_u, max(
+                        abs(got[i] - C_ENV[i]) for i in range(3)))
+        h.report.check('prefilter_uniform_energy', worst_u < 0.005,
+                       f'uniform env: every mip level of every face stays '
+                       f'({C_ENV[0]},{C_ENV[1]},{C_ENV[2]}) - worst err '
+                       f'{worst_u:.4f} (GGX weights normalize)')
+
+        # 10. The ladder blurs monotonically (+X face, red channel).
+        reds = []
+        if pf_tex is not None:
+            for mip in range(levels):
+                pf_tex.store(img, 0, mip)
+                reds.append(img.get_xel(img.get_x_size() // 2,
+                                        img.get_y_size() // 2)[0])
+        mono = (len(reds) == levels
+                and all(reds[i + 1] <= reds[i] + 0.005
+                        for i in range(levels - 1))
+                and reds[0] - reds[-1] > 0.05)
+        h.report.check(
+            'prefilter_monotonic_blur', mono,
+            '+X face-center red across the ladder: ['
+            + ', '.join(f'{v:.3f}' for v in reds)
+            + '] - monotone toward the blend')
+
+        # 11. The .txo drives the shader end to end.
+        pipeline.set_env_map(pf_tex)     # default max_lod == full chain
+        apply_surface(card, 0.0, 1.0)
+        a, b = lut_ab(lut, 1.0, 0.0)
+        h.step(5)
+        img_pf = h.capture()
+        h.save_capture(img_pf, 'prefiltered_mirror')
+        want_m = tuple(curve(c * (a + b) + AMB) for c in FACE_COLORS[3])
+        got_m = avg_rgb(img_pf, cx, cy)
+        err_m = max(abs(g - w) for g, w in zip(got_m, want_m))
+        apply_surface(card, 1.0, 1.0)
+        a, b = lut_ab(lut, 1.0, 1.0)
+        pf_tex.store(img, 3, levels - 1)     # tool's own top-mip -Y texel
+        top = img.get_xel(0, 0)
+        h.step(5)
+        got_r = avg_rgb(h.capture(), cx, cy)
+        want_r = tuple(curve(top[i] * (a + b) + AMB) for i in range(3))
+        err_r = max(abs(g - w) for g, w in zip(got_r, want_r))
+        h.report.check(
+            'prefilter_drives_shader', err_m < 0.05 and err_r < 0.06,
+            f'mirror reflects tool mip 0 (-Y magenta, err {err_m:.3f}); '
+            f'roughness 1 reads the tool top mip '
+            f'({top[0]:.3f},{top[1]:.3f},{top[2]:.3f}) through '
+            f'textureCubeLod (err {err_r:.3f})')
+
+    # --- 12. clear_env_map restores the baseline exactly ----------------
     apply_surface(card, rough_tc, 1.0)
     pipeline.clear_env_map()
     h.step(5)
