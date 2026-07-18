@@ -244,3 +244,34 @@ Rules of thumb:
 
 Eyeball rig: `test3d_pax.py --pax3d --orbital` (O toggles, Shift+O
 cycles the earth/mars presets).
+
+## 7. Skybox -> environment lighting, the worked example (Session R)
+
+The whole chain is two dev-time commands now — do not hand-derive any
+of it:
+
+```
+python tools/gen_equirect_cubemap.py 006_Sunset.hdr sky_cube.txo   # 5 s
+python tools/gen_env_prefilter.py sky_cube.txo sky_ibl.txo         # 2 s
+```
+
+then at runtime:
+
+```python
+tex = loader.load_texture('sky_ibl.txo')
+pipeline.set_env_map(tex)                        # specular reflections
+pipeline.set_ambient_sh(sh_from_cubemap(tex))    # matching diffuse fill
+```
+
+The shipped sample (`tools/samples/sky006_sunset_ibl.txo`, 393 KB, baked
+from the openworld village dusk sky) is the A/B reference — in the
+testbed (`test3d_pax.py --pax3d`, M key) shadowed hulls go from black to
+warm sunset fill and every metallic surface picks up the sky.
+
+Orientation is PINNED end to end (equirect converter selftest + the
+Session Q face table: face 0 = +x east; a file-loaded up-face image's
+top row is the SOUTHERN sky). If lighting seems to come from the wrong
+compass direction, the answer is content rotation, not the face table —
+e.g. 006_Sunset's baked sun sits SOUTH at the openworld dome rotation,
+not west where the scene dusk sun is; check the panorama's sun azimuth
+before tuning SH ambient against it.
