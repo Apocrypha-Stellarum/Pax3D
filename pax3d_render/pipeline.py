@@ -240,6 +240,7 @@ class Pipeline:
                  enable_ssao=False, ao_radius=1.0, ao_intensity=1.0,
                  ao_bias=0.02, ao_samples=12,
                  max_skinning_bones=100,
+                 enable_lens_flare=False, flare_strength=1.0,
                  **_kwargs):
         base = builtins.base
 
@@ -342,6 +343,19 @@ class Pipeline:
         self.ao_samples = max(4, min(64, int(ao_samples)))
         self._ssao_quad = None
         self._ssao_blur_quad = None
+
+        # Lens flare (Session S — the R5 lens-polish finale). Opt-in;
+        # sources ghosts from the bloom bright extract, so it REQUIRES
+        # enable_bloom (inert with a one-time warning otherwise) and
+        # occlusion is implicit: a hidden sun contributes no extract
+        # energy, no flare. flare_strength=0 adds exactly 0 (exact
+        # no-op); set_lens_dirt() overlays screen-space dirt.
+        self.enable_lens_flare = bool(enable_lens_flare)
+        self.flare_strength = float(flare_strength)
+        self._flare_quad = None
+        self._lens_dirt_tex = None
+        self._lens_dirt_strength = 1.0
+        self._flare_warned = False
 
         # Planetside package (Session J / R5.1-R5.3) — ALL opt-in; with the
         # defaults every one of these is byte-identical to the previous
@@ -807,11 +821,19 @@ class Pipeline:
         if postquad is None:
             raise RuntimeError('[Pax3DRender] Failed to setup FilterManager')
 
+        flare_active = self.enable_lens_flare and self.enable_bloom
+        if self.enable_lens_flare and not self.enable_bloom \
+                and not self._flare_warned:
+            print('[Pax3DRender] enable_lens_flare needs enable_bloom '
+                  '(ghosts source from the bright extract) — flare inert')
+            self._flare_warned = True
+
         defines = {
             'USE_330': self._use_330,
             'IS_WEBGL': self._is_webgl,
             'ENABLE_BLOOM': self.enable_bloom,
             'ENABLE_SSAO': self.enable_ssao,
+            'ENABLE_LENS_FLARE': flare_active,
         }
 
         ao_result_tex = None
@@ -862,6 +884,8 @@ class Pipeline:
             ao_result_tex = ao_tex
 
         bloom_result_tex = None
+        flare_result_tex = None
+        self._flare_quad = None
 
         if self.enable_bloom:
             win_x = self.window.get_x_size()
@@ -961,6 +985,26 @@ class Pipeline:
 
             bloom_result_tex = up_tex
 
+            # 4b. Lens flare (Session S): ghosts from a blurred down
+            # level of the bright extract. Float fbprops — this carries
+            # HDR data (fact #3 discipline), unlike the 8-bit AO pass.
+            if flare_active:
+                src_idx = min(2, len(down_textures) - 1)
+                flare_tex_t = p3d.Texture('lens_flare')
+                flare_tex_t.set_format(p3d.Texture.F_rgba16)
+                flare_tex_t.set_component_type(p3d.Texture.T_float)
+                _set_bloom_filtering(flare_tex_t)
+                flare_quad = self._filtermgr.render_quad_into(
+                    colortex=flare_tex_t, div=2, fbprops=bloom_fbprops)
+                flare_quad.set_shader(shaderutils.make_shader(
+                    'lens_flare', 'post.vert', 'lens_flare.frag',
+                    bloom_defines))
+                flare_quad.set_shader_input('src_tex',
+                                            down_textures[src_idx])
+                self._apply_lens_dirt_inputs(flare_quad)
+                self._flare_quad = flare_quad
+                flare_result_tex = flare_tex_t
+
         # 5. Final tonemap + composite pass
         tonemap_shader = shaderutils.make_shader(
             'tonemap', 'post.vert', 'tonemap.frag', defines
@@ -994,6 +1038,10 @@ class Pipeline:
                                               self.bloom_intensity)
             if ao_result_tex is not None:
                 tonemap_quad.set_shader_input('ao_tex', ao_result_tex)
+            if flare_result_tex is not None:
+                tonemap_quad.set_shader_input('flare_tex', flare_result_tex)
+                tonemap_quad.set_shader_input('u_flare_strength',
+                                              self.flare_strength)
             self._apply_warp_distortion_inputs(tonemap_quad)
             self._tonemap_quad = tonemap_quad
 
@@ -1064,6 +1112,10 @@ class Pipeline:
                                           self.bloom_intensity)
             if ao_result_tex is not None:
                 postquad.set_shader_input('ao_tex', ao_result_tex)
+            if flare_result_tex is not None:
+                postquad.set_shader_input('flare_tex', flare_result_tex)
+                postquad.set_shader_input('u_flare_strength',
+                                          self.flare_strength)
             self._apply_warp_distortion_inputs(postquad)
 
         self._post_process_quad = postquad
@@ -1089,6 +1141,47 @@ class Pipeline:
         lens = self.camera_node.node().get_lens()
         lens.set_film_offset(0, 0)
         self._setup_tonemapping()
+
+    def _apply_lens_dirt_inputs(self, quad):
+        """Bind the current dirt texture + strength to the flare quad.
+        A 1x1 white fallback always binds (strict-uniform rule); with no
+        dirt set the strength is 0.0, making mix() an exact identity."""
+        tex = self._lens_dirt_tex
+        strength = self._lens_dirt_strength if tex is not None else 0.0
+        if tex is None:
+            tex = p3d.Texture('lens_dirt_white')
+            tex.setup_2d_texture(1, 1, p3d.Texture.T_unsigned_byte,
+                                 p3d.Texture.F_rgb8)
+            tex.set_clear_color(p3d.LColor(1, 1, 1, 1))
+        quad.set_shader_input('u_dirt_tex', tex)
+        quad.set_shader_input('u_dirt_strength', float(strength))
+
+    def set_enable_lens_flare(self, enabled):
+        """Toggle the lens flare (rebuild-class). Needs enable_bloom —
+        inert (with a one-time warning) otherwise."""
+        enabled = bool(enabled)
+        if enabled == self.enable_lens_flare:
+            return
+        self.enable_lens_flare = enabled
+        self._rebuild_tonemapping()
+
+    def set_flare_strength(self, value):
+        """Flare composite strength (uniform-only). 0.0 adds exactly
+        zero — an exact no-op."""
+        self.flare_strength = float(value)
+        if self._flare_quad is not None:
+            target = self._tonemap_quad or self._post_process_quad
+            if target:
+                target.set_shader_input('u_flare_strength',
+                                        self.flare_strength)
+
+    def set_lens_dirt(self, tex, strength=1.0):
+        """Bind a screen-space lens-dirt texture modulating the flare
+        (uniform-only). Pass None to clear (exact clean-lens restore)."""
+        self._lens_dirt_tex = tex
+        self._lens_dirt_strength = float(strength)
+        if self._flare_quad is not None:
+            self._apply_lens_dirt_inputs(self._flare_quad)
 
     def set_max_skinning_bones(self, count):
         """Change the GPU joint-palette ceiling (recompile-class: the

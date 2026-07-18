@@ -13,6 +13,10 @@ uniform sampler2D tex;
 #ifdef ENABLE_SSAO
     uniform sampler2D ao_tex;
 #endif
+#ifdef ENABLE_LENS_FLARE
+    uniform sampler2D flare_tex;
+    uniform float u_flare_strength;
+#endif
 #ifdef USE_SDR_LUT
     uniform sampler3D sdr_lut;
     uniform float sdr_lut_factor;
@@ -117,6 +121,12 @@ void main() {
 #ifdef ENABLE_BLOOM
     vec3 bloom = texture2D(bloom_tex, v_texcoord).rgb;
     color += bloom * bloom_intensity;
+#endif
+
+    // Lens flare (Session S): additive in HDR like bloom. Strength 0.0
+    // adds exactly 0 — an exact no-op knob.
+#ifdef ENABLE_LENS_FLARE
+    color += texture2D(flare_tex, v_texcoord).rgb * u_flare_strength;
 #endif
 
     // Exposure

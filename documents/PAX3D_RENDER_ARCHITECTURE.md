@@ -432,9 +432,9 @@ Three cost classes — keep new parameters within this taxonomy:
 
 | Class | Cost | Parameters / methods |
 |---|---|---|
-| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `set_ao_radius`/`set_ao_intensity`/`set_ao_bias` (§9 Session S), `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_env_map`/`clear_env_map` (§9 R5.3), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input), `set_atmosphere_scale`/`clear_atmosphere_scale` (§9 Session S; per-node inherited input scaling the R5.1 optical depth — hull interiors), `activate_model_lights`/`deactivate_model_lights` (§9 Session P; scene-graph state only) |
+| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `set_ao_radius`/`set_ao_intensity`/`set_ao_bias` (§9 Session S), `set_flare_strength`/`set_lens_dirt` (§9 Session S), `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_env_map`/`clear_env_map` (§9 R5.3), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input), `set_atmosphere_scale`/`clear_atmosphere_scale` (§9 Session S; per-node inherited input scaling the R5.1 optical depth — hull interiors), `activate_model_lights`/`deactivate_model_lights` (§9 Session P; scene-graph state only) |
 | Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere`, `set_double_sided_lighting` (§9 Session K), `set_max_skinning_bones` (§5.8 Session S; also invalidates shadow-caster states) |
-| FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, `set_enable_ssao` (§9 Session S), (`bloom_levels`, `msaa_samples`, `ao_samples` at init) |
+| FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, `set_enable_ssao`, `set_enable_lens_flare` (§9 Session S; needs bloom), (`bloom_levels`, `msaa_samples`, `ao_samples` at init) |
 
 Constructor parameters (all keyword): `render_node, window, camera_node,
 taskmgr, msaa_samples=4, max_lights=8, enable_shadows=False,
@@ -991,6 +991,37 @@ depth resolve works** (the game's default msaa_samples=4 needs no
 special-casing). Rig lesson encoded: the MSAA resolve can shift a
 crease line sub-pixel — crease samples scan ±3 rows for the minimum
 (fact-#12 discipline).
+
+### Session S — Lens flare/dirt: `enable_lens_flare` (LANDED, opt-in — R5 COMPLETE)
+
+The R5 lens-polish finale. Pseudo-flare ghosts sourced from the BLOOM
+BRIGHT EXTRACT (`lens_flare.frag`, a half-res float pass over a
+blurred down level — fact-#3 fbprops discipline): each of four ghosts
+samples the source at a center-scaled UV, so a bright source at uv p
+produces ghosts at the ANALYTIC positions `x_k = 0.5 + (p-0.5)/c_k`,
+`c ∈ (-2.0, -3.5, 1.7, 3.0)` (pinned constants — change only together
+with test_lens_flare). Sourcing from the extract buys two properties
+for free: **occlusion is implicit** (a sun hidden behind a hull
+contributes no extract energy — its flare vanishes with it) and every
+bright emitter (twin suns, engine trails) flares consistently. The
+composite adds in HDR next to bloom; `flare_strength=0` adds exactly
+zero.
+
+**Requires `enable_bloom`** — flare with bloom off is inert with a
+one-time warning (the ghosts have no source without the extract).
+Knobs: `enable_lens_flare` (init) / `set_enable_lens_flare()`
+(rebuild-class); `set_flare_strength(v)` (uniform);
+`set_lens_dirt(tex, strength)` (uniform) — a screen-space dirt texture
+modulating the flare, `None` restores the clean lens exactly (a 1×1
+white always binds under the strict-uniform rule; no-dirt forces
+strength 0 so `mix()` is an exact identity).
+
+Measured record: `test_lens_flare` — all four ghosts appear at the
+predicted pixels (deltas +0.92/+0.81/+0.32/+0.48) with an off-axis
+control at +0.0000; hidden source ⇒ flare-on byte-identical to
+flare-off (occlusion); strength-0, dirt-clear, and opt-out all rms
+0.00e+00; a left-black/right-white dirt kills exactly the left-half
+ghosts. Green both engines × both baselines.
 
 ---
 

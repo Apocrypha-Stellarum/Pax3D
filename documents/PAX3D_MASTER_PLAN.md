@@ -194,8 +194,17 @@ toggleable off for space scenes):
   work). Bruneton LUTs remain the stretch goal if content demands
   multi-scatter. Open: per-planet-type content presets from the game's
   catalog (blackbody sun tint composes via update_sun already).
-- Lens flare/dirt polish on the bloom chain — not started (explicitly
-  held BEHIND scattering per the Session Q handover).
+- ~~Lens flare/dirt polish on the bloom chain~~ — **LANDED opt-in
+  (Session S): R5 IS NOW COMPLETE.** `enable_lens_flare` /
+  `set_enable_lens_flare()` (rebuild-class; requires enable_bloom) —
+  pseudo-flare ghosts sourced from the bloom bright extract at
+  analytic center-scaled positions (occlusion implicit: a hidden sun's
+  flare vanishes with its extract energy), `set_flare_strength`
+  (0 = exact no-op), `set_lens_dirt(tex, strength)` screen-space dirt
+  with exact clean restore. Gated by test_lens_flare (ghost positions
+  analytic ±0.000 control; dark-scene/strength-0/dirt-clear/opt-out
+  all rms 0.0), green both engines × both baselines. Remaining R5
+  work everywhere is CONTENT ADOPTION only.
 
 Gate: aesthetic sign-off per planet type; A/B against the old Fresnel
 shader. Field consumer for the planetside slice: the openworld Mars
