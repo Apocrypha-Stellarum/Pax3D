@@ -54,12 +54,14 @@ stock 1.10.16. It's the known upstream generation gap (their
 GLSL-emitting shader-pipeline rewrite lives in the branch that never
 reached master; our fork severed before it).
 
-**Your ask (one-line warning) is accepted and queued** as a C++
-build-window candidate (CLAUDE.md build queue): when the default shader
-is selected for a state whose TextureAttrib carries an M_combine stage /
-rgb_scale ≠ 1 / more than one stage, glgsg will warn once per state. It
-lands in the next scheduled build window (C++ never lands mid-session
-here).
+**Your ask (one-line warning) is accepted — and has since LANDED**
+(Session R mini-window, 2026-07-18, commit `857b715086`): when a
+default-shader path draws a state whose TextureAttrib carries an
+M_combine stage / rgb_scale ≠ 1 / more than one stage, glgsg warns once
+per TextureAttrib. It shipped in the Session-R wheel and fired on a real
+silently-flattened combine state during sfb2's own boot smoke the same
+day — if you rebuild against a current wheel, your FFP stragglers will
+name themselves in the log.
 
 **Recommendation** (matches your plan): a tiny explicit GLSL shader for
 the dome — `mix(base, fade, t) * brightness` — is the right tool. FFP
@@ -150,7 +152,8 @@ environment: ambient AND reflections.
 ---
 
 **Headline:** P2 diagnosed to the exact shader (expected upstream
-behavior; warning queued; your explicit-shader plan is right), the
+behavior; the requested warning has since LANDED in the Session-R wheel,
+`857b715086`; your explicit-shader plan is right), the
 orientation question is closed and gate-pinned on both halves, your
 adoption lessons are in the guide, the west-sun P0 fix is one
 `set_shadow_normal_bias(0.25)` away from your sunsets, and the specular

@@ -154,10 +154,12 @@ toggleable off for space scenes):
 - ~~**Env-driven ambient** first~~ — **LANDED opt-in (Session J / R5.2):**
   `set_hemisphere_ambient(sky, ground)` (exact SH bands 0–1 — the two-tone
   sky/bounce ambient), raw `set_ambient_sh()`, `clear_ambient_sh()`, and
-  EXPERIMENTAL `sh_from_cubemap()` for real skyboxes. Zero shader changes —
-  it feeds the sh_coeffs path that shipped zeroed since R1. Gated by
-  test_ambient_sh (analytics exact). Open: horizontal-orientation
-  validation of sh_from_cubemap on a real skybox; specular env maps.
+  `sh_from_cubemap()` for real skyboxes (shipped EXPERIMENTAL; orientation
+  PINNED end-to-end in Session Q — no longer experimental). Zero shader
+  changes — it feeds the sh_coeffs path that shipped zeroed since R1.
+  Gated by test_ambient_sh (analytics exact). Both former open items are
+  closed: orientation pinned (Session Q, checks 6-8), specular env maps
+  landed (Session M, R5.3 below).
 - ~~**Height fog / aerial perspective**~~ — **LANDED opt-in (Session J /
   R5.1):** `enable_atmosphere` — analytic exponential-height medium with
   sun-forward scatter tint (arch doc §9). Gated by test_atmosphere. Open:

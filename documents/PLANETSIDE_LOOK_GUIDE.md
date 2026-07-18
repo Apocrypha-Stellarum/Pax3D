@@ -93,11 +93,13 @@ Rules:
   (space regime).
 
 For a real skybox-driven ambient there is `pax3d_render.sh_from_cubemap
-(tex)` → `pipeline.set_ambient_sh(coeffs)` — EXPERIMENTAL: its up/down
-axis and overall level are validated by the harness; sanity-check the
-horizontal orientation against your skybox (e.g. sunset side tints the
-correct flank) before tuning content to it, and tell us if it is
-flipped so we can pin the face table.
+(tex)` → `pipeline.set_ambient_sh(coeffs)` — PROVEN AND PINNED
+(Session Q closed the orientation question on all three legs: shader
+sampling, `makeCubeMap` captures, and file-loaded skyboxes; gated by
+`test_ambient_sh` checks 6-8). The face table and the full
+skybox→ambient+reflections recipe live in §7 — if lighting seems to
+come from the wrong compass direction, the fix is content rotation,
+never the face table.
 
 ## 3. Shadow texel snapping (`shadow_texel_snap`)
 
