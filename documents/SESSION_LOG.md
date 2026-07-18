@@ -633,6 +633,37 @@ pernode_sh_* — swapped-hemisphere override renders the down-face
 analytic exactly). Full gate 48/6/63 both engines, identical, the six
 FAILs the documented set. Rig lesson encoded: the harness lens is
 fov 30 — project sample points, x=8 at dist 30 is already off the
-sampling window. Next: SSAO foundation (depth+normals post-pass) as
-its own session; bone-palette spike + morph-target measurement for the
-character class queued.
+sampling window.
+
+**Session S update 2 (2026-07-18, same session — the user's "proceed
+on all three" mandate):** (1) **SSAO first slice (the first
+PaxPBR-native feature):** `enable_ssao` — depth-only Alchemy/SAO
+obscurance (normals from derivatives, zero scene-shader changes),
+3×3 blur, applied to scene HDR in tonemap; AO buffers deliberately
+8-bit; knobs ao_radius/ao_intensity/ao_bias uniform, ao_samples init;
+LOG_DEPTH-aware. Defining gate: flat geometry = AO exactly 1.0 →
+plane scenes byte-identical with the feature ON. test_ssao green both
+engines × baselines × @logdepth × **@msaa4 — measured: the
+multisampled depth resolve works** (game default msaa 4 fine). MSAA
+shifts crease lines sub-pixel → crease samples scan ±3 rows (fact
+#12 discipline). (2) **Bone-palette knob:** `max_skinning_bones`
+(default 100; runtime setter recompiles PBR + shadow shaders and
+invalidates caster states) — [200] measured INERT for small rigs (rms
+exactly 0.0, identity padding); the UE5-Manny 352→81 cut no longer
+must merge corrective bones. (3) **Morph verdict → FACT #15**
+(probe_morph.py, identical both engines = upstream): hardware
+skinning SILENTLY DROPS egg <Dxyz> sliders (loader makes the slider,
+animate_vertices applies it, the render doesn't move);
+`set_hardware_skinning(np, False)` renders morphs correctly — the
+working path today. (4) **Lens flare/dirt — R5 COMPLETE:**
+`enable_lens_flare` (needs bloom; inert+warn otherwise) — four ghosts
+sourced from the bright extract at analytic positions x_k = 0.5 +
+(p−0.5)/c_k (occlusion implicit: hidden sun → no flare, measured
+byte-identical), `set_flare_strength` (0 = exact), `set_lens_dirt`
+(half-mask dirt kills exactly the predicted ghosts). test_lens_flare
+7/7 both engines × baselines. Gate totals now **54 PASS / 6
+documented FAILs / 69 SKIP** per engine, identical, verified
+sequentially. The known startup GL 0x502 noise (response-5) also
+prints here — still noise-class. Next session: field triage of the
+adoption wave + testbed keys for the Session-S features (no eyeball
+rig yet); SSAO quality ladder and GPU morphs stay content-triggered.
