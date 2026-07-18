@@ -26,6 +26,22 @@ one the ship converter/loader should copy), and measures:
      panda3d-gltf produces. NOTE: same-frame procedural reads need
      Character.force_update() (update() short-circuits when no
      animation has marked the bundle modified — measured)
+  7. (Session S, ship-dev pusher consult) a DIRECTLY-POSITIONED walker
+     (game sets pos from its own sim state every frame) MUST read the
+     pusher's corrected position back into that sim state after
+     traverse. Without readback the sim keeps integrating into the
+     wall while only the node is corrected; the moment the sim
+     position passes wall + sphere radius the sphere stops
+     intersecting and the walker ESCAPES through the wall — at the
+     ship-dev numbers (r 0.35, 0.10 units/frame) that is a HELD KEY
+     FOR ~7 FRAMES. With readback the walker pins stably at the wall
+     face, no oscillation, and set_horizontal(True) leaves z alone.
+  8. (Session S) splitting a big wall mesh into spatially-separated
+     CollisionNode chunks is cheap insurance: the traverser culls
+     whole into-nodes by bounds before testing solids, so per-frame
+     cost tracks the CHUNK the walker is near, not the whole ship
+     (measured speedup on a synthetic 3200-poly wall run: see the
+     [info] ratio line; grows with mesh size)
 
 Run:  <any python with panda3d> tools/paxtest/probe_walkmesh.py
 """
@@ -255,6 +271,119 @@ def main():
           f'joint-mounted panel: before move hit={z_closed}, after '
           f'control_joint move to (20,0,1) hit z={z_open} '
           f'(expose_joint/add_net_transform keeps collision in sync)')
+
+    # 7. Direct-positioning + pusher: the readback contract (Session S,
+    #    ship-dev consult — their walk mode sets the camera pos from sim
+    #    state each frame; sphere r 0.35 chest height, ~0.10 units/frame)
+    walker = root.attach_new_node('walker')
+    wsph_node = p3d.CollisionNode('walker_body')
+    wsph_node.add_solid(p3d.CollisionSphere(0, 0, 0, 0.35))
+    wsph_node.set_from_collide_mask(BLOCK_MASK)
+    wsph_node.set_into_collide_mask(p3d.BitMask32.all_off())
+    wsph_np = walker.attach_new_node(wsph_node)
+    wpusher = p3d.CollisionHandlerPusher()
+    wpusher.set_horizontal(True)
+    wpusher.add_collider(wsph_np, walker)
+    ctrav.add_collider(wsph_np, wpusher)
+
+    # Variant A — NO readback: sim state is authoritative, pusher
+    # corrections are overwritten next frame. Hold the key toward the
+    # wall (at x=4.0) and watch for escape.
+    sim_x, escape_frame = 3.0, None
+    for frame in range(1, 41):
+        sim_x += 0.10
+        walker.set_pos(sim_x, 0, 2.9)
+        ctrav.traverse(root)
+        if walker.get_x() > 4.35:        # beyond wall + radius: free
+            escape_frame = frame
+            break
+    frames_expected = int(round((4.35 - 3.0) / 0.10))
+    frames_past_contact = int(round((4.35 - (4.0 - 0.35)) / 0.10))
+    check('pusher_no_readback_escapes',
+          escape_frame is not None,
+          f'sim keeps integrating into the wall: walker ESCAPED through '
+          f'it on frame {escape_frame} (~{frames_expected} expected: '
+          f'the walk-up plus {frames_past_contact} held frames past '
+          f'first contact at r 0.35, 0.10/frame) — direct positioning '
+          f'without readback walks through any wall on a held key')
+
+    # Variant B — WITH readback: after traverse, the pusher-corrected
+    # node position becomes the sim state. Same held key, 40 frames.
+    sim_x, zs, xs = 3.0, [], []
+    walker.set_pos(sim_x, 0, 2.9)
+    for frame in range(40):
+        sim_x += 0.10
+        walker.set_pos(sim_x, 0, 2.9)
+        ctrav.traverse(root)
+        sim_x = walker.get_x()           # THE contract
+        xs.append(sim_x)
+        zs.append(walker.get_z())
+    tail = xs[10:]
+    check('pusher_readback_pins_stable',
+          max(tail) < 4.0 and (max(tail) - min(tail)) < 1e-3
+          and all(abs(z - 2.9) < 1e-6 for z in zs),
+          f'sim_x = walker.get_x() after traverse: pinned at '
+          f'x={tail[-1]:.3f} (wall 4.0 - r 0.35 - margin), spread '
+          f'{max(tail) - min(tail):.2e} over 30 held frames, z untouched '
+          f'(set_horizontal) — read the correction back and the wall '
+          f'is solid')
+    ctrav.remove_collider(wsph_np)
+
+    # 8. Chunked wall nodes vs one monolithic node (Session S consult:
+    #    loader spatial chunks / converter block_room_* groups). A long
+    #    wall of 1600 quads (3200 polys) as ONE CollisionNode vs 8
+    #    spatially-separated chunk nodes; walker parked near one end.
+    import time as _time
+    arena = root.attach_new_node('arena')
+    n_seg, seg_w = 1600, 0.5
+
+    def wall_solids(lo, hi):
+        node = p3d.CollisionNode(f'chunk_{lo}')
+        node.set_from_collide_mask(p3d.BitMask32.all_off())
+        node.set_into_collide_mask(BLOCK_MASK)
+        for i in range(lo, hi):
+            x0, x1 = 100 + i * seg_w, 100 + (i + 1) * seg_w
+            node.add_solid(p3d.CollisionPolygon(
+                p3d.Point3(x0, 5, 0), p3d.Point3(x1, 5, 0),
+                p3d.Point3(x1, 5, 3), p3d.Point3(x0, 5, 3)))
+            node.add_solid(p3d.CollisionPolygon(
+                p3d.Point3(x0, 5, 3), p3d.Point3(x1, 5, 3),
+                p3d.Point3(x1, 5, 6), p3d.Point3(x0, 5, 6)))
+        return node
+
+    def time_traverse(n_frames=100):
+        t0 = _time.perf_counter()
+        for _ in range(n_frames):
+            ctrav.traverse(root)
+        return (_time.perf_counter() - t0) / n_frames * 1000.0
+
+    probe_np = arena.attach_new_node('perf_walker')
+    probe_np.set_pos(100 + seg_w, 4.5, 1.5)   # near the wall's west end
+    psph = p3d.CollisionNode('perf_body')
+    psph.add_solid(p3d.CollisionSphere(0, 0, 0, 0.35))
+    psph.set_from_collide_mask(BLOCK_MASK)
+    psph.set_into_collide_mask(p3d.BitMask32.all_off())
+    psph_np = probe_np.attach_new_node(psph)
+    ppusher = p3d.CollisionHandlerPusher()
+    ppusher.add_collider(psph_np, probe_np)
+    ctrav.add_collider(psph_np, ppusher)
+
+    mono_np = arena.attach_new_node(wall_solids(0, n_seg))
+    ms_mono = time_traverse()
+    mono_np.remove_node()
+    chunk_nps = [arena.attach_new_node(
+        wall_solids(k * (n_seg // 8), (k + 1) * (n_seg // 8)))
+        for k in range(8)]
+    ms_chunk = time_traverse()
+    for np_ in chunk_nps:
+        np_.remove_node()
+    ctrav.remove_collider(psph_np)
+    check('chunked_walls_cull', ms_chunk < ms_mono,
+          f'3200-poly wall, walker near one end: one node '
+          f'{ms_mono:.3f} ms/traverse vs 8 chunks {ms_chunk:.3f} '
+          f'ms/traverse ({ms_mono / max(ms_chunk, 1e-9):.1f}x) — the '
+          f'traverser culls whole into-nodes by bounds, so chunking '
+          f'bounds per-frame cost by proximity, not ship size')
 
     print(f'\nprobe_walkmesh: {PASS} pass, {FAIL} fail')
     sys.exit(1 if FAIL else 0)

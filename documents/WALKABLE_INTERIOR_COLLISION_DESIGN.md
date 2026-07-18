@@ -1,11 +1,13 @@
 # Walkable Interior Collision — Joint Design (Engine × Ship Dev)
 
-**Status: AGREED 2026-07-18 (Session N).** Both sides' positions are
-incorporated; every load-bearing engine mechanic below is MEASURED by
-`tools/paxtest/probe_walkmesh.py` (7/7 on stock 1.10.16 AND Pax3D
-1.11, identical numbers). Implementation is game-side; the engine
-needs **no new code** — Panda's C++ collision system covers the whole
-design. The unblocked feature: walking inside the Phobos Starhopper.
+**Status: AGREED 2026-07-18 (Session N); pusher consult answered
+2026-07-18 (Session S, §9).** Both sides' positions are incorporated;
+every load-bearing engine mechanic below is MEASURED by
+`tools/paxtest/probe_walkmesh.py` (now 10/10 on stock 1.10.16 AND
+Pax3D 1.11, identical numbers). Implementation is game-side; the
+engine needs **no new code** — Panda's C++ collision system covers the
+whole design. The unblocked feature: walking inside the Phobos
+Starhopper.
 
 ---
 
@@ -39,6 +41,8 @@ collide bits are free to use; there is no interaction with rendering.
 | 5 | Sloped ramps read back exact analytic heights through the same query | mid-ramp → z=1.000000 vs analytic 1.0 |
 | 6 | **Collision rides an animated part**: a CollisionPolygon under a node driven by `CharacterJoint.add_net_transform` (the expose-joint mechanism) follows a `control_joint`-posed joint exactly — the ramp/door pattern | panel at origin → no hit; joint moved to (20,0,1) → hit z=1.0 |
 | 7 | **Same-frame procedural joint reads need `Character.force_update()`** — plain `update()` short-circuits when no animation has marked the bundle modified. In-game, PLAYING the door/ramp animation marks it and updates flow normally | update(): stale; force_update(): correct |
+| 8 | **Directly-positioned walkers must read the pusher's correction back into sim state after traverse** — without readback a held key escapes through any wall ~`r/speed` frames after contact; with it, the walker pins at `wall − r` with zero spread and z untouched (§9.1) | escape frame 14 at r 0.35, 0.10/frame; readback: spread 0.00e+00 over 30 frames |
+| 9 | **The traverser culls whole into-CollisionNodes by bounds** before testing solids — spatially-chunked wall nodes cost per-frame what the nearby chunk costs, not the ship (§9.2) | 3200-poly wall, 1 node vs 8 chunks: 6.3–6.7× faster, both engines |
 
 ## 4. Ramp / door collision (the animated parts)
 
@@ -148,3 +152,90 @@ one-time conversion; a handful of sliver polys auto-rejected):
   or two quads, BLOCK mask.
 - Reminder: the pusher is NEW walk-mode code (their current loop is
   heightfield + eye height only) — §5 shows where it slots in.
+
+## 9. Pusher consult — the ship dev's implementation plan, answered (Session S, 2026-07-18)
+
+The ship dev's plan (sphere r ≈ 0.35 at chest height,
+`set_horizontal(True)`, pusher run in the walk update AFTER movement,
+gated to inside ship bounds + margin, `block_walls` split into ~8
+spatial chunks at load) is **confirmed — with one contract that is
+easy to miss and is now measured** (probe checks 7/8, identical both
+engines):
+
+### 9.1 THE READBACK CONTRACT (directly-positioned camera + pusher)
+
+`CollisionHandlerPusher` corrects the transform of the NodePath you
+register in `add_collider(sphere_np, target_np)` — it does not know
+about your sim state. A walk mode that sets the position from its own
+authoritative variable every frame will overwrite the correction, and
+the sim keeps integrating INTO the wall while only the node is pushed
+back. The moment the sim position passes `wall + sphere radius` the
+sphere stops intersecting and the walker steps through the wall,
+free. Measured at exactly the ship dev's numbers (r 0.35, 0.10
+units/frame): **a held key escapes through the wall ~7 frames after
+first contact** (frame 14 of the run, walk-up included). "No
+tunneling risk at 10 cm/frame vs a 35 cm sphere" is true per-step —
+the escape is not tunneling, it is the sim state marching past the
+wall while the corrections are discarded.
+
+The fix is one line, measured stable:
+
+```python
+# walk update, in order:
+sim_pos += move_delta          # your integration, as today
+walker_np.set_pos(sim_pos)     # walker_np = the np you registered
+ctrav.traverse(render)         # pusher corrects walker_np
+sim_pos = walker_np.get_pos()  # THE CONTRACT: adopt the correction
+```
+
+With the readback: pinned at `wall − r` with **zero spread over 30
+held frames** (no oscillation), and `set_horizontal(True)` leaves z
+bit-untouched — the ground query stays the sole z authority.
+Corollaries:
+
+- Register the node you actually position (`add_collider(sphere_np,
+  walker_np)` where `walker_np` is the node your walk code writes to;
+  parent the camera under it). Registering the sphere's own NodePath
+  while positioning its parent re-creates the discarded-correction
+  bug one level down.
+- The pusher only acts while INTERSECTING. Any teleport-class move
+  (spawn, menu warp, seat exit) can land fully beyond a wall with no
+  contact and no push — gate teleport destinations by the walkable
+  volume; do not expect the pusher to catch them.
+
+### 9.2 Chunking — yes; and room-groups for the Fenris
+
+Measured (probe check 8): the traverser culls whole into-CollisionNodes
+by bounds before testing solids, so with the walker near one end of a
+3200-poly wall run, **8 spatial chunks traverse 6.3–6.7× faster than
+the same polys in one node** (0.80 → 0.13 ms stock; 0.24 → 0.04 ms on
+the Pax3D wheel). The win grows with mesh size — per-frame cost tracks
+the chunk you are near, not the ship.
+
+Recommendation on where to split: **loader-side spatial chunking is
+right for the Phobos v1** (zero converter changes, ships now). **For
+the Fenris, prefer converter-emitted room groups (`block_room_<name>`)**
+— same bounds-culling win, plus tighter bounds than a blind grid
+(a grid cell straddling two rooms tests both), plus the semantic hooks
+an 11-room ship wants anyway: per-room activation (only current +
+adjacent rooms in the traverser), doorway gaps authored per room, and
+door collision keyed to the rooms it separates. The two compose: the
+loader can still grid-split an oversized room group. Keep the
+convention that a chunk/room node's polys are spatially compact —
+the bounds test is the whole mechanism.
+
+### 9.3 Confirmations (no engine work anywhere)
+
+- **Ramp excluded from `block_walls`**: correct, and consistent with
+  fact 4 — winding sets the push direction, so a ramp's underside in
+  the BLOCK set would shove the walker along its normal. Ramp stays
+  pure `walk_*`; edge rails later if stepping off annoys.
+- **Ramp re-rig about a converter-authored pivot** with `walk_ramp`
+  polys riding the pivot node: exactly §4's simple case (plain
+  PandaNodes confirmed, no Characters) — collision follows
+  `ramp_pivot.set_p(angle)` for free, no `force_update` machinery.
+- Beacon/lights via `activate_model_lights` at varying `scale` for
+  Full/Dim/Off: supported; `deactivate_model_lights()` restores
+  byte-identically, and re-activating at a different scale is the
+  intended dimming path. Keep per-root light counts within
+  `max_lights` (8).
