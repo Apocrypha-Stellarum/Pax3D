@@ -294,6 +294,66 @@ def make_skinned_sheet(half=1.0, height=4.0, segments=8):
     return np
 
 
+def make_skinned_chain(joints=120, length=6.0, half_w=0.25, height=4.0):
+    """A horizontal strip soft-skinned along a FLAT chain of `joints`
+    joints — the >100-joint palette test rig (Session S). Strip lies in
+    the XY plane at z=height, x in [-length/2, length/2]; vertex column
+    i blends joints (i-1, i) at 0.5/0.5 (ends at full membership), so
+    the geometry cannot be rigidified and the palette must hold every
+    joint. Translating the LAST joint (chain_<joints-1>) moves the +x
+    end of the strip — rendered correctly ONLY if the palette actually
+    covers that joint's row."""
+    from panda3d import egg as pegg
+
+    data = pegg.EggData()
+    data.set_coordinate_system(p3d.CS_zup_right)
+    dart = pegg.EggGroup('skinned_chain')
+    dart.set_dart_type(pegg.EggGroup.DT_default)
+    data.add_child(dart)
+    pool = pegg.EggVertexPool('vp')
+    dart.add_child(pool)
+
+    jgroups = []
+    for i in range(joints):
+        g = pegg.EggGroup(f'chain_{i}')
+        g.set_group_type(pegg.EggGroup.GT_joint)
+        dart.add_child(g)
+        jgroups.append(g)
+
+    cols = []
+    for i in range(joints + 1):
+        x = -length / 2.0 + length * i / joints
+        col = []
+        for y in (-half_w, half_w):
+            v = pegg.EggVertex()
+            v.set_pos(p3d.LPoint3d(x, y, height))
+            v.set_normal(p3d.LVector3d(0, 0, 1))
+            v = pool.add_vertex(v)
+            lo, hi = max(0, i - 1), min(i, joints - 1)
+            if lo == hi:
+                jgroups[lo].ref_vertex(v, 1.0)
+            else:
+                jgroups[lo].ref_vertex(v, 0.5)
+                jgroups[hi].ref_vertex(v, 0.5)
+            col.append(v)
+        cols.append(col)
+
+    for i in range(joints):
+        poly = pegg.EggPolygon()
+        poly.add_vertex(cols[i][0])
+        poly.add_vertex(cols[i + 1][0])
+        poly.add_vertex(cols[i + 1][1])
+        poly.add_vertex(cols[i][1])
+        dart.add_child(poly)
+
+    node = pegg.load_egg_data(data)
+    if node is None:
+        raise RuntimeError('skinned chain egg failed to load')
+    np = p3d.NodePath(node)
+    np.set_two_sided(True)
+    return np
+
+
 def character_blend_info(np):
     """(has_character, has_blend_table) for a loaded model — used by tests
     to assert the caster really is soft-skinned (guards against the egg

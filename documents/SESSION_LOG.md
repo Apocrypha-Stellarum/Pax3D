@@ -664,6 +664,24 @@ byte-identical), `set_flare_strength` (0 = exact), `set_lens_dirt`
 7/7 both engines × baselines. Gate totals now **54 PASS / 6
 documented FAILs / 69 SKIP** per engine, identical, verified
 sequentially. The known startup GL 0x502 noise (response-5) also
-prints here — still noise-class. Next session: field triage of the
-adoption wave + testbed keys for the Session-S features (no eyeball
-rig yet); SSAO quality ladder and GPU morphs stay content-triggered.
+prints here — still noise-class.
+
+**Session S update 3 (2026-07-18, same session):** two mid-close-out
+inputs. (a) The character dev's field report landed in
+PAX3D_FEEDBACK.md: measured bone sets (full 352 / clip-animated 151 /
+shipped 81) put the useful target at ≥192 — already covered by the
+landed knob; their 151-bone re-bake A/B is unblocked. (b) USER
+DIRECTIVE: no artificial caps — maximum UE5/Unity asset
+compatibility. Landed in response: `max_skinning_bones='auto'`
+(palette sized by the largest Character under render, bucket 32,
+clamp at the ~240 uniform wall) + `refresh_skinning_budget()` /
+`audit_skinning_budget()` (the dev's warning ask — a too-big rig now
+NAMES itself instead of rendering silently-exploded skin). Measured
+on a synthetic 120-joint chain (test_skinning 1c, 17/17 both engines
+× baselines): at [100] the GPU cannot render the posed chain (rms
+0.1045 vs CPU truth), the audit flags it, 'auto' resolves 128 and
+matches CPU truth at rms 0.0000. The TRUE uncap — texture-palette
+skinning (full 343-bone rigs, no uniform limit, natural pairing with
+an 8-influence option) — is now a named C++ build-queue item
+(CLAUDE.md). Their glTF morph asset offer: ACCEPTED, next session
+(panda3d-gltf morph delivery is the unmeasured half of fact #15).

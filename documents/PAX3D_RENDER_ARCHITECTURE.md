@@ -368,17 +368,35 @@ byte-identical. Measured record: `test_shadow_snap` (0.3-texel move flips
 
 ### 5.8 Bone palette + the morph verdict (Session S — NPC characters)
 
-**`max_skinning_bones`** (init) / `set_max_skinning_bones(n)`
+**Policy (user-ratified 2026-07-18): the palette is a compatibility
+shim, not a design cap.** UE5/Unity assets are the game's content
+pipeline; the engine's job is to swallow their rigs as authored. The
+ladder: (1) `max_skinning_bones` sizes the table; (2) `'auto'` makes
+the CONTENT size it; (3) the uniform-budget wall (~240 mat4) is the
+hardware's cap, not ours — beyond it, the queued **texture-palette
+C++ path** (palette in a float texture, no uniform limit, full
+343-bone UE5 rigs verbatim; CLAUDE.md build queue) is the answer.
+
+**`max_skinning_bones`** (init) / `set_max_skinning_bones(n | 'auto')`
 (recompile-class — PBR AND shadow depth shader, caster initial states
 invalidated): the `p3d_TransformTable[N]` declaration, default 100.
-The GL layer identity-pads short tables (fact #10), so raising it is
-inert for small rigs — measured: the 2-joint sheet renders rms exactly
-0.0 at [200] vs [100] (test_skinning `bone_palette_*`). Budget: 16
-vertex-uniform components per joint — 200 = 3200 of the typical 4096.
-The character pipeline's 352→81-bone cut (corrective-bone weights
-merged into parents, a real deformation-quality loss) exists because
-of the old hard [100]; rigs that need their correctives can now keep
-them, game-side validation per asset.
+`'auto'` resolves to the largest Character skeleton under render
+(bucketed to 32, floor 100, clamp 240) — call
+`refresh_skinning_budget()` after loading characters so it
+re-resolves. The GL layer identity-pads short tables (fact #10), so
+bigger tables are inert for small rigs — measured: rms exactly 0.0 at
+[200] vs [100] (test_skinning `bone_palette_*`).
+
+**The audit + warning** (field ask, 2026-07-18):
+`audit_skinning_budget()` / `refresh_skinning_budget()` name every
+Character whose skeleton exceeds the active palette — because the
+failure mode is otherwise silent "plausibly-exploded" skin with no
+log line. Measured on a synthetic 120-joint chain (test_skinning
+`audit_names_oversized_rig` / `oversized_rig_corrupts_at_100` /
+`auto_palette_covers_rig`): at [100] the GPU cannot render the posed
+chain (rms 0.1045 vs CPU truth), the audit flags it, and `'auto'`
+resolves 128 and matches CPU truth at rms 0.0000 — the cap follows
+the content.
 
 **Vertex morphs (egg `<Dxyz>` sliders) — measured verdict
 (`probe_morph.py`, both engines identical = upstream behavior):** the

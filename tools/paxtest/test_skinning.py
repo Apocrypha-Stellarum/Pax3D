@@ -225,6 +225,60 @@ def main():
     ground.detach_node()
 
     # ------------------------------------------------------------------
+    # 1c. A REAL >100-joint rig (Session S user directive: UE5/Unity
+    # compatibility — no artificial cap). A 120-joint chain: under the
+    # default [100] table the GPU CANNOT render its pose (the field
+    # dev's "plausibly-exploded garbage" class, now measured), the
+    # audit names the rig, and 'auto' resolves a covering palette that
+    # matches the CPU truth pixel-for-pixel.
+    # ------------------------------------------------------------------
+    if hasattr(pipeline, 'refresh_skinning_budget'):
+        chain = scenes.make_skinned_chain(joints=120)
+        scenes.apply_flat_pbr_surface(chain)
+        chain.reparent_to(base.render)
+        chain_char = chain.find('**/+Character')
+        cbundle = chain_char.node().get_bundle(0)
+        cctrl = chain_char.attach_new_node('chain_tip_ctrl')
+        cposed = bool(cbundle.control_joint('chain_119', cctrl.node()))
+        cctrl.set_pos(0, 1.5, 0)          # swing the +x end sideways
+
+        audit = pipeline.audit_skinning_budget(warn=True)
+        flagged = [(n, j) for n, j, fits in audit if not fits]
+        h.report.check(
+            'audit_names_oversized_rig',
+            cposed and any(j >= 120 for _, j in flagged),
+            f'audit at table 100: flagged={flagged} (the missing '
+            f'warning — a too-big rig now names itself)')
+
+        # CPU truth for the pose (per-node opt-out renders it correctly)
+        pipeline.set_hardware_skinning(chain, False)
+        img_cpu_truth = snap('chain_cpu_truth')
+        pipeline.clear_hardware_skinning(chain)
+
+        img_gpu_100 = snap('chain_gpu_table100')
+        rms_bad = common.image_rms_diff(img_cpu_truth, img_gpu_100)
+        h.report.check(
+            'oversized_rig_corrupts_at_100', rms_bad > 0.003,
+            f'GPU@[100] vs CPU truth on the posed 120-joint chain: rms '
+            f'{rms_bad:.4f} — the palette cannot hold the posed joint '
+            f'(the measured justification for the audit warning)')
+
+        pipeline.set_max_skinning_bones('auto')
+        resolved = pipeline.max_skinning_bones
+        img_gpu_auto = snap('chain_gpu_auto')
+        rms_auto = common.image_rms_diff(img_cpu_truth, img_gpu_auto)
+        h.report.check(
+            'auto_palette_covers_rig',
+            resolved >= 120 and rms_auto < 0.02,
+            f"'auto' resolved the palette to {resolved} (>=120): GPU vs "
+            f'CPU truth rms {rms_auto:.4f} — the cap follows the '
+            f'content, not the other way around')
+
+        chain.detach_node()
+        pipeline.set_max_skinning_bones(100)
+        h.step(2)
+
+    # ------------------------------------------------------------------
     # 2 + 3. Character packs: palette math + rendered A/B
     # ------------------------------------------------------------------
     try:

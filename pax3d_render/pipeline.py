@@ -284,14 +284,22 @@ class Pipeline:
         self.shadow_caster_mask = self._normalize_caster_mask(
             shadow_caster_mask)
         self.enable_hardware_skinning = enable_hardware_skinning
-        # Session S: the GPU joint-palette ceiling (p3d_TransformTable
-        # size, scene AND shadow depth pass). Default 100 = the shipped
-        # declaration. The GL layer identity-pads short tables (fact
-        # #10) so raising it is safe for small rigs; the cost is vertex
-        # uniform budget (16 floats/joint). The character pipeline's
-        # 352->81-bone cuts exist because of this ceiling — raise it
-        # before cutting corrective bones on a rig that needs them.
-        self.max_skinning_bones = max(4, min(1024, int(max_skinning_bones)))
+        # Session S: the GPU joint-palette size (p3d_TransformTable,
+        # scene AND shadow depth pass). Default 100 = the shipped
+        # declaration; 'auto' sizes to the largest Character under
+        # render (call refresh_skinning_budget() after loading). The
+        # GL layer identity-pads short tables (fact #10) so raising it
+        # is safe for small rigs; the cost is vertex uniform budget
+        # (16 floats/joint, wall ~240). UE5/Unity rigs are the content
+        # pipeline — this is a compatibility shim, not a design cap;
+        # truly uncapped = the queued texture-palette C++ item.
+        self._skinning_bones_auto = (max_skinning_bones == 'auto')
+        if self._skinning_bones_auto:
+            self.max_skinning_bones = 100
+            self.max_skinning_bones = self._resolve_auto_skinning_bones()
+        else:
+            self.max_skinning_bones = max(
+                4, min(1024, int(max_skinning_bones)))
         self.calculate_normalmap_blue = calculate_normalmap_blue
         # Double-sided lighting (Session K, asset enablement): shade
         # backfaces with the inverted normal (the glTF doubleSided /
@@ -1183,15 +1191,73 @@ class Pipeline:
         if self._flare_quad is not None:
             self._apply_lens_dirt_inputs(self._flare_quad)
 
+    # ~(4096 uniform components - matrix/misc reserve) / 16 per mat4:
+    # the practical uniform-budget wall for the palette. Rigs beyond
+    # this need the queued texture-palette C++ path, not a bigger array.
+    _AUTO_SKINNING_CAP = 240
+
+    @staticmethod
+    def _count_joints(part):
+        n = 1 if isinstance(part, p3d.CharacterJoint) else 0
+        for i in range(part.get_num_children()):
+            n += Pipeline._count_joints(part.get_child(i))
+        return n
+
+    def audit_skinning_budget(self, warn=True):
+        """Walk every Character under render and compare its joint count
+        against the ACTIVE palette (max_skinning_bones). Returns a list
+        of (character_name, joint_count, fits) tuples; with warn=True
+        prints one warning per over-budget Character — a rig larger
+        than the table renders plausibly-corrupted skin with no GL
+        error, which is worth a log line (field ask, 2026-07-18).
+        Joint counts are the skeleton total (a safe upper bound on the
+        palette rows the rig can reference)."""
+        out = []
+        for char_np in self.render_node.find_all_matches('**/+Character'):
+            char = char_np.node()
+            joints = 0
+            for b in range(char.get_num_bundles()):
+                joints = max(joints, self._count_joints(char.get_bundle(b)))
+            fits = joints <= self.max_skinning_bones
+            out.append((char.get_name(), joints, fits))
+            if warn and not fits:
+                print(f'[Pax3DRender] Character "{char.get_name()}" has '
+                      f'{joints} joints > palette {self.max_skinning_bones} '
+                      f'— skin will render corrupted. Raise '
+                      f'max_skinning_bones (or "auto"), or reduce the rig; '
+                      f'>{self._AUTO_SKINNING_CAP} needs the texture-'
+                      f'palette engine path (queued).')
+        return out
+
+    def _resolve_auto_skinning_bones(self):
+        """Palette size for 'auto': the largest Character skeleton under
+        render, rounded up to a 32 bucket, floored at 100 (the shipped
+        declaration) and clamped to the uniform-budget wall."""
+        biggest = max([j for _, j, _ in self.audit_skinning_budget(
+            warn=False)] or [0])
+        bucket = ((max(biggest, 100) + 31) // 32) * 32
+        return min(self._AUTO_SKINNING_CAP, bucket)
+
     def set_max_skinning_bones(self, count):
-        """Change the GPU joint-palette ceiling (recompile-class: the
-        PBR shader AND the shadow depth shader recompile; existing
+        """Change the GPU joint-palette size (recompile-class: the PBR
+        shader AND the shadow depth shader recompile; existing
         shadow-caster initial states are invalidated so the next frame
-        rebuilds them with the new table size). Default 100. Small rigs
-        are unaffected at any size (identity padding, fact #10); the
-        budget is vertex uniforms — 200 bones = 3200 of the typical
-        4096 GL_MAX_VERTEX_UNIFORM_COMPONENTS."""
-        count = max(4, min(1024, int(count)))
+        rebuilds them with the new table size). Default 100.
+
+        Pass **'auto'** to size the palette to the content: the largest
+        Character skeleton currently under render (bucketed, clamped to
+        the uniform-budget wall ~240). UE5/Unity rigs are the intended
+        content pipeline — the palette is a compatibility shim, not a
+        design cap; call refresh_skinning_budget() after loading new
+        characters so 'auto' re-resolves. Small rigs are unaffected at
+        any size (identity padding, fact #10); truly uncapped (full
+        343-bone UE5 rigs) is the queued texture-palette C++ item."""
+        if count == 'auto':
+            self._skinning_bones_auto = True
+            count = self._resolve_auto_skinning_bones()
+        else:
+            self._skinning_bones_auto = False
+            count = max(4, min(1024, int(count)))
         if count == self.max_skinning_bones:
             return
         self.max_skinning_bones = count
@@ -1202,6 +1268,15 @@ class Pipeline:
                 if state.has_attrib(p3d.ShaderAttrib):
                     caster.set_initial_state(
                         state.remove_attrib(p3d.ShaderAttrib))
+
+    def refresh_skinning_budget(self):
+        """Re-audit after loading content: warns for any rig over the
+        active palette, and in 'auto' mode re-resolves the size
+        (recompiling only if it changed). Returns the audit list."""
+        if getattr(self, '_skinning_bones_auto', False):
+            self.set_max_skinning_bones('auto')
+            self._skinning_bones_auto = True
+        return self.audit_skinning_budget(warn=True)
 
     def _push_ssao_lens_inputs(self, quad):
         """Push the camera lens parameters the SSAO pass needs to

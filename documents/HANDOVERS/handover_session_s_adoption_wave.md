@@ -73,11 +73,15 @@ from the same entry: (1) they OFFER a real glTF morph test asset
 (SK_SFM_Head1, blink/jaw/brow shape keys, skinned + static variants)
 — ACCEPT it: probe_morph answered the egg-slider mechanics (fact #15)
 but whether panda3d-gltf DELIVERS morph targets at all is unmeasured;
-(2) small ask, queue: a one-time warning when a Character's joint
-count exceeds the table size (a >100-bone skin renders
-plausibly-exploded garbage with no log line — cost them an hour).
-Cheapest shape: a Python `pipeline` audit helper walking Characters
-at load; a C++ munger warning is the build-window alternative.
+(2) their warning ask is **ALREADY RESOLVED in-session** (user
+directive: no artificial caps, maximum UE5/Unity compatibility):
+`max_skinning_bones='auto'` sizes the palette to the content, and
+`refresh_skinning_budget()` / `audit_skinning_budget()` name any rig
+the palette can't hold — measured on a synthetic 120-joint chain
+(corrupts at [100] rms 0.1045 vs CPU truth; 'auto' resolves 128,
+matches at 0.0000). Tell them: call `refresh_skinning_budget()` after
+character loads. The TRUE uncap (full 343-bone rigs verbatim) is the
+new **texture-palette skinning** C++ build-queue item (CLAUDE.md).
 
 Expected report classes:
 
