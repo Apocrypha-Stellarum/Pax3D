@@ -685,3 +685,29 @@ skinning (full 343-bone rigs, no uniform limit, natural pairing with
 an 8-influence option) — is now a named C++ build-queue item
 (CLAUDE.md). Their glTF morph asset offer: ACCEPTED, next session
 (panda3d-gltf morph delivery is the unmeasured half of fact #15).
+
+**Session T update (2026-07-19):** the accepted glTF morph measurement
+ran — the character dev delivered SK_SFM_Head1 (3 GLB variants +
+ground-truth manifest) and probe_morph_gltf.py measured the whole
+chain: 26 facts, identical stock 1.10.16 vs Pax3D (= everything lives
+in the Python loader layer). VERDICT: panda3d-gltf's morph machinery
+is complete and correct, but pip 1.3.0 cannot LOAD a real Blender
+morph export — three loader defects, now fact #16: sparse-accessor
+crash (upstream Moguri#103; Blender's default shape-key encoding),
+short-anim-channel IndexError, and a max-vs-min clamp that snaps every
+LINEAR sample to the next key (joints too). All three shimmed in the
+new `pax3d_render/gltf_compat.py` (`install()`, opt-in, pure JSON-level
+densify + two function replacements; no-op on files without sparse
+data). With the shim: sliders/slider-tables/morph-columns delivered,
+CPU truth matches the Blender manifest to 4 decimals on both variants,
+and a byte-patched weights ramp drives the sliders analytically
+(0.554 at frame 56 vs 0.5545 expected; short-channel hold exact).
+Fact #15 extends to glTF and to JOINT-LESS meshes (scene-wide
+F_hardware_skinning drops static-mesh morphs too; per-node opt-out
+renders them, ~+0.1 ms/frame per 2240-vert head). The shipped anim
+variant's OWN weights channel is all-zero (2 keys, 24 fps timeline vs
+the manifest's declared 30) — asset-side export defect; re-export
+requested in the PAX3D_FEEDBACK.md response. Instrument trap logged:
+cached bams bypass the loader — probe disables BamCache. test_skinning
+still 17/17 (no interference; the shim is opt-in and nothing in the
+pipeline calls it).

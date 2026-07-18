@@ -1,0 +1,217 @@
+{
+  "purpose": "glTF morph-target measurement asset for paxtest (PAX3D_FEEDBACK.md 2026-07-18 offer). Ground truth authored in Blender; assert against these numbers, not vertex indices (GLB export reindexes).",
+  "source": {
+    "fbx": "SK_SFM_Military_CHR2.fbx",
+    "module": "SK_SFM_Head1",
+    "builder": "blender_build_morph_head.py"
+  },
+  "coordinate_space": "z-up metres, as panda3d-gltf re-loads the GLB (exported y-up per glTF spec)",
+  "vertex_count_blender": 2240,
+  "triangle_count": 4353,
+  "shape_keys": [
+    "blink",
+    "jaw_open",
+    "brow_raise"
+  ],
+  "ground_truth": {
+    "blink": {
+      "moved_verts": 275,
+      "max_delta_m": 0.01,
+      "max_delta_vertex_at_0": [
+        0.0423,
+        -0.096,
+        1.6814
+      ],
+      "max_delta_vertex_at_1": [
+        0.0423,
+        -0.096,
+        1.6714
+      ],
+      "aabb_at_0": {
+        "min": [
+          -0.0906,
+          -0.1437,
+          1.5293
+        ],
+        "max": [
+          0.0894,
+          0.0798,
+          1.7962
+        ]
+      },
+      "aabb_at_1": {
+        "min": [
+          -0.0906,
+          -0.1437,
+          1.5293
+        ],
+        "max": [
+          0.0894,
+          0.0798,
+          1.7962
+        ]
+      }
+    },
+    "jaw_open": {
+      "moved_verts": 184,
+      "max_delta_m": 0.0228,
+      "max_delta_vertex_at_0": [
+        0.0278,
+        -0.1072,
+        1.6093
+      ],
+      "max_delta_vertex_at_1": [
+        0.0278,
+        -0.1012,
+        1.5873
+      ],
+      "aabb_at_0": {
+        "min": [
+          -0.0906,
+          -0.1437,
+          1.5293
+        ],
+        "max": [
+          0.0894,
+          0.0798,
+          1.7962
+        ]
+      },
+      "aabb_at_1": {
+        "min": [
+          -0.0906,
+          -0.1437,
+          1.5293
+        ],
+        "max": [
+          0.0894,
+          0.0798,
+          1.7962
+        ]
+      }
+    },
+    "brow_raise": {
+      "moved_verts": 51,
+      "max_delta_m": 0.012,
+      "max_delta_vertex_at_0": [
+        0.0106,
+        -0.1245,
+        1.708
+      ],
+      "max_delta_vertex_at_1": [
+        0.0106,
+        -0.1245,
+        1.72
+      ],
+      "aabb_at_0": {
+        "min": [
+          -0.0906,
+          -0.1437,
+          1.5293
+        ],
+        "max": [
+          0.0894,
+          0.0798,
+          1.7962
+        ]
+      },
+      "aabb_at_1": {
+        "min": [
+          -0.0906,
+          -0.1437,
+          1.5293
+        ],
+        "max": [
+          0.0894,
+          0.0798,
+          1.7962
+        ]
+      }
+    }
+  },
+  "skinned_variants": {
+    "bones": [
+      "head",
+      "neck_01",
+      "neck_02",
+      "pelvis",
+      "spine_01",
+      "spine_02",
+      "spine_03",
+      "spine_04",
+      "spine_05"
+    ],
+    "note": "skeleton reduced to the 9-bone spine chain so the default 100-bone palette is never the variable under test"
+  },
+  "anim_variant": {
+    "clip": "FaceTest",
+    "fps": 30,
+    "frames": [
+      1,
+      90
+    ],
+    "slider_keys": {
+      "blink": [
+        [
+          1,
+          0.0
+        ],
+        [
+          10,
+          1.0
+        ],
+        [
+          20,
+          0.0
+        ]
+      ],
+      "jaw_open": [
+        [
+          26,
+          0.0
+        ],
+        [
+          38,
+          1.0
+        ],
+        [
+          50,
+          0.0
+        ]
+      ],
+      "brow_raise": [
+        [
+          56,
+          0.0
+        ],
+        [
+          68,
+          1.0
+        ],
+        [
+          80,
+          0.0
+        ]
+      ]
+    },
+    "head_yaw_deg_keys": [
+      [
+        1,
+        -15.0
+      ],
+      [
+        45,
+        15.0
+      ],
+      [
+        90,
+        0.0
+      ]
+    ]
+  },
+  "files": [
+    "morph_head_static.glb",
+    "morph_head_skinned.glb",
+    "morph_head_skinned_anim.glb"
+  ]
+}

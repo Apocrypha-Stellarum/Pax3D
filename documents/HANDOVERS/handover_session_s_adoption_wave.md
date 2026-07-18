@@ -130,3 +130,24 @@ Vulkan (watch only).
   noise-class (all checks byte-exact), still undiagnosed.
 - probe_morph.py is a measurement probe (not a gate row) — rerun it
   after any skinning/munger-adjacent change.
+
+---
+
+## Session T addendum (2026-07-19) — morph measurement DONE
+
+The accepted SK_SFM_Head1 measurement ran (probe_morph_gltf.py, 26
+facts, identical both engines). Result: **fact #16** — panda3d-gltf
+1.3.0 has three loader defects (sparse-accessor crash = upstream #103,
+short-channel IndexError, max-vs-min lerp clamp) all fixed by the new
+`pax3d_render.gltf_compat.install()`; with the shim, morph delivery is
+correct end-to-end (CPU truth matches the Blender manifest to 4
+decimals; a byte-patched weights ramp drives sliders analytically).
+Fact #15 extends to glTF and joint-less meshes — ANY morphing node
+needs `set_hardware_skinning(np, False)` (~+0.1 ms/frame per head).
+Engine response is in PAX3D_FEEDBACK.md. Field ball: the dev re-exports
+`morph_head_skinned_anim.glb` (its weights channel is all-zero — the
+shape-key action never reached the exporter; also 24 fps timeline vs
+the manifest's declared 30) and adds `gltf_compat.install()` to the
+baker boot. When the re-export lands, promote probe facts to a gate row
+(test_morph_gltf) with the real clip. GPU morph path: still queued,
+now with a measured cost basis for the decision.

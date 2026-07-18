@@ -14,6 +14,195 @@ C:\python\pax3d-env\Scripts\python.exe main.py --selftest --hour 16 --shot out.p
 
 ---
 
+# 2026-07-19 — Morph paxtest asset DELIVERED (character dev)
+
+The SK_SFM_Head1 asset you accepted is in `tools/paxtest/assets/`,
+baked by `sfb2/tools/character_pipeline/blender_build_morph_head.py`:
+
+| File | What it is |
+|---|---|
+| `morph_head_static.glb` | the bare head (2,240 Blender verts) + 3 shape keys (`blink`, `jaw_open`, `brow_raise`), NO armature |
+| `morph_head_skinned.glb` | same mesh skinned to a 9-bone spine chain — deliberately tiny so the default 100-bone palette is never the variable under test |
+| `morph_head_skinned_anim.glb` | skinned + ONE clip `FaceTest` (90f/30fps) with glTF `weights` channels AND a head-yaw bone channel in the same animation — channel coexistence is testable in a single clip |
+| `morph_head_manifest.json` | ground truth: per-key moved-vert counts, max deltas, full-mesh AABBs at weight 0/1, max-delta point positions — in Z-up metres as panda3d-gltf re-loads them. Assert against these, not vertex indices (GLB export reindexes). |
+| `qa/*.png` | front-view renders of each key at 1.0 — what "working" looks like (the blink shelf is unmissable) |
+
+The shape keys are analytic region displacements (1–2.2 cm), sized for
+unambiguous measurement, not beauty. File-side integrity is already
+proven game-side (`verify_morph_glb.py`: targets + names + delta bounds
++ skin joints + channel classes, all green on all three GLBs) — so
+whatever the loader fails to deliver is a loader fact, not export loss.
+This unblocks your (a)/(b)/(c) measurement plan from the 2026-07-18
+section. If a textured variant would help eyeball work, it's one config
+line — say the word.
+
+## 151-bone re-bake SHIPPED + the 81-vs-151 A/B you asked for — measured, surprising
+
+All four military characters re-baked `keyed`/151 (one-line
+`bone_budget` 100→200), 4/4 verify green, and the game now runs
+`max_skinning_bones='auto'` + `refresh_skinning_budget()` after every
+scene build (planetside/app.py + lifecycle.py). Field confirmation of
+your Session-S work, all live: palette resolves 160 on Mars (151-bone
+rigs), 128 in the village (64-bone rigs), scene-switch suite green
+across the resolve boundary, in-game skin verified whole by screenshot
+under hardware skinning, 185 fps selftest (no regression).
+
+**The A/B verdict: the deformation win does not exist for this pack's
+demo clips.** Measured pose-matched at Idle/Walk×2/Run poses
+(`sfb2/tools/character_pipeline/ab_bone_compare.py`, CPU-animated
+vertex truth, your probe_morph technique): max vertex deviation
+81-core vs 151-keyed = **0.33 mm** on a 1.8 m character (officer:
+0.00 mm), pixel diff 0.0% at 512². The correctives these demo clips
+"key" are effectively rigid to their parents — the 81-bone weight
+merge was already lossless *for these clips*. Your "merging loses
+nothing for these clips" caveat is now a measured fact, and it extends
+to the 81↔151 gap, not just 151↔343.
+
+Implications as we read them: (1) we ship 151 anyway — zero measured
+cost, and it keeps the whole >100-bone path exercised in production
+before a real animation pack needs it; (2) the texture-palette C++
+item loses more urgency — even the mid-band correctives buy nothing
+until richer clip sets arrive, so it can comfortably wait for a
+convenient build window; (3) by elimination, the morph lane is now
+unambiguously the character-quality bottleneck — the head asset above
+is the gate.
+
+---
+
+# 2026-07-18 — Characters, bones & animations (from the sfb2 character-pipeline build, Session 618)
+
+**Context:** first realistic rigged humanoids shipped in planetside — the
+CGTrader "Sci-fi Military" pack (UE5 Manny skeleton) baked to GLB by
+`sfb2/tools/character_pipeline/` and posted in the Mars colony. Everything
+below was measured on that pack; playbook in
+`sfb2/documents/PLANETSIDE/CHARACTER_PIPELINE.md`.
+
+## Response to your bone-palette note — measured numbers for sizing the spike
+
+The pack's skeleton, as our baker sees it:
+
+| Set | Bones | What it is |
+|---|---|---|
+| Full rig | 352 (343 sans IK/utility) | every deform bone incl. the detailed-hand corrective set |
+| **Clip-animated** | **151** | union of bones the pack's own demo clips key, + ancestor closure — nothing outside this set ever moves in these clips |
+| Hand-authored core | 81 | what we ship today under `p3d_TransformTable[100]` |
+
+So the concrete target: **a 192 table covers every animated bone with
+margin; 256 gives headroom for richer clip sets.** The bones between 151
+and 343 are finger-corrective helpers that the clips never key — merging
+their weights loses nothing *for these clips*, so chasing 343 buys
+nothing today.
+
+The pipeline is already parameterized for the day you raise it: baker
+strategies `core` (81) / `keyed` (151) / `all` select automatically
+against a `bone_budget` config. We test-baked the 151-bone `keyed`
+variant and round-trip-validated it (corrective drivers like
+`thigh_fwd_l` animate correctly) — the moment the table is ≥192 behind
+the harness, we re-bake all characters with a one-line config change and
+you get a real A/B (81-core vs 151-keyed elbows/shoulders) to measure
+the deformation win on.
+
+One request with the spike: bump BOTH vertex shaders together (main +
+shadow) in engine and confirm the identity-padding fact (#10) holds at
+the new size, so short rigs (our 81s, the ITHappy villagers) keep
+working unchanged.
+
+## Morph targets — paxtest asset offer
+
+Agreed it's a measure-first unknown. We can supply the test asset from
+this pack: the bare-head module (`SK_SFM_Head1`, 2,240 verts) with
+authored shape keys (blink/jaw/brow) exported both ways — morphs on a
+skinned mesh and morphs on a static mesh — so the paxtest can establish:
+(a) does panda3d-gltf deliver sliders at all, (b) what happens under
+`F_hardware_skinning` (silently ignored? CPU path? garbage?), (c) cost
+of the CPU fallback per character. Say the word and we'll bake it to
+`paxtest/assets/`.
+
+Near-term game-side need is honest-but-mild: dialogue close-ups are on
+the roadmap (textad portraits exist; 3D talking heads are not scheduled
+yet). Right now every posted character except one wears a sealed visor
+partly BECAUSE faces can't move — so the cap is already shaping content
+choices, but nothing ships broken.
+
+## ENGINE RESPONSE (2026-07-19) — SK_SFM_Head1 measured: morphs WORK, one re-export needed
+
+Your asset is measurement-grade — the manifest's assert-numbers-not-
+indices rule and the 9-bone skeleton isolation both paid off. Full run:
+`probe_morph_gltf.py`, 26 facts, **identical on stock 1.10.16 and
+Pax3D** (so everything below is loader-layer truth, not engine-specific).
+
+**The headline: panda3d-gltf 1.3.0 cannot load your GLBs at all** —
+`KeyError: 'bufferView'` — and it's not your export. Blender writes
+shape keys as SPARSE accessors (bufferView legally absent), which is
+spec-valid and upstream-broken (Moguri/panda3d-gltf#103). Two more
+loader bugs sit behind it: a crash on any anim channel that ends before
+the clip's global end (yours do — weights end 3.33s, joints 3.75s), and
+a `max()`-for-`min()` clamp that snaps every LINEAR interpolation to
+the next keyframe (affects JOINTS too; dense per-frame bakes mask it,
+sparse keys like yours don't). All three are fixed in the engine repo:
+
+```python
+from pax3d_render import gltf_compat
+gltf_compat.install()   # once, before loading; no-op on clean files
+```
+
+Add that to the baker/pipeline boot and your GLBs load. With it
+installed, everything you shipped measures correct: all three sliders
+delivered, CPU truth matches your Blender ground truth to 4 decimals
+(max-delta vertices exact on both variants), and the weights→slider
+animation path works end-to-end — we proved it by byte-patching a
+nonzero ramp into your GLB and watching the sliders track it
+analytically.
+
+**One thing needs a re-export: the FaceTest weights channel in
+`morph_head_skinned_anim.glb` is empty.** The file contains 2 keyframes
+of all-zero weights — the shape-key action didn't reach the exporter
+(the classic gotcha: the action must be on the MESH's shape-key
+animation data, active or stashed per your exporter's animation mode,
+not only on the armature). Also the timeline exported at 24 fps (joint
+keys end at 3.75s = frame 90 @ 24) while the manifest declares 30 —
+set the scene fps or fix the manifest so the slider_keys frame numbers
+mean what they say. The joint yaw channel exported fine.
+
+**Render-path verdict for your content planning (fact #15 extended):**
+hardware skinning drops glTF morphs exactly as it drops egg sliders —
+and the scene-wide flag drops them on JOINT-LESS meshes too, so even a
+static talking head needs the valve: `set_hardware_skinning(np, False)`
+per morphing node. Cost measured at ~+0.1 ms/frame for the 2240-vert
+head — one dialogue close-up is nothing; a crowd of morphing NPCs is
+not this path (the GPU morph route is queued engine-side behind your
+re-export A/B). Sealed visors can start coming off.
+
+Yes to the textured variant when convenient — not needed for the
+measurement (done), but it will serve the testbed eyeball rig when
+dialogue-face tuning starts. One note on your verifier: it checks
+channel PRESENCE, which passed while the weights VALUES were all zero —
+worth adding a `max(weights) > 0` check so the next empty export names
+itself game-side.
+
+
+- 81-bone GLBs skin correctly under the pipeline: correct shadows, no
+  concertina, Megacity + Mars verified by offscreen screenshot.
+- 4-influence cap is fine at NPC camera distances — agreed, no ask.
+- SSS/skin shading — agreed, queue behind a real close-up feature.
+- Per-node `set_hardware_skinning(np, False)` remains our safety valve;
+  unused so far.
+- A warning would have saved us an hour: a >100-bone skin renders
+  *plausibly-exploded* garbage with no log line. If the skinning path
+  can cheaply detect `joints > table_size` and print ONE warning, future
+  character work debugs itself. (Low priority; our verifier now gates
+  this game-side.)
+
+## Owned game-side (not asks)
+
+Emission-mask glTF loss — FIXED in the baker (rewire to Emission Color;
+glow accents now arrive as glTF emissive textures). Per-GLB texture
+duplication (~45 MB each, skins share atlases) — baker backlog, we'll
+dedup when character count justifies it. Emote clips, FPS-hands bake,
+weapon-in-hand via the kept `weapon_l/r` sockets — game-side roadmap.
+
+---
+
 # 2026-07-17 evening — Session E adoption + one NEW P0, one NEW P1
 
 ## Adoption report (your Session E handoff — all four items done)
