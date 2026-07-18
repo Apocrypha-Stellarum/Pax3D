@@ -67,6 +67,10 @@ uniform float u_atmo_sun_power;      // forward-lobe tightness
 uniform float u_atmo_density;        // extinction per world unit at base height
 uniform float u_atmo_inv_scale_height;  // 1 / H (world units)
 uniform float u_atmo_base_height;    // world z of the density datum
+uniform float u_atmo_scale;          // per-node haze scale (Session S):
+                                     // scales optical depth; root default
+                                     // 1.0 exact no-op, 0.0 = no haze on
+                                     // the subtree (hull interiors)
 #endif
 
 uniform vec4 p3d_ColorScale;
@@ -539,7 +543,7 @@ void main() {
         float atmo_falloff = (abs(atmo_u) > 1e-4)
             ? (1.0 - exp(-clamp(atmo_u, -30.0, 30.0))) / atmo_u
             : 1.0;
-        float atmo_tau = u_atmo_density * atmo_dist
+        float atmo_tau = u_atmo_scale * u_atmo_density * atmo_dist
                          * exp(-clamp(atmo_a, -30.0, 30.0)) * atmo_falloff;
         float atmo_trans = exp(-clamp(atmo_tau, 0.0, 60.0));
         // Forward-scattering tint: mu = cos(view ray, toward-sun) — looking

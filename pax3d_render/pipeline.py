@@ -467,6 +467,12 @@ class Pipeline:
         # no-op; interiors override via set_ambient_scale(np, k).
         self.render_node.set_shader_input('u_ambient_scale', 1.0)
 
+        # Per-node atmosphere scale root default (Session S): 1.0 = exact
+        # no-op; hull interiors override via set_atmosphere_scale(np, k).
+        # Set unconditionally (harmless when ENABLE_ATMOSPHERE is not
+        # compiled; only MISSING inputs assert).
+        self.render_node.set_shader_input('u_atmo_scale', 1.0)
+
         # Debug lighting mode (0=normal, 1=normals, 2=n_dot_l, 3=light dir)
         self.render_node.set_shader_input('u_debug_lighting', 0.0)
 
@@ -1453,6 +1459,32 @@ class Pipeline:
         """Undo set_ambient_scale(): the subtree reverts to the inherited
         (root default 1.0) ambient scale, byte-identical to untouched."""
         nodepath.clear_shader_input('u_ambient_scale')
+
+    def set_atmosphere_scale(self, nodepath, scale):
+        """Scale the aerial-perspective haze (R5.1 ENABLE_ATMOSPHERE)
+        for `nodepath` and its subtree — the hull-interior companion to
+        set_ambient_scale (Session S; the Phobos "cabin wash" ask).
+
+        The scale multiplies the OPTICAL DEPTH of the exponential
+        medium, so it thins the haze physically: 0.0 makes tau exactly
+        0 (transmittance 1, inscatter 0 — no haze at all on the
+        subtree, bit-identical to density=0 for those fragments) while
+        the terrain seen through the windows keeps its full aerial
+        perspective; intermediate values behave like proportionally
+        thinner air. Direct light, ambient, emission are untouched —
+        this scales only the atmosphere term.
+
+        Uniform-cost per-node shader input (root default 1.0 = exact
+        no-op, IEEE x*1.0 == x) — inherits down the subtree, survives
+        recompiles, composes with set_glass (the glass path's
+        coverage-weighted inscatter uses the same tau). Typical use:
+        0.0 on the interior mesh group of a walkable ship."""
+        nodepath.set_shader_input('u_atmo_scale', float(scale))
+
+    def clear_atmosphere_scale(self, nodepath):
+        """Undo set_atmosphere_scale(): the subtree reverts to the
+        inherited (root default 1.0) haze, byte-identical to untouched."""
+        nodepath.clear_shader_input('u_atmo_scale')
 
     # ------------------------------------------------------------------
     # Glass (specular-preserving transparency)

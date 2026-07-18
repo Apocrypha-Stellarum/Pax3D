@@ -101,6 +101,14 @@ skybox→ambient+reflections recipe live in §7 — if lighting seems to
 come from the wrong compass direction, the fix is content rotation,
 never the face table.
 
+**Interiors (Session S):** the haze is an outdoor medium — inside a
+walkable hull it reads as "cabin wash." `set_atmosphere_scale(interior_np,
+0.0)` removes it from the interior subtree exactly (tau = 0) while the
+terrain seen through the windows keeps full aerial perspective;
+`clear_atmosphere_scale(np)` restores. Same per-node inherited-input
+shape as `set_ambient_scale` — tag the same interior mesh group with
+both.
+
 ## 3. Shadow texel snapping (`shadow_texel_snap`)
 
 You already built exactly this in `app.py:_follow_shadow_frustum` —

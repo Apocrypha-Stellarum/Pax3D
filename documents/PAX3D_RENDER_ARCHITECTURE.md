@@ -405,7 +405,7 @@ Three cost classes — keep new parameters within this taxonomy:
 
 | Class | Cost | Parameters / methods |
 |---|---|---|
-| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_env_map`/`clear_env_map` (§9 R5.3), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input), `activate_model_lights`/`deactivate_model_lights` (§9 Session P; scene-graph state only) |
+| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_env_map`/`clear_env_map` (§9 R5.3), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input), `set_atmosphere_scale`/`clear_atmosphere_scale` (§9 Session S; per-node inherited input scaling the R5.1 optical depth — hull interiors), `activate_model_lights`/`deactivate_model_lights` (§9 Session P; scene-graph state only) |
 | Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere`, `set_double_sided_lighting` (§9 Session K) |
 | FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, (`bloom_levels`, `msaa_samples` at init) |
 
@@ -597,6 +597,21 @@ work); `scale_height` sets how far above the ground the haze dies.
 `u_sun_dir_world`). Measured record: `test_atmosphere` (transmittance
 matches `curve(haze*(1-exp(-density*d)))` to 3 decimals at three
 distances, height falloff analytic, sunward tint, byte-identical opt-out).
+
+**Per-node scale (Session S — the Phobos "cabin wash" ask):**
+`set_atmosphere_scale(np, k)` / `clear_atmosphere_scale(np)` — the
+hull-interior companion to `set_ambient_scale`, same mechanism: an
+inherited shader input (`u_atmo_scale`, root default 1.0 = exact IEEE
+no-op) that multiplies the OPTICAL DEPTH. `k=0` makes tau exactly 0 —
+bit-identical to `density=0` for those fragments, so an interior mesh
+group carries no haze at all while terrain seen through the windows
+keeps full aerial perspective; intermediate values behave as
+proportionally thinner air (tau scales linearly, so analytics stay
+closed-form). Composes with glass (the coverage-weighted inscatter
+uses the same tau). Measured record: `test_atmosphere`
+`atmo_scale_*` checks (scale-1.0 rms 0; scale-0.5 analytic exact with
+the sibling unaffected; scale-0.0 == density-0 at rms 0; clear
+restores byte-identically) — green both engines × both baselines.
 
 ### R5.2 — Environment-driven ambient via irradiance SH (LANDED, Session J)
 

@@ -216,6 +216,97 @@ def main():
                    f'({b_anti:.3f} vs {r_anti:.3f}) — forward-scatter '
                    f'lobe follows the sun')
 
+    # --- 5b. Per-node atmosphere scale (Session S — hull interiors) -----
+    # Two black cards side by side at the same distance; scale only the
+    # left one. The right card is the sibling that must keep full haze.
+    if hasattr(pipeline, 'set_atmosphere_scale'):
+        for c in cards:
+            c.hide()
+        d2 = DISTANCES[1]
+        card_l = make_facing_card(base.render, 0.08 * d2, d2, 1.0,
+                                  (0, 0, 0), 'scale_left')
+        card_r = make_facing_card(base.render, 0.08 * d2, d2, 1.0,
+                                  (0, 0, 0), 'scale_right')
+        card_l.set_x(-0.12 * d2)
+        card_r.set_x(0.12 * d2)
+        h.adapter.update_sun((0, -1, 0), (0, 0, 0))   # mu=0: pure haze color
+
+        def project_px(np):
+            ndc = p3d.Point2()
+            base.camLens.project(base.camera.get_relative_point(
+                base.render, np.get_pos(base.render)), ndc)
+            return (int((ndc.x * 0.5 + 0.5) * h.win_w),
+                    int((ndc.y * 0.5 + 0.5) * h.win_h))
+
+        lx, ly = project_px(card_l)
+        rx, ry = project_px(card_r)
+        ray_d = math.hypot(d2, 0.12 * d2)   # camera (0,0,1) -> card center
+
+        # density=0 reference for the exact scale-0 comparison
+        pipeline.set_atmosphere_params(haze_color=HAZE, density=0.0,
+                                       scale_height=1e9, base_height=0.0)
+        h.step(5)
+        left_d0 = avg_rgb(h.capture(), lx, ly)
+
+        # Full haze on both cards
+        pipeline.set_atmosphere_params(density=DENSITY)
+        h.step(5)
+        img_full = h.capture()
+        h.save_capture(img_full, 'scale_full')
+
+        # scale 1.0 is an exact no-op (IEEE x*1.0)
+        pipeline.set_atmosphere_scale(card_l, 1.0)
+        h.step(5)
+        rms = common.image_rms_diff(img_full, h.capture(), step=1)
+        h.report.check('atmo_scale_one_noop', rms == 0.0,
+                       f'set_atmosphere_scale(np, 1.0): rms vs untouched '
+                       f'= {rms:.2e} (exact no-op)')
+
+        # scale 0.5: tau scales linearly -> analytic; sibling keeps full
+        pipeline.set_atmosphere_scale(card_l, 0.5)
+        h.step(5)
+        img_half = h.capture()
+        h.save_capture(img_half, 'scale_half')
+        got_l = avg_rgb(img_half, lx, ly)
+        got_r = avg_rgb(img_half, rx, ry)
+        want_l = tuple(curve(ch * (1.0 - math.exp(-DENSITY * ray_d * 0.5)))
+                       for ch in HAZE)
+        want_r = tuple(curve(ch * (1.0 - math.exp(-DENSITY * ray_d)))
+                       for ch in HAZE)
+        err_l = max(abs(g - w) for g, w in zip(got_l, want_l))
+        err_r = max(abs(g - w) for g, w in zip(got_r, want_r))
+        h.report.check(
+            'atmo_scale_half_analytic', err_l < 0.05 and err_r < 0.05,
+            f'scale 0.5: left rgb=({got_l[0]:.3f},{got_l[1]:.3f},'
+            f'{got_l[2]:.3f}) expected ({want_l[0]:.3f},{want_l[1]:.3f},'
+            f'{want_l[2]:.3f}) err {err_l:.3f}; sibling keeps full haze '
+            f'err {err_r:.3f} (tau scales linearly, per-node only)')
+
+        # scale 0.0 == density 0 for those fragments, exactly
+        pipeline.set_atmosphere_scale(card_l, 0.0)
+        h.step(5)
+        img_zero = h.capture()
+        h.save_capture(img_zero, 'scale_zero')
+        got_l0 = avg_rgb(img_zero, lx, ly)
+        err0 = max(abs(g - w) for g, w in zip(got_l0, left_d0))
+        got_r0 = avg_rgb(img_zero, rx, ry)
+        err_r0 = max(abs(g - w) for g, w in zip(got_r0, want_r))
+        h.report.check(
+            'atmo_scale_zero_no_haze', err0 < 1e-3 and err_r0 < 0.05,
+            f'scale 0.0: left matches the density=0 render to '
+            f'{err0:.2e} (tau exactly 0 — no haze on the subtree); '
+            f'sibling still full haze (err {err_r0:.3f})')
+
+        # clear restores byte-identically
+        pipeline.clear_atmosphere_scale(card_l)
+        h.step(5)
+        rms = common.image_rms_diff(img_full, h.capture(), step=1)
+        h.report.check('atmo_scale_clear_restores', rms == 0.0,
+                       f'clear_atmosphere_scale(): rms vs untouched = '
+                       f'{rms:.2e} (byte-identical restore)')
+        card_l.remove_node()
+        card_r.remove_node()
+
     # --- 6. Opt-out restores the baseline exactly -----------------------
     for c in cards:
         c.hide()
