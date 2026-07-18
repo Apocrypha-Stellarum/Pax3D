@@ -86,3 +86,40 @@ works; `max()` is just less code). Step/eye heights are game tuning.
 
 Report field results back to the master plan §4.8 row when the first
 walk-through happens.
+
+## 7. Field triage — first walk-through fell through the floor (2026-07-18)
+
+Engine-side measurement against the ACTUAL shipped GLB
+(`sfb2/assets/models/phobos_starhopper.glb`), run through the §2
+reference recipe:
+
+- The converter's mesh is GOOD: top-level `COLL_floor` → **1366 valid
+  CollisionPolygons**; ground queries hit correct deck heights
+  (z ≈ −0.81 model space; ramp bay −1.34) across the cabin footprint.
+- The GLB carries **0 CollisionNodes** — as designed: the LOADER must
+  run the triangle→CollisionPolygon conversion. If walk mode queries
+  before any conversion runs, there is nothing to hit → fall-through.
+  This is suspect #1.
+- **Naming drift**: the converter emitted `COLL_floor`, not the agreed
+  `phobos_collision` subtree with `walk_*`/`block_*` groups. A loader
+  searching for the agreed names finds nothing and silently degrades
+  (suspect #2). Converge either way; the agreed split is still wanted
+  once wall/ceiling blockers arrive (they are not in the GLB yet).
+- **The ramp has no collision**: `COLL_floor` is static and the query
+  MISSES at the far south end (y ≈ −11); the ramp lives in the
+  separate animated `Phobos_Starhopper_Ramp.FBX` node. Until a ramp
+  collision piece rides that node (§4, simple case — plain PandaNode,
+  no joint machinery), boarding via the ramp falls through AT THE
+  THRESHOLD. If the fall happens on entry, this is the spot.
+- Animated parts confirmed PLAIN PandaNodes (0 Characters) — §4's
+  simple case applies; ignore the joint/force_update machinery.
+- Minor: 1366 polys is heavier than the low-poly intent — works, but
+  a decimated collision floor would be kinder to per-frame queries.
+
+Wiring checklist (in order): (1) conversion actually runs at load;
+(2) name lookup matches what the converter emits; (3) `hide()` the
+collision source, never `stash()` — stashed nodes are SKIPPED by the
+collision traverser; (4) masks agree (`from` on the segment ==
+`into` on the collision node); (5) world transform: after parenting
+to the pad, `col_np.get_pos(render)` must be the pad, not the origin;
+(6) eyeball with `col_np.show()` + `ctrav.show_collisions(render)`.
