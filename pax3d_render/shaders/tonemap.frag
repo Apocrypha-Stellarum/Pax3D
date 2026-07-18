@@ -10,6 +10,9 @@ uniform sampler2D tex;
     uniform sampler2D bloom_tex;
     uniform float bloom_intensity;
 #endif
+#ifdef ENABLE_SSAO
+    uniform sampler2D ao_tex;
+#endif
 #ifdef USE_SDR_LUT
     uniform sampler3D sdr_lut;
     uniform float sdr_lut_factor;
@@ -101,6 +104,14 @@ void main() {
         }
         color = acc / float(TAPS);
     }
+
+    // SSAO (Session S): obscure the scene radiance BEFORE the bloom add
+    // (bloom sources are bright emitters where AO ~ 1) and before the
+    // curve. AO == 1.0 multiplies exactly — flat scenes stay
+    // byte-identical (the paxtest plane gate).
+#ifdef ENABLE_SSAO
+    color *= texture2D(ao_tex, v_texcoord).r;
+#endif
 
     // Bloom composite (additive, before tonemapping for correct rolloff)
 #ifdef ENABLE_BLOOM

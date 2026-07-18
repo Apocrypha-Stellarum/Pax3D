@@ -237,6 +237,8 @@ class Pipeline:
                  chromatic_aberration_strength=0.0,
                  radial_blur_center=(0.5, 0.5),
                  srgb_inputs=False,
+                 enable_ssao=False, ao_radius=1.0, ao_intensity=1.0,
+                 ao_bias=0.02, ao_samples=12,
                  **_kwargs):
         base = builtins.base
 
@@ -314,6 +316,23 @@ class Pipeline:
         # scene span (e.g. 0.1 / 1e9); the pipeline tracks the lens far
         # every frame for the shader coefficient.
         self.enable_log_depth = enable_log_depth
+
+        # SSAO first slice (Session S) — opt-in, default off =
+        # byte-identical (no depth target requested, no extra passes,
+        # tonemap compiled without ENABLE_SSAO). Depth-only screen-space
+        # ambient obscurance (ssao.frag documents the estimator);
+        # applied to the scene HDR color in tonemap BEFORE the bloom
+        # add and tone curve. ao_intensity=0 with the feature on is an
+        # exact no-op (AO = 1.0 multiplies exactly). ao_samples is
+        # compile-time (init-only); radius/intensity/bias are
+        # uniform-only setters.
+        self.enable_ssao = bool(enable_ssao)
+        self.ao_radius = float(ao_radius)
+        self.ao_intensity = float(ao_intensity)
+        self.ao_bias = float(ao_bias)
+        self.ao_samples = max(4, min(64, int(ao_samples)))
+        self._ssao_quad = None
+        self._ssao_blur_quad = None
 
         # Planetside package (Session J / R5.1-R5.3) — ALL opt-in; with the
         # defaults every one of these is byte-identical to the previous
@@ -758,9 +777,22 @@ class Pipeline:
         scene_tex.set_minfilter(p3d.SamplerState.FT_linear)
         scene_tex.set_magfilter(p3d.SamplerState.FT_linear)
 
-        postquad = self._filtermgr.render_scene_into(
-            colortex=scene_tex, fbprops=fbprops
-        )
+        depth_tex = None
+        if self.enable_ssao:
+            # SSAO needs the scene depth. Requested only when the feature
+            # is on, so the default chain is structurally untouched.
+            depth_tex = p3d.Texture('scene_depth')
+            depth_tex.set_wrap_u(p3d.SamplerState.WM_clamp)
+            depth_tex.set_wrap_v(p3d.SamplerState.WM_clamp)
+            depth_tex.set_minfilter(p3d.SamplerState.FT_nearest)
+            depth_tex.set_magfilter(p3d.SamplerState.FT_nearest)
+            postquad = self._filtermgr.render_scene_into(
+                colortex=scene_tex, depthtex=depth_tex, fbprops=fbprops
+            )
+        else:
+            postquad = self._filtermgr.render_scene_into(
+                colortex=scene_tex, fbprops=fbprops
+            )
 
         if postquad is None:
             raise RuntimeError('[Pax3DRender] Failed to setup FilterManager')
@@ -769,7 +801,55 @@ class Pipeline:
             'USE_330': self._use_330,
             'IS_WEBGL': self._is_webgl,
             'ENABLE_BLOOM': self.enable_bloom,
+            'ENABLE_SSAO': self.enable_ssao,
         }
+
+        ao_result_tex = None
+        self._ssao_quad = None
+        self._ssao_blur_quad = None
+        if self.enable_ssao:
+            win_x = self.window.get_x_size()
+            win_y = self.window.get_y_size()
+            ssao_defines = {
+                'USE_330': self._use_330,
+                'IS_WEBGL': self._is_webgl,
+                'LOG_DEPTH': self.enable_log_depth,
+                'AO_SAMPLES': self.ao_samples,
+            }
+            texel = p3d.LVecBase2(1.0 / max(1, win_x), 1.0 / max(1, win_y))
+            # AO is a [0,1] scalar — the default 8-bit FBO is a DELIBERATE
+            # choice here (256 obscurance levels is standard), unlike the
+            # bloom chain where HDR data demands float fbprops (fact #3).
+            ao_raw_tex = p3d.Texture('ssao_raw')
+            ao_raw_tex.set_wrap_u(p3d.SamplerState.WM_clamp)
+            ao_raw_tex.set_wrap_v(p3d.SamplerState.WM_clamp)
+            ssao_quad = self._filtermgr.render_quad_into(
+                colortex=ao_raw_tex)
+            ssao_quad.set_shader(shaderutils.make_shader(
+                'ssao', 'post.vert', 'ssao.frag', ssao_defines))
+            ssao_quad.set_shader_input('depth_tex', depth_tex)
+            ssao_quad.set_shader_input('u_texel', texel)
+            ssao_quad.set_shader_input('u_ao_radius', self.ao_radius)
+            ssao_quad.set_shader_input('u_ao_intensity', self.ao_intensity)
+            ssao_quad.set_shader_input('u_ao_bias', self.ao_bias)
+            # Lens params (u_proj_tan/u_near_far/u_log_depth_coef) are
+            # pushed every frame by _update — the game changes them.
+            self._push_ssao_lens_inputs(ssao_quad)
+            self._ssao_quad = ssao_quad
+
+            ao_tex = p3d.Texture('ssao_blurred')
+            ao_tex.set_wrap_u(p3d.SamplerState.WM_clamp)
+            ao_tex.set_wrap_v(p3d.SamplerState.WM_clamp)
+            blur_quad = self._filtermgr.render_quad_into(colortex=ao_tex)
+            blur_quad.set_shader(shaderutils.make_shader(
+                'ssao_blur', 'post.vert', 'ssao_blur.frag', {
+                    'USE_330': self._use_330,
+                    'IS_WEBGL': self._is_webgl,
+                }))
+            blur_quad.set_shader_input('ao_tex', ao_raw_tex)
+            blur_quad.set_shader_input('u_texel', texel)
+            self._ssao_blur_quad = blur_quad
+            ao_result_tex = ao_tex
 
         bloom_result_tex = None
 
@@ -902,6 +982,8 @@ class Pipeline:
                 tonemap_quad.set_shader_input('bloom_tex', bloom_result_tex)
                 tonemap_quad.set_shader_input('bloom_intensity',
                                               self.bloom_intensity)
+            if ao_result_tex is not None:
+                tonemap_quad.set_shader_input('ao_tex', ao_result_tex)
             self._apply_warp_distortion_inputs(tonemap_quad)
             self._tonemap_quad = tonemap_quad
 
@@ -970,6 +1052,8 @@ class Pipeline:
                 postquad.set_shader_input('bloom_tex', bloom_result_tex)
                 postquad.set_shader_input('bloom_intensity',
                                           self.bloom_intensity)
+            if ao_result_tex is not None:
+                postquad.set_shader_input('ao_tex', ao_result_tex)
             self._apply_warp_distortion_inputs(postquad)
 
         self._post_process_quad = postquad
@@ -995,6 +1079,52 @@ class Pipeline:
         lens = self.camera_node.node().get_lens()
         lens.set_film_offset(0, 0)
         self._setup_tonemapping()
+
+    def _push_ssao_lens_inputs(self, quad):
+        """Push the camera lens parameters the SSAO pass needs to
+        reconstruct view-space positions. Called at chain build and
+        every frame (the game changes fov/near/far at runtime)."""
+        lens = self.camera_node.node().get_lens()
+        fov = lens.get_fov()
+        tan_x = math.tan(math.radians(fov[0]) * 0.5)
+        tan_y = math.tan(math.radians(fov[1]) * 0.5)
+        quad.set_shader_input('u_proj_tan', p3d.LVecBase2(tan_x, tan_y))
+        quad.set_shader_input('u_near_far', p3d.LVecBase2(
+            lens.get_near(), lens.get_far()))
+        far = max(2.0, lens.get_far())
+        quad.set_shader_input('u_log_depth_coef',
+                              1.0 / math.log2(1.0 + far))
+
+    def set_enable_ssao(self, enabled):
+        """Toggle SSAO (rebuild-class: the chain gains/loses the depth
+        target and the AO passes; aux cameras auto-reattach)."""
+        enabled = bool(enabled)
+        if enabled == self.enable_ssao:
+            return
+        self.enable_ssao = enabled
+        self._rebuild_tonemapping()
+
+    def set_ao_radius(self, value):
+        """SSAO world-space sampling radius (uniform-only)."""
+        self.ao_radius = float(value)
+        if self._ssao_quad is not None:
+            self._ssao_quad.set_shader_input('u_ao_radius', self.ao_radius)
+
+    def set_ao_intensity(self, value):
+        """SSAO obscurance strength (uniform-only). 0.0 is an exact
+        no-op even with the feature compiled in (AO = 1.0 exactly)."""
+        self.ao_intensity = float(value)
+        if self._ssao_quad is not None:
+            self._ssao_quad.set_shader_input('u_ao_intensity',
+                                             self.ao_intensity)
+
+    def set_ao_bias(self, value):
+        """SSAO depth-proportional self-occlusion bias (uniform-only).
+        Raise if flat surfaces show noise; lower if tight corners read
+        too bright."""
+        self.ao_bias = float(value)
+        if self._ssao_quad is not None:
+            self._ssao_quad.set_shader_input('u_ao_bias', self.ao_bias)
 
     def set_bloom_strength(self, value):
         """Update bloom extract strength (uniform-only, no rebuild)."""
@@ -2270,6 +2400,10 @@ class Pipeline:
             far = max(2.0, self.camera_node.node().get_lens().get_far())
             self.render_node.set_shader_input(
                 'u_log_depth_coef', 1.0 / math.log2(1.0 + far))
+
+        # SSAO reconstructs positions from the lens — track it per frame
+        if self._ssao_quad is not None:
+            self._push_ssao_lens_inputs(self._ssao_quad)
 
         # TAA per-frame jitter
         if self.enable_taa and self._taa_resolve_quad is not None:

@@ -405,9 +405,9 @@ Three cost classes — keep new parameters within this taxonomy:
 
 | Class | Cost | Parameters / methods |
 |---|---|---|
-| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_env_map`/`clear_env_map` (§9 R5.3), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input), `set_atmosphere_scale`/`clear_atmosphere_scale` (§9 Session S; per-node inherited input scaling the R5.1 optical depth — hull interiors), `activate_model_lights`/`deactivate_model_lights` (§9 Session P; scene-graph state only) |
+| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `set_ao_radius`/`set_ao_intensity`/`set_ao_bias` (§9 Session S), `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_env_map`/`clear_env_map` (§9 R5.3), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input), `set_atmosphere_scale`/`clear_atmosphere_scale` (§9 Session S; per-node inherited input scaling the R5.1 optical depth — hull interiors), `activate_model_lights`/`deactivate_model_lights` (§9 Session P; scene-graph state only) |
 | Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere`, `set_double_sided_lighting` (§9 Session K) |
-| FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, (`bloom_levels`, `msaa_samples` at init) |
+| FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, `set_enable_ssao` (§9 Session S), (`bloom_levels`, `msaa_samples`, `ao_samples` at init) |
 
 Constructor parameters (all keyword): `render_node, window, camera_node,
 taskmgr, msaa_samples=4, max_lights=8, enable_shadows=False,
@@ -917,6 +917,53 @@ registration with density=0 AND full opt-out both rms exactly 0.0.
 Green both engines x both baselines x `@logdepth`. Eyeball rig:
 `test3d_pax.py --pax3d --orbital` (O toggles, Shift+O cycles
 earth/mars presets).
+
+### Session S — SSAO first slice: `enable_ssao` (LANDED, opt-in)
+
+The first true post-R5 PaxPBR-native feature (nothing in the simplepbr
+lineage): screen-space ambient obscurance for interior/contact
+shading — the walkable-ship "corners are flat" fix and the game
+roadmap's Tier-1 ask.
+
+**Architecture (first slice, deliberately depth-only):** when enabled,
+the scene buffer gains a depth target (`render_scene_into(depthtex=…)`
+— requested ONLY when on, so the default chain is structurally
+untouched); an `ssao.frag` pass reconstructs view-space positions from
+depth (normals from `dFdx/dFdy` — zero scene-shader changes) and
+evaluates Alchemy/SAO-style obscurance over a rotated spiral kernel,
+radius-normalized so AO is scene-scale-invariant; a 3×3 tent
+(`ssao_blur.frag`) suppresses the rotation noise; tonemap multiplies
+the scene HDR color by AO BEFORE the bloom add and tone curve. The AO
+buffers are DELIBERATELY 8-bit (a [0,1] scalar — unlike the bloom
+chain, where fact #3 demands float fbprops).
+
+**The defining measured property:** flat geometry produces AO exactly
+1.0 (every tap lies in the tangent plane; the depth-proportional bias
+absorbs quantization), so on planes the multiply is an exact no-op —
+SSAO can only darken real concavities. `ao_intensity=0` is likewise an
+exact no-op. Honest scope note: at tonemap time the AO multiplies the
+COMPLETE radiance (direct included) — the classic screen-space AO
+compromise; the principled indirect-only variant (AO map sampled in
+the scene pass, folded into the §Session-L ambient/occlusion factor)
+needs a depth prepass and is the documented upgrade path.
+
+Knobs: `enable_ssao` (init) / `set_enable_ssao()` (rebuild-class);
+`ao_radius` (world units), `ao_intensity`, `ao_bias`
+(uniform-only setters); `ao_samples` (init-only compile define,
+default 12). The lens (fov/near/far) is re-pushed every frame; under
+LOG_DEPTH the pass inverts the log formula instead of the standard
+linearization.
+
+Measured record: `test_ssao` — plane byte-identity (rms 0.00e+00 with
+the feature ON over constant-depth geometry), both creases of a
+wall/floor/ceiling slot darken while the wall center 3 units away is
+unchanged, intensity monotonic, intensity-0 and full opt-out both rms
+0.00e+00. Green both engines × both baselines × `@logdepth` ×
+`@msaa4` — the msaa4 row is itself a measurement: **the multisampled
+depth resolve works** (the game's default msaa_samples=4 needs no
+special-casing). Rig lesson encoded: the MSAA resolve can shift a
+crease line sub-pixel — crease samples scan ±3 rows for the minimum
+(fact-#12 discipline).
 
 ---
 

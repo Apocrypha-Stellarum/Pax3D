@@ -21,7 +21,7 @@ ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows',
              'shadow_snap', 'ftl_blur', 'scale', 'skinning',
              'atmosphere', 'ambient_sh', 'glass', 'doublesided',
              'ambient_scale', 'env_map', 'local_lights', 'orbital',
-             'srgb']
+             'srgb', 'ssao']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 
@@ -65,6 +65,8 @@ def run_one(test, pipeline, extra_args, timeout=180):
             payload['variant'] = 'logdepth'
         if arg == '--soft-skin':
             payload['variant'] = 'softskin'
+        if arg == '--msaa' and i + 1 < len(extra_args):
+            payload['variant'] = 'msaa' + extra_args[i + 1]
     return payload
 
 
@@ -120,6 +122,12 @@ def main():
                 # when LOG_DEPTH is on — prove they still depth-compose
                 # with the planet/backdrop geometry
                 jobs.append((test, pipeline, passthrough + ['--log-depth']))
+            if test == 'ssao' and pipeline == 'pax3d_render':
+                # Session S: the depth inversion must hold under log depth,
+                # and the game default is msaa 4 — measure the multisampled
+                # depth resolve path explicitly
+                jobs.append((test, pipeline, passthrough + ['--log-depth']))
+                jobs.append((test, pipeline, passthrough + ['--msaa', '4']))
 
     results = []
     print(f'paxtest: {len(jobs)} jobs, python={sys.executable}, '
@@ -134,6 +142,8 @@ def main():
             size += ' @logdepth'
         if '--soft-skin' in extra:
             size += ' @softskin'
+        if '--msaa' in extra:
+            size += ' @msaa' + extra[extra.index('--msaa') + 1]
         label = f'{test}/{pipeline}{size}'
         print(f'--- {label} ---')
         result = run_one(test, pipeline, extra)
