@@ -41,7 +41,7 @@ Identical paxtest results on both engines = the defect is Python/GLSL, not C++.
 | R2 directional sun + shadows | Pipeline-owned DirectionalLight, HPR-driven; shadows with world-space extent center; **hardened Session E**: world-unit bias, 3×3 PCF, no-cast API, skinned casters proven; **hardened Session G**: glTF caster darkening is a hard assertion, glTF caster+receiver test (angled sun), per-node `set_hardware_skinning()` opt-out; **Session I**: slope-scaled bias (`shadow_normal_bias_world`, opt-in) kills grazing-angle acne (fact 14) | **Core done + hardened** (test_shadows 13+13, test_shadow_quality 9, test_shadows_gltf 6, test_shadow_grazing 6, test_skinning 12). Open: in-game validation — set `shadow_bias_world` (~0.5 IEU) first; openworld dev A/Bs `shadow_normal_bias_world` at az 240 low sun |
 | R3 bloom + HDR | F3 root-caused (8-bit intermediate FBOs) and fixed; float fbprops everywhere | **Core done** (Session D; test_bloom green both sizes). Open: content retune, light units, auto-exposure stretch |
 | R4 space scale | R4.0 acceptance tests; R4.1 log depth opt-in (`enable_log_depth`, @logdepth row green); R4.2 camera-relative DECIDED (game-side; parent-cancel trap measured); doubles wheel **built + verified 2026-07-17**: precision 0.000e+00 at Neptune offsets, `test3d_ftl --selftest` green, but stock simplepbr crashes on it (stays quarantined in `pax3d-double-env`) | **Engine side essentially done.** Open: game-side R4.2 implementation, frustum flip, then sky-camera retirement; doubles perf A/B + user flight |
-| R5 atmosphere + signature look | Scattering, SH-from-skybox ambient, height fog, lens polish | **Planetside slice LANDED opt-in (Session J, user-directed):** R5.1 aerial perspective/height haze (`enable_atmosphere`, analytic exponential-height medium + sunward scatter tint), R5.2 env ambient via the existing SH path (`set_hemisphere_ambient`/`set_ambient_sh`, `sh_from_cubemap` experimental), plus backlog shadow texel snapping (`shadow_texel_snap`). All default-off = byte-identical; gated by test_atmosphere/test_ambient_sh/test_shadow_snap, green both engines × both baselines. **Session M: R5.3 specular IBL first slice landed** (`set_env_map` + real BRDF LUT, test_env_map analytics exact). Open: field tuning in openworld Mars colony (`PLANETSIDE_LOOK_GUIDE.md`), orbital scattering + lens polish, GGX prefilter tool |
+| R5 atmosphere + signature look | Scattering, SH-from-skybox ambient, height fog, lens polish | **Planetside slice LANDED opt-in (Session J, user-directed):** R5.1 aerial perspective/height haze (`enable_atmosphere`, analytic exponential-height medium + sunward scatter tint), R5.2 env ambient via the existing SH path (`set_hemisphere_ambient`/`set_ambient_sh`, `sh_from_cubemap` experimental), plus backlog shadow texel snapping (`shadow_texel_snap`). All default-off = byte-identical; gated by test_atmosphere/test_ambient_sh/test_shadow_snap, green both engines × both baselines. **Session M: R5.3 specular IBL first slice landed** (`set_env_map` + real BRDF LUT, test_env_map analytics exact). **Session Q: R5.4 GGX prefilter tool landed** (`tools/gen_env_prefilter.py`, test_env_map end-to-end) + sh_from_cubemap face table pinned incl. file-loaded skyboxes (test_ambient_sh 6-8) — the skybox → ambient + reflections chain is now proven and correct end to end. Open: field tuning in openworld Mars colony (`PLANETSIDE_LOOK_GUIDE.md`), orbital scattering + lens polish |
 | R6 engine surgery | DX9 + dead-backend deletion | **Windows 2+3 DONE 2026-07-17** (`d29183ce42`, `3912762dd9` — −35k lines, both fully gated). Window 4 (mobile-target extraction) queued — `ENGINE_SURGERY_PLAN.md` |
 
 Engine changes to date: the makepanda oscmd fix, the Route A catch-up merge
@@ -167,8 +167,13 @@ toggleable off for space scenes):
   bound; set_env_map refuses to run on it). Mip chain = roughness
   ladder (feed a GGX-prefiltered chain for correctness; box mips are
   the documented approximation). Gated by test_env_map (analytics
-  exact vs LUT peek; ladder, orientation, glass composition). Open:
-  offline GGX prefilter tool; per-scene cubemap authoring.
+  exact vs LUT peek; ladder, orientation, glass composition).
+  **Session Q closed the gap (R5.4): `tools/gen_env_prefilter.py`**
+  bakes the correct complete GGX chain (reference sampling math
+  borrowed from pip simplepbr; test_env_map checks 8-11 prove it end
+  to end). Also Session Q: the sh_from_cubemap face table PINNED for
+  file-loaded skyboxes (test_ambient_sh 6-8; up-face image top row =
+  southern sky). Open: per-scene cubemap authoring.
 - **Atmospheric scattering** for orbital views (single-scattering analytic
   limb model per planet type; Bruneton LUTs as stretch) — not started.
 - Lens flare/dirt polish on the bloom chain — not started.

@@ -133,9 +133,14 @@ through the shader's existing (previously zeroed) `sh_coeffs` path.
 Asserts the hemisphere ambient analytics per channel (up-facing card gets
 `base*kd*(avg + 2/3*delta)`, down-facing the ground-bounce mix), that the
 coefficients survive a recompile-class toggle, that `clear_ambient_sh()`
-restores the baseline byte-identically, and that the EXPERIMENTAL
-`sh_from_cubemap()` reproduces the analytic hemisphere coefficients from
-a synthetic cubemap (math-only check, no rendering).
+restores the baseline byte-identically, and that `sh_from_cubemap()`
+reproduces the analytic hemisphere coefficients from a synthetic cubemap
+(math-only check, no rendering). Session Q adds the face-table PIN
+(closing the orientation question the openworld marker rig validated
+in-app): six solid-color face files through `loader.load_cube_map` land
+file N on GL face N with content intact, the file → SH → irradiance
+chain names every compass marker correctly, and a gradient up-face file
+proves the up-face image's TOP row is the SOUTHERN sky.
 
 **`test_glass.py`** (Session K) — specular-preserving glass
 (`set_glass()`). A flat card with the sun exactly on the view axis makes
@@ -181,7 +186,14 @@ cubemap per-channel analytics, the LOD ladder addresses hand-loaded
 per-mip colors (roughness 0 → mip 0, roughness 1 → top mip), mirror
 ORIENTATION (normal incidence → -Y face, 45° pitch → +Z face: cube
 sampling is GL-standard), glass composition (reflections unattenuated
-through alpha), recompile survival, and byte-identical clear.
+through alpha), recompile survival, and byte-identical clear. Session Q
+adds the GGX prefilter tool checks (`tools/gen_env_prefilter.py`, run as
+a real subprocess; requires pip simplepbr, else reported INFO and
+skipped): the .txo carries a complete mip chain with mip 0 an exact
+identity, a uniform env stays exactly uniform at every level (GGX weight
+normalization), the ladder blurs monotonically, and the tool's .txo
+drives `textureCubeLod` end to end (mirror reads mip 0, roughness 1
+reads the tool's top-mip texel, both to 3-decimal exactness).
 
 **`test_local_lights.py`** (Session O — ship interior lighting) — the
 p3d_LightSource point/spot loop, the pipeline's last never-measured
@@ -213,6 +225,19 @@ on a clean engine — pack 1 pixel-exact across all 50 Walk frames, pack 2
 ≤0.25% (shading-level), palette math exact, net Rigify compensating-scale
 chains compose to 1.000.
 
+**`probe_texturestage.py`** (Session Q, openworld round-4 P2) — NOT a
+gate test: a four-mode diagnostic pinning where TextureStage combine
+modes actually run. Measures combine-constant / rgb_scale /
+CM_interpolate under compat-FFP, compat+auto-shader, core-no-shader,
+and core+auto-shader. Diagnosis on file: under `gl-version 3 2` every
+shaderless state is drawn by glgsg's minimal built-in default shader
+(one stage, no combine machinery — color scale works, everything else
+silently inert), and `set_shader_auto` cannot help because the generated
+Cg shader fails to compile under core ("The profile is not supported")
+and falls back to the same default shader. Identical on stock 1.10.16 —
+expected upstream behavior, not a fork regression
+(`OPENWORLD_FEEDBACK_RESPONSE_5.md` §1).
+
 **`test_ftl_blur.py`** — the FTL warp distortion pass (radial blur +
 chromatic aberration in tonemap); asserts zero-strength passthrough and
 effect behavior (added alongside the feature, post-Session-D).
@@ -238,7 +263,7 @@ the correct surface's favor and mimic a working depth buffer.
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Results snapshot (post Session O, 2026-07-18)
+## Results snapshot (post Session Q, 2026-07-18)
 
 Same results on stock 1.10.16 and Pax3D 1.11.0 (Window-3 wheel), both
 baselines. Note: with the game's `use_pax3d_render` flag flipped
@@ -258,11 +283,11 @@ attach pattern, which fails by design).
 | shadow_grazing | skip | skip | skip | **PASS (grazing acne cleared by slope-scaled bias, umbra kept)** |
 | shadow_snap | skip | skip | skip | **PASS (sub-texel sweep depth+screen stable; teeth measured)** |
 | atmosphere | skip | skip | PASS | **PASS (analytic transmittance exact; opt-out byte-identical)** |
-| ambient_sh | skip | skip | PASS | **PASS (hemisphere analytics exact; SH survives recompile)** |
+| ambient_sh | skip | skip | PASS | **PASS (hemisphere analytics exact; SH survives recompile; file-skybox face table pinned)** |
 | glass | skip | skip | PASS | **PASS (spec survives alpha, 2.07× vs M_alpha; both sun modes; opt-out byte-identical)** |
 | doublesided | skip | skip | PASS | **PASS (backface 0.108→0.705 analytic; front faces bit-identical; opt-out byte-identical)** |
 | ambient_scale | skip | skip | PASS | **PASS (per-channel analytics exact ×3 states; direct light unscaled; opt-out byte-identical)** |
-| env_map | skip | skip | PASS | **PASS (analytics exact vs LUT peek; LOD ladder + orientation + glass composition; opt-out byte-identical)** |
+| env_map | skip | skip | PASS | **PASS (analytics exact vs LUT peek; LOD ladder + orientation + glass composition; GGX prefilter tool end-to-end; opt-out byte-identical)** |
 | local_lights | skip | skip | PASS | **PASS (point/spot analytics exact incl. attenuation + scoping; interior recipe composes; both sun modes)** |
 | ftl_blur | skip | skip | PASS | PASS |
 | scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)**; **@logdepth PASS (R4.1)** |

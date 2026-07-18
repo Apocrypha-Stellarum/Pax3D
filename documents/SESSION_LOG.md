@@ -478,3 +478,49 @@ scale_height to ~3x the terrain span, re-datum base_height to
 mid-terrain, pick density by target visibility). Engine offer on file:
 an optional density-amplification clamp if varied terrain keeps
 fighting the exponential — not needed if the retune lands.
+
+**Session Q update (2026-07-18):** Field-response session — the round-4
+dossier addenda answered, plus the R5.4 prefilter gap closed. (1)
+**Openworld P2 (TextureStage combine drop under core profile) DIAGNOSED:
+expected upstream behavior, not a fork regression.** Under gl-version
+3 2 every state without an explicit shader is drawn by glgsg's minimal
+built-in default GLSL shader (glGraphicsStateGuardian_src.cxx:189-303 —
+one texture stage, textureProj x vertexColor x colorScale; no combine
+constants/scales/interpolate, which is why set_color_scale works live
+and unclamped while everything else is silently inert). The full
+ShaderGenerator only runs for set_shader_auto states
+(graphicsStateGuardian.cxx:3998) and emits Cg (shaderGenerator.cxx:777),
+which cannot compile under core ("The profile is not supported") ->
+falls back to the same default shader (:8866). Probe:
+tools/paxtest/probe_texturestage.py, four-mode matrix, byte-identical
+verdicts on stock 1.10.16 and the Window-3 wheel. Their one-line-warning
+ask queued as a C++ build-window candidate (CLAUDE.md queue).
+Recommendation to the game stands: explicit GLSL for the dome. (2)
+**sh_from_cubemap orientation CLOSED end to end** — the game's marker
+rig validated captures in-app (NOT FLIPPED); we pinned the remaining
+half (image FILES): test_ambient_sh checks 6-8 prove
+loader.load_cube_map puts file N on GL face N content-intact, the
+file -> SH -> irradiance chain names every compass marker, and a
+gradient up-face proves the up-face image's TOP row is the SOUTHERN
+sky. EXPERIMENTAL caveat retired from the docstring; face table now
+documented as PINNED (three legs: shader sampling / captures / files).
+(3) **R5.4 GGX prefilter tool landed:** tools/gen_env_prefilter.py
+bakes any cubemap into the correct complete GGX roughness ladder
+(perceptual roughness i/(levels-1), default max_lod addresses it
+seamlessly). Borrow-and-verify like the BRDF LUT: simplepbr 0.13.1's
+filter_sample/calc_vector verbatim; only the mip loop is ours — the
+reference's own loop ZeroDivisionErrors at the 1x1 level (dim-1
+division; their 4-level default never reaches it). Inherited quirks
+documented (-z-pole tangent degeneracy, corner-stretched texel
+directions). 2.6 s at 64px/32 samples. Gated by test_env_map checks
+8-11 (subprocess-run tool: mip-0 identity exact, uniform env exactly
+preserved at every level, monotone ladder 0.700->0.450, .txo drives
+textureCubeLod at max err 0.000). (4) **Response 5 shipped**
+(OPENWORLD_FEEDBACK_RESPONSE_5.md) + game-side doc loop closed: the
+west-sun P0 fix (Session I set_shadow_normal_bias) finally wired into
+USING_PAX3D_RENDER.md and the planetside unification handover — the
+planetside team still listed it as an open engine ask; adoption lessons
+from their Mars report (day-cycle-scaled haze colors, sub-km density
+starting points) added to PLANETSIDE_LOOK_GUIDE.md §5. Full 19-test
+matrix green on both engines after every change (43 PASS / 6 documented
+FAILs / 57 SKIP, identical stock vs Pax3D).

@@ -177,3 +177,21 @@ free to tune LIVE in-game:
 The "which" is aesthetic — the surround author deliberately left it
 open. Whatever wins, the valley fix (scale_height + base_height) is
 non-negotiable for walkable low ground.
+
+### Field lessons from the Mars adoption (openworld round 4, 2026-07-18)
+
+Two corrections learned from the first in-game adoption
+(`PAX3D_FEEDBACK_2.md`, settled values recorded in
+`OPENWORLD_FEEDBACK_RESPONSE_5.md` §3):
+
+- **Scale BOTH haze colors by your day-cycle luminance** (normalized to
+  noon). A constant `haze_color`/`sun_haze_color` paints distant
+  hulls and mountains bright tan against the night sky — the classic
+  constant-color-fog bug, inherited intact if you only tune for noon.
+  Per-frame `set_atmosphere_params` calls are uniform-only and proven
+  flawless for this — that is the blessed mechanism.
+- **Density on sub-km maps: start LOWER than the toy-scale guess.** The
+  original guidance ("5-10× the metre-scale 0.0012") overshot on a
+  660 m half-extent world: 0.0025 milked out the far colony at 400 m;
+  0.0018 (1/density ≈ 555 m) kept it readable while still dissolving
+  the mountain ring. Pick by target visibility first, then walk it up.

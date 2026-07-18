@@ -593,10 +593,15 @@ default) remain byte-identical to the pre-R5 pipeline:
   coefficients, shader slot order `[1, x, z, y, xz, yz, xy, 3z²-1,
   x²-y²]` (simplepbr constants).
 - `clear_ambient_sh()` — back to zeros, byte-identical restore.
-- `sh_from_cubemap(tex)` (module-level, EXPERIMENTAL) — CPU projection of
-  a loaded cubemap to those 9 coefficients (call once at scene setup).
-  The up/down axis and DC term are validated; confirm horizontal
-  orientation against a real skybox before tuning content to it.
+- `sh_from_cubemap(tex)` (module-level) — CPU projection of a loaded
+  cubemap to those 9 coefficients (call once at scene setup). Face
+  table PINNED (Session Q): file/face 0 = +x east, 1 = -x west,
+  2 = +y north, 3 = -y south, 4 = +z up, 5 = -z down; a file-loaded
+  up-face image's TOP row is the SOUTHERN sky. Proven on all three
+  legs — shader sampling (test_env_map mirror proof), win.makeCubeMap
+  captures (openworld marker rig, 2026-07-18; parent the capture rig
+  to render, not the camera), and loader.load_cube_map image files
+  (test_ambient_sh checks 6-8).
 
 The custom coefficients survive shader recompiles
 (`_set_env_map_uniforms` re-pushes the CURRENT set — the §3 invariant
@@ -710,11 +715,11 @@ env color as a bias. Defaults stay byte-identical (black env × any LUT
 **The binding.** `set_env_map(cubemap, max_lod=None)` feeds the
 shader's until-now-black `filtered_env_map`/`max_reflection_lod` path:
 `ibl_spec = textureCubeLod(env, reflect_dir, perceptual_roughness *
-max_lod) * (F * lut.x + lut.y)`. FIRST-SLICE CONTRACT: the cubemap's
-own mip chain IS the roughness ladder — feed a GGX-prefiltered chain
-for correctness; an ordinary cubemap gets mipmap filtering enforced
-and auto box mips as an approximation (fine for blurry metal; a
-prefilter tool is future R5 work). `max_lod` defaults to the full
+max_lod) * (F * lut.x + lut.y)`. CONTRACT: the cubemap's own mip
+chain IS the roughness ladder — bake the correct chain with
+`tools/gen_env_prefilter.py` (R5.4 below); an ordinary cubemap gets
+mipmap filtering enforced and auto box mips as an approximation
+(fine for blurry metal). `max_lod` defaults to the full
 chain. Pair the diffuse half from the same source:
 `set_ambient_sh(sh_from_cubemap(cubemap))`. Uniform-cost; survives
 recompiles; reflections ride at FULL strength on `set_glass` nodes
@@ -731,6 +736,37 @@ cube sampling is GL-standard; evidence toward the Session J
 sh_from_cubemap orientation question, sampling side), glass
 composition (env term unattenuated through alpha 0.15), recompile
 survival and opt-out both rms 0.
+
+### R5.4 — The GGX prefilter tool: `tools/gen_env_prefilter.py` (LANDED, Session Q)
+
+Promotes `set_env_map` from documented approximation to correct: bakes
+any cubemap (six-file `#` pattern or cube-map .txo/.dds) into a COMPLETE
+GGX-prefiltered mip chain — mip i carries perceptual roughness
+i/(levels-1), the exact convention `textureCubeLod(env, r,
+perceptual_roughness * max_lod)` samples, so the default `max_lod`
+addresses it with no argument. Same borrow-and-verify shape as the BRDF
+LUT: the per-texel sampling math is pip simplepbr 0.13.1's own
+`filter_sample`/`calc_vector` (Karis split-sum, GGX importance
+sampling, NdotL weighting), borrowed verbatim; only the mip LOOP is
+ours, because the reference's `filter_env_map` cannot reach the 1×1
+level (its `calc_vector` divides by `dim - 1` — ZeroDivisionError;
+upstream's 4-level default never hits it). Inherited reference quirks
+documented in the tool docstring (the -z-pole tangent degeneracy, the
+corner-stretched texel directions). Values filtered RAW — consistent
+with the pipeline's current color contract. Dev-time dependency on pip
+simplepbr only; runtime loads the committed/shipped .txo. Measured
+2.6 s at the default 64px/32-sample bake.
+
+Adoption: `tex = loader.load_texture('sky_ibl.txo')` →
+`set_env_map(tex)` + `set_ambient_sh(sh_from_cubemap(tex))` — one
+skybox feeds both halves of the environment.
+
+Measured record: `test_env_map` checks 8-11 (the tool runs as a real
+subprocess): complete chain with mip 0 an exact identity, uniform env
+exactly preserved at every level (weight normalization), monotone blur
+across the ladder (+X red 0.700 → 0.450), and the .txo driving the
+shader end to end (mirror reads mip 0, roughness 1 reads the tool's
+top-mip texel — max err 0.000 both).
 
 ### Session P — Model-authored lights: `activate_model_lights(np)` (LANDED)
 
