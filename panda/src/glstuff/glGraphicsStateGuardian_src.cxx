@@ -8874,6 +8874,40 @@ do_issue_shader() {
     }
   }
 
+  // PAX3D: core-profile combine-mode warning (openworld round-4 P2).
+  // The default shader implements exactly ONE modulate stage
+  // (textureProj * vertexColor * colorScale).  When it substitutes for
+  // a state that asked for combine arithmetic, rgb/alpha scales, or
+  // additional stages, those features are silently dropped — three
+  // features shipped inert in the field before this warned.  Once per
+  // TextureAttrib.  Diagnosis: OPENWORLD_FEEDBACK_RESPONSE_5.md;
+  // probe: tools/paxtest/probe_texturestage.py.
+  if (shader == _default_shader && GLCAT.is_warning()) {
+    const TextureAttrib *pax3d_tex_attrib;
+    _target_rs->get_attrib_def(pax3d_tex_attrib);
+    int pax3d_num_on = pax3d_tex_attrib->get_num_on_stages();
+    bool pax3d_complex = pax3d_num_on > 1;
+    for (int i = 0; i < pax3d_num_on && !pax3d_complex; ++i) {
+      TextureStage *stage = pax3d_tex_attrib->get_on_stage(i);
+      pax3d_complex = stage->get_mode() == TextureStage::M_combine ||
+                      stage->get_rgb_scale() != 1 ||
+                      stage->get_alpha_scale() != 1;
+    }
+    if (pax3d_complex) {
+      static pset<const TextureAttrib *> pax3d_warned;
+      if (pax3d_warned.insert(pax3d_tex_attrib).second) {
+        GLCAT.warning()
+          << "Default shader is standing in for a state whose "
+          << pax3d_num_on << "-stage TextureAttrib uses combine modes, "
+          << "rgb/alpha scales, or multiple stages; only the first "
+          << "stage is applied as plain modulate (no fixed-function "
+          << "pipeline in a core-profile context).  Combine constants, "
+          << "scales, interpolation, and extra stages are IGNORED.  "
+          << "Give this geometry an explicit GLSL shader.\n";
+      }
+    }
+  }
+
   if (context == 0 || !context->valid()) {
     if (_current_shader_context != 0) {
       _current_shader_context->unbind();
