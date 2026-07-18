@@ -195,3 +195,52 @@ Two corrections learned from the first in-game adoption
   660 m half-extent world: 0.0025 milked out the far colony at 400 m;
   0.0018 (1/density ≈ 555 m) kept it readable while still dissolving
   the mountain ring. Pick by target visibility first, then walk it up.
+
+## 6. The planet from ORBIT (`set_orbital_atmosphere`, Session R / R5.5)
+
+The sibling system to §1: §1 hazes scene geometry while you stand ON the
+planet; this wraps the planet itself in an atmosphere shell you see FROM
+SPACE — limb glow, halo beyond the disk, blue haze over the disk, soft
+reddened terminator. Different mechanism entirely (per-planet billboard
+quads, not a PBR shader define) — enabling one never touches the other.
+
+```python
+# Earth-like blue at any radius (defaults derive from the radius):
+pipeline.set_orbital_atmosphere(planet_np, planet_radius=700.0)
+
+# Mars-ish dust:
+pipeline.set_orbital_atmosphere(
+    planet_np, planet_radius=700.0,
+    scatter_tint=(1.0, 0.55, 0.35), intensity=0.8)
+
+pipeline.clear_orbital_atmosphere(planet_np)   # byte-identical restore
+```
+
+Rules of thumb:
+
+- `planet_np`'s ORIGIN must be the planet center; all radii are WORLD
+  units (node scale is not tracked — pass the scaled-up radius).
+- Re-calling with any subset of parameters live-tunes (uniform-only).
+  `density=0` is an exact no-op if you want a cheap "off" that keeps
+  the registration.
+- The defaults are stylized (scale_height 2% of radius, ~15x
+  Earth-true) so the limb is visible at gameplay distances. For a
+  thinner, harder limb: pass `scale_height=0.005 * R` and the density
+  default will re-derive to keep the tangent ray optically thick.
+- `intensity` scales halo brightness against the CURRENT sun color —
+  the blackbody sun tint from update_sun() composes automatically, so
+  a red-dwarf system gets a red-tinged halo for free.
+- Day/night: the halo dies smoothly across the terminator and the
+  night side goes black on its own (sun-ray occlusion is part of the
+  model) — do not fake it by dimming intensity.
+- Boundary with §1: this is the ORBITAL view only. Once the camera is
+  inside the shell descending toward terrain, hand off to
+  `enable_atmosphere` at an altitude of your choosing (cross-fade
+  densities); objects deep inside the shell get slightly over-hazed
+  until then (quad draws the full path in front of them). The handoff
+  recipe is game-paced R4.2-era work — see arch doc §9 R5.5.
+- Sun shadow maps: the quads are automatically excluded (reserved
+  draw-mask bit 30). Do not use bit 30 as your shadow_caster_mask.
+
+Eyeball rig: `test3d_pax.py --pax3d --orbital` (O toggles, Shift+O
+cycles the earth/mars presets).

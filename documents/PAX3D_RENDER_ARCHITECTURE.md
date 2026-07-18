@@ -794,6 +794,71 @@ to the exact analytic through the converter's unit chain
 (lum 0.219 vs 0.220), the authored directional stays excluded, and
 deactivation restores the inert capture at rms 0.
 
+### R5.5 — Orbital scattering: `set_orbital_atmosphere(planet_np, ...)` (LANDED, Session R)
+
+**The spaceflight half of the R5 signature look**: planet limb glow, an
+atmosphere halo beyond the disk, aerial haze over the disk, and a soft
+reddened terminator, seen from orbit/space. Per-planet registration
+(the GLASS-family shape — no global flag, no PBR recompile, unlimited
+planets); `clear_orbital_atmosphere(planet_np)` restores the scene
+graph byte-identically, and `density=0` is an exact framebuffer no-op.
+
+**Mechanism** (the "where it renders" decision): NOT a planet-material
+variant (it could never draw the halo beyond the limb) and NOT a shell
+mesh (tessellation would polygonalize the limb — the signature pixel).
+Each planet gets a camera-facing quad pair the pipeline places every
+frame at the shell's near surface: an extinction pass (blend
+`dst *= src.rgb` — per-channel transmittance over whatever is behind,
+planet or space) then an additive inscatter pass. Depth-tested but not
+depth-written, `fixed`-bin after the opaque scene; own shader
+(`orbital_atmo.vert/frag`) whose USE_330/LOG_DEPTH defines track
+pipeline recompiles under the glass rule, including log-space
+`gl_FragDepth`. Quads ride reserved draw-mask bit 30
+(`ORBITAL_HIDE_BIT`) which the sun shadow camera always clears — a
+billboard between sun and planet must never rasterize into the depth
+map. Don't reuse bit 30 as `shadow_caster_mask`.
+
+**Model** (documented in the .frag header; the paxtest replicates it
+independently): exponential shell `rho(h) = exp(-h/H)` between R and
+R_top; per-channel extinction `beta = density * scatter_tint`;
+transmittance from a fixed-step trapezoid over the ray's in-shell
+segment; single-scatter inscatter
+`L = sun_color * intensity * phase(mu) * T_sun(P*) * (1 - T_view)` —
+exact given albedo-1 scattering and the ONE stated approximation: sun
+transmittance evaluated at P*, the segment's closest approach to the
+planet center (the density-weighted heart of the ray). Terminator =
+smoothstep of the sun ray's grazing altitude over 2H, plus per-channel
+`T_sun` reddening (Rayleigh tint). `phase = 0.75*(1+mu^2)` — the
+Rayleigh lobe normalized to sphere-average exactly 1, so `intensity`
+scales mean halo brightness directly.
+
+**Defaults derive Earth-like optics from the radius alone**:
+`H = 0.02*R` (stylized ~15x Earth-true so the limb reads at game
+distances), `thickness = 6H`, `density = 4/sqrt(2*pi*R*H)` (tangent-ray
+optical depth ~4*tint per channel), `scatter_tint = (0.175, 0.41, 1.0)`
+(Rayleigh lambda^-4). Mars-ish dust: `(1.0, 0.55, 0.35)`. All radii are
+WORLD units and the node's origin must be the planet center (node scale
+is not tracked — pass scaled-up values).
+
+**Boundary with R5.1** (documented, not solved — the handover's
+instruction): this is the orbital side only. Objects INSIDE the shell
+(low-orbit stations, descending ships) get full-path haze drawn over
+them since the quad sits at the shell's near surface; the camera
+descending into the shell degrades gracefully (the quad clamps in
+front of the near plane) but the planetside `enable_atmosphere` is the
+right system once terrain exists. The fly-down handoff altitude and
+cross-fade are game-paced R4.2-era work.
+
+Measured record: `test_orbital` (12 checks) — the shader's limb profile
+matches an independent 2048-step reference integrator to <=0.003
+display-space at every measured impact parameter (on-disk, near-limb,
+high-shell, outside-shell), through the tonemap; halo matches at 0.000;
+terminator dark side lum 0.000 with >5x day/night asymmetry;
+registration with density=0 AND full opt-out both rms exactly 0.0.
+Green both engines x both baselines x `@logdepth`. Eyeball rig:
+`test3d_pax.py --pax3d --orbital` (O toggles, Shift+O cycles
+earth/mars presets).
+
 ---
 
 ## 10. Testing Contract
@@ -802,8 +867,8 @@ deactivation restores the inert capture at rms 0.
   bloom, rebuild, the shadow suite (shadows/gltf/quality/grazing/snap),
   skinning, ftl_blur, scale (+@logdepth), atmosphere, ambient_sh, glass
   (×sun-modes), doublesided (×sun-modes), ambient_scale, env_map,
-  local_lights (×sun-modes). Run `tools/paxtest/run.py` before and
-  after.
+  local_lights (×sun-modes), orbital (+@logdepth). Run
+  `tools/paxtest/run.py` before and after.
 - Add a test WITH the feature, not after. Analytic checks > goldens;
   goldens (`--golden` / `--check-golden`) are a refactor safety net.
 - The testbed (`sfb2/test3d_pax.py`) is the eyeball companion — its

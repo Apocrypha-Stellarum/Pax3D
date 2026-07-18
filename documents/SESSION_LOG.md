@@ -524,3 +524,38 @@ from their Mars report (day-cycle-scaled haze colors, sub-km density
 starting points) added to PLANETSIDE_LOOK_GUIDE.md §5. Full 19-test
 matrix green on both engines after every change (43 PASS / 6 documented
 FAILs / 57 SKIP, identical stock vs Pax3D).
+
+**Session R update (2026-07-18):** R5.5 orbital scattering landed — the
+spaceflight half of the signature look. Phase 0/1 first: field quiet
+(FEEDBACK_2 latest entries all pre-answered by Response 5; planetside
+handover carries no engine asks; their sky dome moved to an explicit
+GLSL shader with "no engine surprises"), baseline gate re-verified at
+43/6/57. Then the build: `set_orbital_atmosphere(planet_np, ...)` /
+`clear_orbital_atmosphere()` — per-planet registration (GLASS-family
+shape, no global flag, no PBR recompile). Renders as a camera-facing
+quad pair placed per frame at the shell near surface: extinction pass
+(blend dst *= src.rgb, per-channel transmittance) then additive
+inscatter; depth-tested not depth-written; own shader pair
+(orbital_atmo.vert/frag) tracking USE_330/LOG_DEPTH recompiles under
+the glass rule, log-space gl_FragDepth included. Model: single scatter
+through an exponential shell — trapezoid optical depth, inscatter
+L = sun * intensity * phase(mu) * T_sun(P*) * (1-T_view), exact given
+albedo-1 and the one stated approximation (sun transmittance at the
+segment's closest approach); soft terminator via smoothstep of the sun
+ray's grazing altitude over 2H, reddened per channel by Rayleigh-tint
+T_sun. Defaults derive Earth-like optics from radius alone
+(H=0.02R, thickness=6H, density=4/sqrt(2piRH), lambda^-4 tint).
+Billboard-vs-shell-mesh-vs-material-variant decision recorded in arch
+doc §9: billboard is the only shape that draws the beyond-limb halo
+AND keeps the limb polygon-free. Reserved draw-mask bit 30 keeps the
+quads out of the sun shadow map (shadow camera mask now always clears
+it; a caster mask of exactly bit 30 warns instead of blanking).
+Gate: NEW test_orbital (12 checks + @logdepth variant) — shader limb
+profile vs an independent 2048-step reference integrator matches to
+<=0.003 display-space at every measured impact parameter; halo 0.000;
+terminator lum 0.000 with >5x asymmetry; density=0 and opt-out rms
+exactly 0.0. Full matrix now 20 tests: 46 PASS / 6 documented FAILs /
+60 SKIP, identical stock vs Pax3D (orbital adds pax_pbr PASS rows too —
+the game shim routes to pax3d_render). Testbed: O / Shift+O hotkeys +
+--orbital flag (earth/mars presets), selftest screenshots verified by
+eye — limb halo, disk haze, terminator all read correctly at defaults.

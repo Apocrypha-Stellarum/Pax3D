@@ -174,9 +174,19 @@ toggleable off for space scenes):
   to end). Also Session Q: the sh_from_cubemap face table PINNED for
   file-loaded skyboxes (test_ambient_sh 6-8; up-face image top row =
   southern sky). Open: per-scene cubemap authoring.
-- **Atmospheric scattering** for orbital views (single-scattering analytic
-  limb model per planet type; Bruneton LUTs as stretch) — not started.
-- Lens flare/dirt polish on the bloom chain — not started.
+- ~~**Atmospheric scattering** for orbital views~~ — **LANDED opt-in
+  (Session R / R5.5):** `set_orbital_atmosphere(planet_np, ...)` —
+  per-planet single-scattering analytic limb model (camera-facing quad
+  pair: per-channel extinction + additive inscatter; soft terminator,
+  Rayleigh-tint reddening; Earth-like defaults derived from radius).
+  Gated by test_orbital (independent reference integrator matches the
+  rendered limb to <=0.003; opt-out rms 0.0). Arch doc §9 has the full
+  model + the R5.1 boundary (fly-down handoff = game-paced R4.2-era
+  work). Bruneton LUTs remain the stretch goal if content demands
+  multi-scatter. Open: per-planet-type content presets from the game's
+  catalog (blackbody sun tint composes via update_sun already).
+- Lens flare/dirt polish on the bloom chain — not started (explicitly
+  held BEHIND scattering per the Session Q handover).
 
 Gate: aesthetic sign-off per planet type; A/B against the old Fresnel
 shader. Field consumer for the planetside slice: the openworld Mars
