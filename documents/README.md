@@ -9,6 +9,7 @@ superseded — check the banner at the top of each file.
 | `PAX3D_MASTER_PLAN.md` | **CURRENT** | **v3 (2026-07-17):** verified state, policies in force (sovereignty, Language Canon, build windows), established facts, the road forward. Start here. |
 | `SESSION_LOG.md` | **CURRENT** | Session-by-session narrative (extracted from Master Plan v2), newest at the bottom. |
 | `PAX3D_RENDER_ARCHITECTURE.md` | **CURRENT** | Maintainer's guide to the pax3d_render pipeline: passes, sun modes, shadows (incl. the bias trap §5.1), invariants, defect analysis, API. |
+| `ENGINE_INTERNALS.md` | **CURRENT** | **How the engine works deep down, measured** (started Session U): texture-pipeline degradation paths, ShaderAttrib/multi-pass state resolution, the full hardware-instancing chain, GLSL version notes, instrument traps. Every entry cites source lines and/or the gating paxtest. Add to it whenever you dig a mechanism out of the C++. |
 | `ENGINE_SURGERY_PLAN.md` | **CURRENT** | The deletion program. **Windows 2+3 executed 2026-07-17** (DX9 + dead backends gone, −35k lines); Window 4 (mobile-target extraction) queued. |
 | `BUILD_WINDOW_1_CATCHUP.md` | HISTORICAL — completed | Window 1 procedure. Built, fully validated and signed off 2026-07-17; kept for reference. |
 | `OPENWORLD_FEEDBACK_RESPONSE.md` | **CURRENT** | Round 1 (Session E): P0 root cause (bias trap + contaminated instrument), landed APIs, backlog. |

@@ -808,3 +808,53 @@ Identical results both engines × both baselines. ER-003 →
 IMPLEMENTED ENGINE-SIDE; next: ER-001 TERRAIN_SPLAT variant (texture
 arrays, splat-driven, v2 define seam), then ER-002 instancing
 prototype + test_instancing.
+
+**Session U part 2 (2026-07-19): ER-001 + ER-002 IMPLEMENTED + GATED —
+the terrain lane's engine side is COMPLETE.** ER-001
+(`set_terrain_splat`): TERRAIN_SPLAT variant of pax_pbr composed
+per-subtree (glass mechanism, recompile-tracked, variants cached per
+normals/ORM/macro combo) — 4-layer texture-array splat blend with
+in-shader weight renormalization, per-layer uv_scale, splat-UV window
+transform, macro brightness variation (mix(1, 2*macro, s) — 0.5 texel
+= exact no-op), detail-normal distance fade, and an ANALYTIC world TBN
+(u→+world_x, v→+world_y; chunk meshes carry no tangent column — the
+NaN trap dodged by construction). sampler2DArray proven working on the
+GLSL-120 path via GL_EXT_texture_array. The layer-weight function is
+the isolated v2 seam (ratified: hex-tiling/height-blend land there as
+defines). Gate test_terrain_splat: 12 EXACT analytic checks
+(metallic-1 ambient trick; quadrants/blend/renorm/macro/uv_scale all
+to 0.02, faded normals land on the ambient analytic to the third
+decimal) + byte-identical opt-out + directional variant; green both
+engines × both baselines. One instrument trap found and recorded: an
+ortho camera ON the geometry plane has view distance ~0, so a
+"force the fade" config needs edges below zero. ER-002
+(`set_instanced`): INSTANCING define in pax_pbr.vert AND shadow.vert
++ F_hardware_instancing composed per-node; the global shadow shader
+gains the define while any instanced node exists (glShaderContext's
+identity fallback keeps other casters behavior-identical; caster
+initial states invalidated on flip, the set_max_skinning_bones
+pattern). ZERO C++ — upstream InstancedNode machinery did it all.
+Three measured facts that beat the predictions: (1) an UNFLAGGED
+InstancedNode renders every instance correctly (traverser per-instance
+fallback) — set_instanced is a PERF switch (N draws → 1 instanced
+draw), not correctness; (2) per-instance frustum culling is upstream
+built-in; (3) `clear_shader()` keeps attrib FLAGS — a leftover
+F_hardware_instancing with a non-INSTANCING shader collapses all
+instances onto the node origin (found as an opt-out bug in the first
+gate run, fixed in set_instanced(False), and kept as a deliberate
+gate check that doubles as proof the HW path engages). Matrix
+convention verified exact: Panda row-major affine memory = GL
+column-major mat4x3, translation in column 3 → rms 0.00000 vs
+CPU-transformed reference copies (45° roll + 1.5× scale). Instanced
+shadow casting measured 4/4 under a 45° sun on both baselines. Gate
+test_instancing; SKIPs on stock 1.10 (no InstancedNode — the version
+gap documented). InstanceList Python surface pinned: node.instances
+write-back property, append(pos,hpr,scale)/append(TransformState),
+reserve; get_num_instances NOT published (len(node.instances)).
+**Full gates: @game 60/6/85, @modern 59/7/85** — same documented FAIL
+sets, four new rows green. NEW DOC: `ENGINE_INTERNALS.md` (user ask)
+— the measured-mechanisms reference (texture degradation paths,
+ShaderAttrib/multi-pass state resolution, the instancing chain, GLSL
+notes, instrument traps), indexed in documents/README.md. All three
+ER files stamped IMPLEMENTED ENGINE-SIDE with adoption snippets.
+Remaining terrain-lane work is game-side adoption only.

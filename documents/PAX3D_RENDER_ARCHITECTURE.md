@@ -1041,6 +1041,43 @@ flare-off (occlusion); strength-0, dirt-clear, and opt-out all rms
 0.00e+00; a left-black/right-white dirt kills exactly the left-half
 ghosts. Green both engines × both baselines.
 
+### Session U — Terrain lane: data textures, splatting, instancing (LANDED)
+
+The three game ERs (`sfb2/documents/ENGINE_REQUESTS/`), all engine-side
+same-session; deep mechanisms in `ENGINE_INTERNALS.md`.
+
+**ER-003 — `data_texture(tex)` / `load_data_texture(path)`** (module
+functions, not Pipeline methods): the 16-bit/float heightfield contract —
+compression pinned off (the `compressed-textures` prc would BC4/DXT1 data
+textures), ATS_none, sRGB unflagged, 1-channel ushort/float normalized to
+F_r16/F_r32. `load_data_texture` decodes via PNMImage/PfmFile + `load()`
+because `Texture.read()` applies the `texture-scale` prc DURING the read.
+Gate: test_data_texture (runs under a hostile `compressed-textures 1`).
+
+**ER-001 — `set_terrain_splat(np, albedo_array, splat_map, ...)`**: a
+TERRAIN_SPLAT compile of pax_pbr composed per-subtree (glass mechanism;
+tracked via `_reapply_terrain_splat` on every recompile; variants cached
+per optional-feature combo — normals/ORM/macro). Replaces only the
+material inputs: 4 layers from 2D texture arrays weighted by an RGBA
+splat map (renormalized in-shader), per-layer uv_scale, splat-UV window,
+macro brightness variation, detail-normal distance fade, analytic world
+TBN (u→+world_x, v→+world_y — chunks carry no tangents). The layer-weight
+function is the ratified v2 seam (hex-tiling lands there as a define).
+sampler2DArray works on the 120 path via GL_EXT_texture_array (measured).
+Gate: test_terrain_splat — 12 exact analytics + directional variant.
+
+**ER-002 — `set_instanced(np)`**: hardware instancing over upstream
+`InstancedNode` — INSTANCING compile of pax_pbr + F_hardware_instancing
+composed on the node; the GLOBAL shadow shader gains the same define
+while any instanced node is registered (identity fallback keeps other
+casters behavior-identical; caster initial states invalidated on flip).
+Measured contract: unflagged InstancedNodes render correctly via the
+traverser's per-instance fallback (set_instanced = the draw-call
+collapse, not correctness); instanced casters shadow correctly; the
+opt-out clears the FLAG explicitly (`clear_shader()` keeps attrib flags
+— the collapse trap, gate-guarded). Gate: test_instancing (SKIPs on
+stock 1.10 — no InstancedNode there).
+
 ---
 
 ## 10. Testing Contract
@@ -1049,7 +1086,9 @@ ghosts. Green both engines × both baselines.
   bloom, rebuild, the shadow suite (shadows/gltf/quality/grazing/snap),
   skinning, ftl_blur, scale (+@logdepth), atmosphere, ambient_sh, glass
   (×sun-modes), doublesided (×sun-modes), ambient_scale, env_map,
-  local_lights (×sun-modes), orbital (+@logdepth). Run
+  local_lights (×sun-modes), orbital (+@logdepth), srgb, ssao
+  (+@logdepth/@msaa4), lens_flare, morph_gltf, data_texture,
+  terrain_splat (×sun-modes), instancing (×sun-modes). Run
   `tools/paxtest/run.py` before and after.
 - Add a test WITH the feature, not after. Analytic checks > goldens;
   goldens (`--golden` / `--check-golden`) are a refactor safety net.

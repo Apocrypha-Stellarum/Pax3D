@@ -323,25 +323,36 @@ palettes become drop-in). Sequencing agreed with the terrain dev:
    Identical both engines × both baselines. Upstream fact for intake
    tooling: Panda's 16-bit TIFF WRITER hard-crashes (native, both
    engines); reads are fine — intake writes PNG16.
-2. **ER-001 — terrain splatting. NEXT.** A `TERRAIN_SPLAT` per-subtree
-   variant of pax_pbr (set_glass mechanism → sun/shadows/haze/IBL compose
-   free). Pinned with the game side: splat-map-driven (option (a)
-   skipped), 4 layers via three 2D texture arrays (albedo sRGB +
-   normal/ORM linear, 4×2048² slices, intake-built, compression-eligible
-   — color textures are deliberately outside the ER-003 no-compression
-   clause), per-layer uv_scale uniforms, macro-variation sampler slot,
-   detail-normal distance fade, and an isolated layer-weight GLSL
-   function as the v2 define seam (hex-tiling, height-blend sharpening).
-3. **ER-002 — scatter. Hardware instancing; the C++ already exists.**
-   `InstancedNode`/`InstanceList` + `p3d_InstanceMatrix` (mat4x3
-   per-instance attrib) shipped with the 1.11 base and have never been
-   exercised here. Pipeline work: INSTANCING define in pax_pbr.vert AND
-   shadow.vert (depth pass follows, skinning discipline) +
-   `set_instanced()`; gate `test_instancing` (instanced vs N-copy
-   byte-compare + shadow pass). v1 = transform-only instances; shadows
-   via existing caster tiering; NO flatten fallback (agreed) — C++ gaps
-   block on a build window instead. InstanceList has no bulk fill
-   (append+reserve; the GPU array is C++-cached) — bulk fill is queued
+2. **ER-001 — terrain splatting. IMPLEMENTED ENGINE-SIDE + GATED
+   (Session U, same day).** `set_terrain_splat()`: TERRAIN_SPLAT
+   per-subtree variant of pax_pbr (set_glass mechanism → sun/shadows/
+   haze/IBL compose free), splat-map-driven, 4 layers via 2D texture
+   arrays (sampler2DArray works on BOTH GLSL baselines — EXT_texture_
+   array on 120, measured), per-layer uv_scale, splat-UV window
+   transform, macro variation, detail-normal distance fade, analytic
+   world TBN (chunks need no tangent column; u→+world_x, v→+world_y
+   convention). The layer-weight function is the isolated v2 define
+   seam (hex-tiling, height-blend sharpening). Gate: test_terrain_splat
+   — 12 EXACT analytic checks (quadrants, bilinear blend, renorm,
+   macro, uv_scale, normal tilt+fade, byte-identical opt-out) + a
+   directional-sun variant row; green both engines × both baselines.
+   Remaining: game-side adoption (layer sets + per-chunk splat maps
+   from their intake, in progress on their side).
+3. **ER-002 — scatter. IMPLEMENTED ENGINE-SIDE + GATED (Session U,
+   same day).** `set_instanced()` over upstream `InstancedNode`:
+   INSTANCING define in pax_pbr.vert AND shadow.vert + F_hardware_
+   instancing, shadow-caster initial states invalidated when the
+   define flips. Zero C++ needed. Measured surprises (ENGINE_INTERNALS
+   §3): WITHOUT the call the traverser renders every instance
+   correctly (one draw each) — set_instanced is a PERFORMANCE switch,
+   not correctness; per-instance frustum culling is upstream built-in;
+   `clear_shader()` keeps attrib FLAGS (a hand-set flag without the
+   INSTANCING shader collapses instances onto the origin — API keeps
+   them paired, gate-guarded). Gate: test_instancing — fallback
+   correctness, pairing trap, all-instances render, rms-0.0 vs plain
+   copies (45° roll + 1.5× scale), instanced shadow casting 4/4,
+   byte-identical opt-out; SKIPs on stock 1.10 (no InstancedNode).
+   Remaining: game-side adoption; InstanceList bulk fill stays queued
    on profile evidence only (CLAUDE.md queue).
 
 ---
