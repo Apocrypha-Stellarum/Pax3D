@@ -91,6 +91,20 @@ uniform vec3 camera_world_position;
 // subtrees override via pipeline.set_ambient_scale(np, k).
 uniform float u_ambient_scale;
 
+// Per-node material UV transform (ER-005, Session V — powered displays):
+// mat_uv = v_texcoord * zw + xy, applied to the STANDARD material samples
+// (base color, metal-rough, normal, emission) — not the terrain-splat
+// sample set, which has its own transform machinery. Root default
+// (0,0,1,1) = exact no-op (IEEE x*1.0+0.0 == x); subtrees override via
+// set_uv_transform / set_uv_scroll / play_flipbook (scrolling readouts,
+// chase-light strips, flipbook screen playback).
+uniform vec4 u_uv_transform;
+
+// Per-node emission factor (ER-005): multiplies ONLY the emission term.
+// Root default (1,1,1) = exact no-op; set_emission_scale/_color drive
+// screen power states and blink/pulse without touching materials.
+uniform vec3 u_emission_factor;
+
 // Custom sun uniforms (bypass p3d_LightSource for directional light)
 uniform vec3 u_sun_dir_world;  // world-space, normalized, toward sun
 uniform vec3 u_sun_color;      // linear RGB * intensity
@@ -320,16 +334,16 @@ float shadow_caster_contrib_biased(sampler2DShadow shadowmap, vec4 shadowpos,
 }
 #endif
 
-vec3 get_normalmap_data() {
+vec3 get_normalmap_data(vec2 uv) {
 #ifdef CALC_NORMAL_Z
-    vec2 normalXY = 2.0 * texture2D(p3d_TextureNormal, v_texcoord).rg - 1.0;
+    vec2 normalXY = 2.0 * texture2D(p3d_TextureNormal, uv).rg - 1.0;
     float normalZ = sqrt(clamp(1.0 - dot(normalXY, normalXY), 0.0, 1.0));
     return vec3(
         normalXY,
         normalZ
     );
 #else
-    return 2.0 * texture2D(p3d_TextureNormal, v_texcoord).rgb - 1.0;
+    return 2.0 * texture2D(p3d_TextureNormal, uv).rgb - 1.0;
 #endif
 }
 
@@ -347,6 +361,10 @@ vec3 irradiance_from_sh(vec3 normal) {
 }
 
 void main() {
+    // Per-node material UV (ER-005): identity at the root default —
+    // v_texcoord exactly (x*1.0+0.0 == x). Terrain-splat sampling below
+    // deliberately keeps raw v_texcoord.
+    vec2 mat_uv = v_texcoord * u_uv_transform.zw + u_uv_transform.xy;
 #ifdef TERRAIN_SPLAT
     // ---- Terrain splat material inputs (ER-001) ----
     vec4 terrain_w = terrain_layer_weights(v_texcoord);
@@ -400,15 +418,15 @@ void main() {
 #endif
     vec3 n = normalize(mat3(p3d_ViewMatrix) * world_normal);
 #else
-    vec4 metal_rough = texture2D(p3d_TextureMetalRoughness, v_texcoord);
+    vec4 metal_rough = texture2D(p3d_TextureMetalRoughness, mat_uv);
     float metallic = clamp(p3d_Material.metallic * metal_rough.b, 0.0, 1.0);
     float perceptual_roughness = clamp(p3d_Material.roughness * metal_rough.g,  0.0, 1.0);
     float alpha_roughness = perceptual_roughness * perceptual_roughness;
-    vec4 base_color = p3d_Material.baseColor * v_color * p3d_ColorScale * (texture2D(p3d_TextureBaseColor, v_texcoord) + p3d_TexAlphaOnly);
+    vec4 base_color = p3d_Material.baseColor * v_color * p3d_ColorScale * (texture2D(p3d_TextureBaseColor, mat_uv) + p3d_TexAlphaOnly);
     vec3 diffuse_color = (base_color.rgb * (vec3(1.0) - F0)) * (1.0 - metallic);
     vec3 spec_color = mix(F0, base_color.rgb, metallic);
 #ifdef USE_NORMAL_MAP
-    vec3 normalmap = get_normalmap_data();
+    vec3 normalmap = get_normalmap_data(mat_uv);
     vec3 n = normalize(v_view_tbn * normalmap);
     vec3 world_normal = normalize(v_world_tbn * normalmap);
 #else
@@ -459,7 +477,9 @@ void main() {
     ambient_occlusion *= u_ambient_scale;
 
 #ifdef USE_EMISSION_MAP
-    vec3 emission = p3d_Material.emission.rgb * texture2D(p3d_TextureEmission, v_texcoord).rgb;
+    // u_emission_factor: per-node power/tint control (ER-005); root
+    // default (1,1,1) is an exact no-op.
+    vec3 emission = p3d_Material.emission.rgb * u_emission_factor * texture2D(p3d_TextureEmission, mat_uv).rgb;
 #else
     vec3 emission = vec3(0.0);
 #endif

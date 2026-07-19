@@ -518,6 +518,24 @@ class Pipeline:
         # deactivation restores colors and scopes exactly.
         self._model_lights = []
 
+        # Powered displays (ER-005, Session V — walkable-ship screens):
+        # set_screen() binds a texture as albedo+emission on marked
+        # nodes (registry saves the node-level texture/material attribs
+        # for byte-identical restore); set_emission_scale/color drive a
+        # per-node emission factor; set_uv_scroll/play_flipbook animate
+        # the per-node UV transform from _update (O(active) per frame,
+        # zero when the registries are empty). Empty registries + the
+        # root-default uniforms below = byte-identical to the shipped
+        # pipeline (paxtest test_screen opt-out checks).
+        self._screen_nodes = []
+        self._emission_overrides = []
+        self._uv_scrolls = []
+        self._flipbooks = []
+        self._screen_stages = None
+        self._screen_white_tex = None
+        self._screen_flat_normal_tex = None
+        self._screen_warned = False
+
         # Orbital scattering (Session R / R5.5): per-planet atmosphere
         # shells registered via set_orbital_atmosphere(). Each entry owns
         # a camera-facing quad pair (extinction + inscatter passes) placed
@@ -634,6 +652,15 @@ class Pipeline:
         # Set unconditionally (harmless when ENABLE_ATMOSPHERE is not
         # compiled; only MISSING inputs assert).
         self.render_node.set_shader_input('u_atmo_scale', 1.0)
+
+        # Powered-display root defaults (ER-005, Session V): both exact
+        # no-ops (IEEE x*1.0 == x, x+0.0 == x). Subtrees override via
+        # set_emission_scale/set_emission_color and set_uv_transform/
+        # set_uv_scroll/play_flipbook.
+        self.render_node.set_shader_input('u_emission_factor',
+                                          p3d.LVecBase3(1.0, 1.0, 1.0))
+        self.render_node.set_shader_input('u_uv_transform',
+                                          p3d.LVecBase4(0.0, 0.0, 1.0, 1.0))
 
         # Debug lighting mode (0=normal, 1=normals, 2=n_dot_l, 3=light dir)
         self.render_node.set_shader_input('u_debug_lighting', 0.0)
@@ -1933,6 +1960,291 @@ class Pipeline:
         nodepath.clear_shader_input('u_atmo_scale')
 
     # ------------------------------------------------------------------
+    # Powered displays / screens (ER-005, Session V — walkable ships)
+    # ------------------------------------------------------------------
+
+    def _get_screen_stages(self):
+        """Shared TextureStages + helper textures for set_screen (created
+        once). Binding is by stage MODE (the p3d_TextureModulate /
+        p3d_TextureSelector / p3d_TextureNormal / p3d_TextureEmission
+        semantics the PBR shader samples)."""
+        if self._screen_stages is None:
+            base = p3d.TextureStage('pax3d_screen_base')
+            base.set_mode(p3d.TextureStage.M_modulate)
+            emis = p3d.TextureStage('pax3d_screen_emission')
+            emis.set_mode(p3d.TextureStage.M_emission)
+            mr = p3d.TextureStage('pax3d_screen_mr')
+            mr.set_mode(p3d.TextureStage.M_selector)
+            norm = p3d.TextureStage('pax3d_screen_normal')
+            norm.set_mode(p3d.TextureStage.M_normal)
+            self._screen_stages = (base, emis, mr, norm)
+
+            white = p3d.Texture('pax3d_screen_white')
+            white.setup_2d_texture(1, 1, p3d.Texture.T_unsigned_byte,
+                                   p3d.Texture.F_rgb8)
+            white.set_clear_color(p3d.LColor(1, 1, 1, 1))
+            self._screen_white_tex = white
+            flat = p3d.Texture('pax3d_screen_flatnormal')
+            flat.setup_2d_texture(1, 1, p3d.Texture.T_unsigned_byte,
+                                  p3d.Texture.F_rgb8)
+            flat.set_clear_color(p3d.LColor(0.5, 0.5, 1.0, 1))
+            self._screen_flat_normal_tex = flat
+        return self._screen_stages
+
+    def set_screen(self, nodepath, texture, albedo=True, emission_scale=1.0,
+                   emission_color=(1.0, 1.0, 1.0), roughness=1.0,
+                   metallic=0.0):
+        """Turn `nodepath` (a screen/display geom subtree) into an
+        emissive display surface showing `texture` — the ER-005 top ask.
+
+        The Unity ship-pack convention this reproduces (MINERVA_CENSUS
+        §3): a display is a Standard-shader material with one texture
+        bound as BOTH albedo and emission (emission is what makes it
+        read as powered in a dark cabin; albedo keeps it grounded under
+        room light). `texture` can be ANY Panda Texture:
+
+          * a static image (frozen screen / off-state art),
+          * a flipbook atlas driven by play_flipbook() — the sanctioned
+            video path on the Pax3D wheel (built --no-ffmpeg: MP4 decode
+            DOES NOT EXIST engine-side; tools/gen_flipbook.py converts
+            clips at intake),
+          * a dynamic texture the game updates via tex.set_ram_image()
+            (game-side decoder, camera feed, drawn UI),
+          * a MovieTexture — only on engines with a video decoder
+            (stock pip wheels have ffmpeg; the Pax3D wheel does not).
+
+        Mechanism: node-level TextureAttrib (our modulate+emission
+        stages, plus white metal-rough and — when the pipeline compiles
+        normal maps — a flat normal) and MaterialAttrib (emission =
+        emission_color * emission_scale, HDR-legal) at override 1, so
+        they beat the loader's geom-level states, same discipline as
+        set_glass. `albedo=False` blacks the base color for a purely
+        emissive surface. Emission needs `use_emission_maps=True` (the
+        default). Re-calling reconfigures in place; clear_screen()
+        restores the node's previous texture/material state exactly
+        (byte-identical opt-out — paxtest test_screen).
+
+        Power states / blinking: compose with set_emission_scale() /
+        set_emission_color() (uniform-only, cheap per frame) rather than
+        re-calling this. Apply to the screen geom only, not a parent it
+        shares with other meshes."""
+        if not self.use_emission_maps and not self._screen_warned:
+            print('[Pax3DRender] set_screen: pipeline built with '
+                  'use_emission_maps=False — screens will not glow')
+            self._screen_warned = True
+        base, emis, mr, norm = self._get_screen_stages()
+        idx = next((i for i, e in enumerate(self._screen_nodes)
+                    if e[0] == nodepath), None)
+        if idx is None:
+            node = nodepath.node()
+            prev_tex = node.get_attrib(p3d.TextureAttrib)
+            prev_tex_ov = (node.get_state().get_override(p3d.TextureAttrib)
+                           if prev_tex is not None else 0)
+            prev_mat = node.get_attrib(p3d.MaterialAttrib)
+            prev_mat_ov = (node.get_state().get_override(p3d.MaterialAttrib)
+                           if prev_mat is not None else 0)
+            self._screen_nodes.append(
+                (nodepath, prev_tex, prev_tex_ov, prev_mat, prev_mat_ov))
+
+        # Drop the node's texture state before applying ours: set_texture
+        # MERGES stages into an existing node-level TextureAttrib, and a
+        # pre-existing modulate stage on the SAME node would leave two
+        # stages competing for the p3d_TextureModulate binding. (Geom-
+        # level stages below are simply outranked by override 1.)
+        nodepath.clear_texture()
+        nodepath.set_texture(base, texture, 1)
+        nodepath.set_texture(emis, texture, 1)
+        nodepath.set_texture(mr, self._screen_white_tex, 1)
+        if self.use_normal_maps:
+            nodepath.set_texture(norm, self._screen_flat_normal_tex, 1)
+
+        mat = p3d.Material('pax3d_screen')
+        mat.set_base_color(p3d.LColor(1, 1, 1, 1) if albedo
+                           else p3d.LColor(0, 0, 0, 1))
+        s = float(emission_scale)
+        mat.set_emission(p3d.LColor(emission_color[0] * s,
+                                    emission_color[1] * s,
+                                    emission_color[2] * s, 1.0))
+        mat.set_roughness(float(roughness))
+        mat.set_metallic(float(metallic))
+        nodepath.set_material(mat, 1)
+
+    def clear_screen(self, nodepath):
+        """Undo set_screen(): restores the node's previous texture and
+        material state exactly (byte-identical opt-out)."""
+        idx = next((i for i, e in enumerate(self._screen_nodes)
+                    if e[0] == nodepath), None)
+        if idx is None:
+            return
+        _np, prev_tex, prev_tex_ov, prev_mat, prev_mat_ov = \
+            self._screen_nodes.pop(idx)
+        nodepath.clear_texture()
+        if prev_tex is not None:
+            nodepath.set_attrib(prev_tex, prev_tex_ov)
+        nodepath.clear_material()
+        if prev_mat is not None:
+            nodepath.set_attrib(prev_mat, prev_mat_ov)
+
+    def _push_emission_override(self, entry):
+        nodepath, scale, color = entry
+        nodepath.set_shader_input(
+            'u_emission_factor',
+            p3d.LVecBase3(color[0] * scale, color[1] * scale,
+                          color[2] * scale))
+
+    def _emission_entry(self, nodepath):
+        for entry in self._emission_overrides:
+            if entry[0] == nodepath:
+                return entry
+        entry = [nodepath, 1.0, (1.0, 1.0, 1.0)]
+        self._emission_overrides.append(entry)
+        return entry
+
+    def set_emission_scale(self, nodepath, scale):
+        """Scale the emission term for `nodepath` and its subtree —
+        screen power states, blink/pulse, dimming — preserving the
+        authored emission texture and material (the VA_ScreenOff
+        material-swap convention without a material swap: 0.0 = off).
+
+        Uniform-cost per-node shader input (root default 1.0 = exact
+        no-op) — inherits down the subtree, survives recompiles,
+        composes multiplicatively with set_emission_color() and with
+        whatever the material/texture emission already is. Direct and
+        ambient light are untouched — this scales only emission."""
+        entry = self._emission_entry(nodepath)
+        entry[1] = float(scale)
+        self._push_emission_override(entry)
+
+    def set_emission_color(self, nodepath, rgb):
+        """Tint the emission term for `nodepath`'s subtree (composes with
+        set_emission_scale; same registry/restore discipline)."""
+        entry = self._emission_entry(nodepath)
+        entry[2] = (float(rgb[0]), float(rgb[1]), float(rgb[2]))
+        self._push_emission_override(entry)
+
+    def clear_emission(self, nodepath):
+        """Undo set_emission_scale/set_emission_color: the subtree
+        reverts to the inherited (root default 1.0 white) factor,
+        byte-identical to untouched."""
+        self._emission_overrides = [e for e in self._emission_overrides
+                                    if e[0] != nodepath]
+        nodepath.clear_shader_input('u_emission_factor')
+
+    def set_uv_transform(self, nodepath, offset=(0.0, 0.0),
+                         scale=(1.0, 1.0)):
+        """Static per-node material UV transform: uv' = uv * scale +
+        offset, applied to the standard material samples (base color,
+        metal-rough, normal, emission) of the subtree. The building
+        block for scrolled readouts and flipbook frames; a shader
+        uniform, so no per-frame RenderState churn and no TexMatrix.
+        Root default = exact no-op. Terrain-splat nodes are unaffected
+        (their UV machinery is separate)."""
+        nodepath.set_shader_input(
+            'u_uv_transform',
+            p3d.LVecBase4(float(offset[0]), float(offset[1]),
+                          float(scale[0]), float(scale[1])))
+
+    def clear_uv_transform(self, nodepath):
+        """Undo set_uv_transform(): revert to the inherited identity."""
+        nodepath.clear_shader_input('u_uv_transform')
+
+    def set_uv_scroll(self, nodepath, du_dt, dv_dt):
+        """Continuously scroll `nodepath`'s material UVs at (du_dt,
+        dv_dt) per second — running/chase light strips and scrolling
+        readouts (the VattalusAnimatedLights mechanism; pair with
+        set_emission_scale(np, k) for the shader's intensity boost).
+        Texture wrap must be repeat (the loader default). Driven by the
+        pipeline's per-frame task; zero cost while nothing scrolls.
+        Re-call to change speed; clear_uv_scroll() stops and reverts."""
+        self._uv_scrolls = [e for e in self._uv_scrolls
+                            if e[0] != nodepath]
+        self._uv_scrolls.append((nodepath, float(du_dt), float(dv_dt)))
+
+    def clear_uv_scroll(self, nodepath):
+        """Stop set_uv_scroll() on the node and revert its UV transform
+        to the inherited identity."""
+        self._uv_scrolls = [e for e in self._uv_scrolls
+                            if e[0] != nodepath]
+        nodepath.clear_shader_input('u_uv_transform')
+
+    @staticmethod
+    def _flipbook_transform(cols, rows, frame):
+        """(off_u, off_v, scale_u, scale_v) selecting `frame` from a
+        row-major, TOP-LEFT-first atlas grid (contact-sheet order; GL v
+        runs up, hence the 1 - (row+1)/rows)."""
+        col = frame % cols
+        row = frame // cols
+        return (col / cols, 1.0 - (row + 1) / rows,
+                1.0 / cols, 1.0 / rows)
+
+    def play_flipbook(self, nodepath, cols, rows, num_frames=None,
+                      fps=12.0, loop=True):
+        """Play a flipbook atlas on `nodepath` — the sanctioned video
+        path for animated screens on engines without a video decoder
+        (the Pax3D wheel ships no ffmpeg). Bind the atlas with
+        set_screen(np, atlas_tex) first, then play: the pipeline steps
+        the per-node UV window each frame (uniform-only — the atlas
+        stays resident on the GPU, zero per-frame uploads).
+
+        Atlas convention: frames tiled row-major from the TOP-LEFT
+        (contact-sheet order), `cols` x `rows` grid, `num_frames` used
+        (default cols*rows; trailing cells ignored). Build atlases with
+        tools/gen_flipbook.py. loop=False holds the last frame.
+        stop_flipbook() stops and reverts the UV transform. One UV
+        animation per node: this owns the node's u_uv_transform while
+        playing (don't combine with set_uv_scroll on the same node)."""
+        cols = max(1, int(cols))
+        rows = max(1, int(rows))
+        n = int(num_frames) if num_frames else cols * rows
+        n = max(1, min(n, cols * rows))
+        self._flipbooks = [e for e in self._flipbooks
+                           if e['np'] != nodepath]
+        entry = {
+            'np': nodepath, 'cols': cols, 'rows': rows, 'n': n,
+            'fps': max(1e-3, float(fps)), 'loop': bool(loop),
+            't0': p3d.ClockObject.get_global_clock().get_frame_time(),
+            'frame': -1,
+        }
+        self._flipbooks.append(entry)
+        self._step_flipbook(entry, entry['t0'])
+
+    def stop_flipbook(self, nodepath):
+        """Stop play_flipbook() on the node and revert its UV transform
+        to the inherited identity."""
+        self._flipbooks = [e for e in self._flipbooks
+                           if e['np'] != nodepath]
+        nodepath.clear_shader_input('u_uv_transform')
+
+    def _step_flipbook(self, entry, now):
+        f = int((now - entry['t0']) * entry['fps'])
+        f = f % entry['n'] if entry['loop'] else min(f, entry['n'] - 1)
+        if f != entry['frame']:
+            entry['frame'] = f
+            entry['np'].set_shader_input(
+                'u_uv_transform', p3d.LVecBase4(
+                    *self._flipbook_transform(entry['cols'],
+                                              entry['rows'], f)))
+
+    # ------------------------------------------------------------------
+    # Rigid node clips (ER-004, Session V — walkable ships)
+    # ------------------------------------------------------------------
+
+    def get_model_clips(self, model_np, path=None):
+        """{clip_name: RigidClip} for a loaded glTF model — the rigid
+        TRS animations panda3d-gltf silently drops for plain
+        (non-skinned) nodes: doors, ramps, landing gear, drawers. The
+        nodes stay ordinary PandaNodes; play clips onto them with
+        rigid_clips.RigidClipPlayer (seek u in [0,1], forward/reverse;
+        the game owns easing/sounds/collision gating). Resolved from
+        the ModelRoot's recorded source path; pass `path` for
+        multifile-packed or moved assets. Full contract + the
+        prefab-delta synthesizer (RigidClip.from_delta) are documented
+        in pax3d_render/rigid_clips.py; gated by paxtest
+        test_rigid_clips."""
+        from . import rigid_clips
+        return rigid_clips.get_model_clips(model_np, path)
+
+    # ------------------------------------------------------------------
     # Glass (specular-preserving transparency)
     # ------------------------------------------------------------------
 
@@ -2990,6 +3302,24 @@ class Pipeline:
         # Orbital-atmosphere quads follow the camera (R5.5)
         if self._orbital_atmos:
             self._update_orbital_atmos(cam_pos)
+
+        # Powered displays (ER-005): UV scroll + flipbook stepping.
+        # O(active) uniform pushes; zero when the registries are empty.
+        if self._uv_scrolls or self._flipbooks:
+            now = p3d.ClockObject.get_global_clock().get_frame_time()
+            if self._uv_scrolls:
+                self._uv_scrolls = [e for e in self._uv_scrolls
+                                    if not e[0].is_empty()]
+                for np_, du, dv in self._uv_scrolls:
+                    np_.set_shader_input(
+                        'u_uv_transform',
+                        p3d.LVecBase4((du * now) % 1.0, (dv * now) % 1.0,
+                                      1.0, 1.0))
+            if self._flipbooks:
+                self._flipbooks = [e for e in self._flipbooks
+                                   if not e['np'].is_empty()]
+                for entry in self._flipbooks:
+                    self._step_flipbook(entry, now)
 
         # Log-depth coefficient tracks the camera lens far plane (R4.1) —
         # the game may change near/far at runtime (regime switches)
