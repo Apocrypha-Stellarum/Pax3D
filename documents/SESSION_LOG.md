@@ -858,3 +858,50 @@ ShaderAttrib/multi-pass state resolution, the instancing chain, GLSL
 notes, instrument traps), indexed in documents/README.md. All three
 ER files stamped IMPLEMENTED ENGINE-SIDE with adoption snippets.
 Remaining terrain-lane work is game-side adoption only.
+
+**Session V (2026-07-19): the walkable-ship lane — ER-004 rigid clips +
+ER-005 powered displays, both IMPLEMENTED + GATED same-session.**
+Trigger: the ship dev's census of both Vattalus .unitypackages (sfb2
+session 632, `MINERVA_CENSUS.md`) rewrote both ERs — no .anim files
+exist; motion is FBX takes + prefab script-lerps; displays are six mp4
+loops on VideoPlayer→RenderTexture Standard materials. ER-004:
+`pax3d_render/rigid_clips.py` + `pipeline.get_model_clips()` — a
+standalone GLB/glTF animations parser (reusing gltf_compat's accessor
+machinery, sparse-densify pre-pass included) for the plain-node TRS
+channels panda3d-gltf silently drops (its `animations` consumption
+lives only in build_character; ENGINE_INTERNALS §5 born from this dig).
+Axis conversion = the loader's own per-node conjugation
+(csxform_inv·M·csxform, _converter.py ~224), applied per-component
+(pos (x,y,z)→(x,−z,y), quat (x,y,z,w)→(w,x,−z,y), scale swap) and
+PINNED in-gate against the loader's rest pose on the same file (0.0
+err). Skin-joint/morph channels skipped — complementary to Actor by
+construction. RigidClipPlayer: name-resolved targets (.missing/
+.duplicates surfaced), seek(u)/apply(t)/reset(), stateless, LINEAR
+slerp + STEP + CUBICSPLINE Hermite. RigidClip.from_delta()/add_delta():
+the prefab script-lerp source as relative two-key clips (delta
+premultiplies = local-frame compose, the Unity convention; game
+validates on one door). Gate test_rigid_clips: in-test-authored GLB,
+10 checks, green both engines × both baselines. ER-005: set_screen()
+(albedo+emission bind at override 1, node texture state cleared first
+— set_texture MERGES stages, two same-mode stages would compete for
+the semantic sampler binding; byte-identical restore), set_emission_
+scale/_color (new u_emission_factor uniform), set_uv_transform/
+set_uv_scroll/play_flipbook (new u_uv_transform uniform, mat_uv =
+v_texcoord*zw+xy on the standard material samples; scroll/flipbook
+stepped by the pipeline task, O(active)/frame). Both uniforms
+root-default exact no-ops riding every pax_pbr variant. THE video
+fact: the Pax3D wheel builds --no-ffmpeg — MP4 decode does not exist
+engine-side; the flipbook atlas is the sanctioned carrier
+(tools/gen_flipbook.py, new — works with the machine's 2013-era ffmpeg
+CLI, mp4→atlas tested end-to-end), with game-side set_ram_image
+decoding as the alternative and "ffmpeg back into the build" queued as
+a user decision in ER-005. Gate test_screen: 15 analytic checks
+(quadrant-color map), every opt-out rms 0.0, PASSES on the routed
+graphics.pax_pbr path too. **Full gates (4 runs, detached sequential
+per the Window-4 ops note): @game 64/6/91 Pax3D · 62/6/93 stock,
+@modern 63/7/91 · 61/7/93 — FAIL sets identical to the documented
+pre-existing ones, zero regressions.** Both ER files stamped with
+engine responses + adoption snippets + three questions for the ship
+dev (video carrier decision for the user, screen-node split at
+conversion, delta-rotation validation). Remaining: game-side adoption
+on both ERs; hologram treatment stays deferred.

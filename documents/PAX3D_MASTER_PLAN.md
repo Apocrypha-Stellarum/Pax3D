@@ -355,6 +355,55 @@ palettes become drop-in). Sequencing agreed with the terrain dev:
    Remaining: game-side adoption; InstanceList bulk fill stays queued
    on profile evidence only (CLAUDE.md queue).
 
+### 4.10 Walkable-ship animation + displays lane (ER-004/ER-005, Session V)
+
+The Phobos/Minerva push continued: the ship dev's Session-632 census of
+both Vattalus .unitypackages (`sfb2/documents/PLANETSIDE/
+MINERVA_CENSUS.md` — NO .anim files, NO AnimatorControllers; motion is
+FBX takes + prefab script-lerps + toggles; displays are six mp4 loops on
+VideoPlayer→RenderTexture materials) rewrote both ERs with measured
+evidence. Both implemented engine-side same-session (Session V,
+2026-07-19), Python/GLSL only, no build window:
+
+1. **ER-004 — rigid clips. IMPLEMENTED ENGINE-SIDE + GATED.**
+   `pax3d_render/rigid_clips.py` + `pipeline.get_model_clips(np)`:
+   panda3d-gltf consumes glTF animations only inside build_character()
+   — plain-node TRS channels (every door/ramp/gear/drawer clip) are
+   silently dropped (ENGINE_INTERNALS §5). The module parses them
+   straight from the .glb into `RigidClip` stores (LINEAR/STEP/
+   CUBICSPLINE, skin-joint + morph channels skipped — complementary to
+   Actor), with the loader's own Y-up→Z-up conjugation applied
+   per-component and PINNED against the loader's rest pose in-gate.
+   Nodes stay ordinary PandaNodes (the ER's hard requirement).
+   `RigidClipPlayer` seeks t∈[0,1]/seconds, stateless (reverse = 
+   decreasing u), reset() restores rest; the game owns easing/sounds/
+   collision gating. `RigidClip.from_delta()` synthesizes the prefab
+   script-lerp source (~40 Minerva parts: pos delta + rot delta +
+   duration) as relative two-key clips composing onto rest. Gate:
+   test_rigid_clips (in-test-authored GLB, 10 checks: loader-drop
+   premise, axis contract 0.0 err, analytic seeks/slerp/STEP/Hermite,
+   delta compose, render A/B). Remaining: game-side adoption
+   (converter re-exports clips; ClipPlayer migration).
+2. **ER-005 — powered displays. IMPLEMENTED ENGINE-SIDE + GATED.**
+   The census's top ask (video-textured emissive surfaces) +the pokes:
+   `set_screen(np, tex)` (albedo+emission binding at override, HDR
+   emission, byte-identical restore; accepts ANY texture — flipbook
+   atlas, dynamic set_ram_image, MovieTexture where decodable, static),
+   `set_emission_scale/_color` (`u_emission_factor`, power states —
+   0.0 = VA_ScreenOff with albedo still lit), `set_uv_transform` /
+   `set_uv_scroll` (chase-light strips) / `play_flipbook` (atlas
+   playback, `tools/gen_flipbook.py` converts videos at intake — the
+   machine's ffmpeg CLI works, tested end-to-end). **Engine fact the
+   lane rests on: the Pax3D wheel builds `--no-ffmpeg` — MP4 decode
+   does not exist engine-side.** The flipbook is the sanctioned video
+   path; re-adding ffmpeg = a user build-window decision (queued
+   question in ER-005). Both uniforms are root-default exact no-ops;
+   scroll/flipbook are pipeline-task-driven (O(active)/frame, zero
+   idle). Gate: test_screen (15 analytic checks, every opt-out
+   rms 0.0). Remaining: game-side adoption (screen-node marking at
+   conversion, atlas intake of the 6 mp4s, hologram treatment stays
+   deferred per the ER).
+
 ---
 
 ## 5. Risks

@@ -1078,6 +1078,91 @@ opt-out clears the FLAG explicitly (`clear_shader()` keeps attrib flags
 — the collapse trap, gate-guarded). Gate: test_instancing (SKIPs on
 stock 1.10 — no InstancedNode there).
 
+### Session V — Walkable-ship lane: rigid clips (ER-004) + powered displays (ER-005)
+
+The Vattalus Phobos/Minerva compatibility pair
+(`sfb2/documents/ENGINE_REQUESTS/`, evidence in the game repo's
+`documents/PLANETSIDE/MINERVA_CENSUS.md`), both engine-side same-session.
+
+**ER-004 — `pax3d_render/rigid_clips.py`** (module + thin
+`pipeline.get_model_clips(model_np)`): panda3d-gltf consumes glTF
+animations only inside `build_character()` — channels targeting PLAIN
+nodes (every Unity door/ramp/gear/drawer clip) are silently dropped. The
+module parses them straight from the .glb/.gltf (GLB container + accessor
+decode reusing `gltf_compat`'s machinery; sparse accessors densified via
+the same pre-pass) into `RigidClip` stores:
+
+- Nodes stay ordinary PandaNodes — nothing converts to Character; the
+  parser SKIPS channels targeting skin joints or morph weights (the
+  loader's Character/Actor path owns those; the two stores are
+  complementary by construction).
+- Axis conversion is the loader's own conjugation (`_converter.py` ~224,
+  csxform_inv · M · csxform — a proper Y-up→Z-up rotation), applied
+  per-component: pos (x,y,z)→(x,−z,y), quat (x,y,z,w)→LQuaternion(w,x,−z,y),
+  scale (sx,sy,sz)→(sx,sz,sy). Pinned by the gate's
+  `key0_matches_loader_rest` check (player key-0 pose == loader rest pose,
+  0.0 err on file).
+- Sampler semantics: LINEAR (slerp for rotation), STEP, CUBICSPLINE
+  (Hermite, normalized for rotation); values clamp outside the keyed range.
+- `RigidClipPlayer(clip, model_np)`: name-resolved targets (full-subtree
+  walk, `.missing`/`.duplicates` surfaced, rest TRS captured), `seek(u)`
+  / `apply(t_seconds)` / `reset()` — stateless evaluation, so reverse =
+  decreasing u. The GAME owns tasks/easing/sounds/collision gating
+  (ER-004 contract).
+- `RigidClip.from_delta(...)` / `add_delta(...)`: the second Vattalus
+  clip source — prefab script-lerps (pos delta + rot delta + duration,
+  ~40 Minerva parts) — as two-keyframe RELATIVE clips composing onto the
+  captured rest pose (delta quat premultiplies: local-frame delta, the
+  Unity `localRotation * Euler(delta)` convention). Values are
+  PANDA-space; the game converts Unity axes and validates on one door.
+- The channel `path` is an open string — ER-005 material channels can
+  join later ("one runtime, two channel kinds") without restructuring.
+
+Gate: test_rigid_clips (authors a GLB from scratch in-test; loader-drop
+premise, axis contract, analytic seeks, delta compose, render A/B).
+
+**ER-005 — powered displays** (the census verdict: the packs' dominant
+display mechanism is a texture bound as albedo+emission on a Standard
+material — VIDEO-textured; plus material-swap power states, UV-scroll
+strips):
+
+- `set_screen(np, tex, albedo=True, emission_scale=, emission_color=,
+  roughness=, metallic=)`: node-level TextureAttrib (modulate+emission
+  stages sharing `tex`, white selector, flat normal when the pipeline
+  compiles normal maps) + MaterialAttrib (HDR emission) at override 1 —
+  beats the loader's geom-level states (set_glass discipline; the node's
+  own texture state is cleared first because set_texture MERGES stages).
+  `clear_screen(np)` restores the saved attribs byte-identically.
+  `tex` is ANY Texture: static image, flipbook atlas, dynamic
+  `set_ram_image` target, or MovieTexture — but NOTE: **the Pax3D wheel
+  builds `--no-ffmpeg`; MP4 decode does not exist engine-side.** The
+  sanctioned video path is a flipbook atlas (`tools/gen_flipbook.py`
+  converts videos/frame-dirs at intake; the dev machine's ffmpeg CLI
+  works) played by `play_flipbook()`. Re-adding ffmpeg would be a
+  user-scheduled build-window decision.
+- `set_emission_scale(np, s)` / `set_emission_color(np, rgb)` /
+  `clear_emission(np)`: new `u_emission_factor` uniform (root default
+  (1,1,1) = exact no-op) multiplying ONLY the emission term — screen
+  power states (0.0 = the VA_ScreenOff state with albedo still lit),
+  blink/pulse, HDR boost. Composes with whatever the material/texture
+  emission is; works on any authored emissive material, not just screens.
+- `set_uv_transform(np, offset, scale)` + animated drivers
+  `set_uv_scroll(np, du_dt, dv_dt)` (chase-light strips) and
+  `play_flipbook(np, cols, rows, num_frames, fps, loop)`: new
+  `u_uv_transform` uniform (root default (0,0,1,1) = exact no-op),
+  `mat_uv = v_texcoord * zw + xy` applied to the STANDARD material
+  samples (base/metal-rough/normal/emission) — not the terrain-splat
+  sample set. Scroll/flipbook are stepped by the pipeline's per-frame
+  task: O(active) uniform pushes, zero when idle, no TexMatrix state
+  churn, atlas resident on the GPU (zero per-frame uploads). Flipbook
+  atlas convention: row-major from the TOP-LEFT (contact-sheet order),
+  `Pipeline._flipbook_transform` is the pinned mapping.
+
+Both uniforms ride every pax_pbr variant (glass/terrain/instanced share
+the source) and survive recompiles via the input-preservation invariant
+(§3). Gate: test_screen — 15 checks, all analytic (quadrant-color map),
+every opt-out byte-identical (rms == 0.0).
+
 ---
 
 ## 10. Testing Contract
@@ -1088,8 +1173,8 @@ stock 1.10 — no InstancedNode there).
   (×sun-modes), doublesided (×sun-modes), ambient_scale, env_map,
   local_lights (×sun-modes), orbital (+@logdepth), srgb, ssao
   (+@logdepth/@msaa4), lens_flare, morph_gltf, data_texture,
-  terrain_splat (×sun-modes), instancing (×sun-modes). Run
-  `tools/paxtest/run.py` before and after.
+  terrain_splat (×sun-modes), instancing (×sun-modes), rigid_clips,
+  screen. Run `tools/paxtest/run.py` before and after.
 - Add a test WITH the feature, not after. Analytic checks > goldens;
   goldens (`--golden` / `--check-golden`) are a refactor safety net.
 - The testbed (`sfb2/test3d_pax.py`) is the eyeball companion — its

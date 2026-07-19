@@ -88,6 +88,19 @@ inputs).** Measured trap (`test_instancing`
 every instance onto the node origin. `set_instanced(np, False)` clears the
 flag explicitly for exactly this reason.
 
+**`NodePath.set_texture(stage, tex)` MERGES the stage into the node's
+existing TextureAttrib** — it does not replace it. The PBR shader's
+semantic samplers (`p3d_TextureModulate` / `Selector` / `Normal` /
+`Emission`, the shaderutils #define targets) bind by stage MODE, one
+stage per mode — so two same-mode stages on one resolved state compete
+for the binding. `set_screen` therefore clears the node's texture state
+before applying its stage set, and puts the whole TextureAttrib (and
+MaterialAttrib) at **override 1** so it wins wholesale over the loader's
+geom-level states — the same per-slot override resolution that makes
+`set_glass`'s transparency override beat geom-level M_alpha. Gate:
+test_screen (`clear_screen_restores` proves the saved-attrib restore is
+byte-identical).
+
 **Unbound vertex-attrib defaults** (`glShaderContext_src.cxx`,
 `update_shader_vertex_arrays` ~2637–2669): when a shader declares an
 attrib the vertex data lacks, the GL layer sets a current value instead —
@@ -152,7 +165,35 @@ The full chain, verified by source + `test_instancing`:
   TERRAIN_SPLAT variant builds its TBN analytically instead of reading
   the varyings.
 
-## 5. Instrument traps (for test authors)
+## 5. panda3d-gltf loader mechanisms (third-party, but load-bearing)
+
+Session V digs (walkable-ship lane, ER-004); source refs are
+panda3d-gltf 1.3.0 `gltf/_converter.py`.
+
+- **glTF `animations` are consumed ONLY inside `build_character()`**
+  (~1281–1325), reached from skins (`load_skin`) or morph-weight meshes.
+  Channels targeting plain non-skinned nodes — every Unity ship-pack
+  door/ramp/gear/drawer clip, since Blender exports object actions as
+  exactly such channels — are **silently dropped**. This is the ER-004
+  premise; `pax3d_render/rigid_clips.py` re-reads them from the file.
+  Gate: test_rigid_clips `loader_keeps_plain_nodes`.
+- **Every node's local transform is conjugated**
+  `csxform_inv * gltf_mat * csxform` (~224) — a change of basis from
+  glTF Y-up RH to Panda Z-up RH, a PROPER rotation, so TRS components
+  convert independently: pos (x,y,z)→(x,−z,y), quat
+  (x,y,z,w)→LQuaternion(w,x,−z,y), scale (sx,sy,sz)→(sx,sz,sy). Pinned
+  end-to-end by test_rigid_clips `key0_matches_loader_rest` (player
+  key-0 pose == loader rest pose, 0.0 err). `skip_axis_conversion`
+  makes csxform identity (rigid_clips exposes `axis_conversion=False`
+  for that case).
+- **Naming:** nodes get `gltf_node.get('name', 'node%d')`, animations
+  `'anim%d'`, meshes `'mesh%d'` — RigidClipPlayer resolves targets by
+  exact node name over the subtree.
+- **`ModelRoot.get_fullpath()` records the source file** and survives
+  the bam-cache round trip — `get_model_clips()` resolves the .glb
+  through it (pass `path=` for multifile-packed assets).
+
+## 6. Instrument traps (for test authors)
 
 - An ortho camera sitting ON the geometry plane has view distance ≈ 0 —
   a distance-fade "force it on" config needs fade edges BELOW zero
