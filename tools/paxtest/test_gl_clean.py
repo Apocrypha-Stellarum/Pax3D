@@ -35,8 +35,10 @@ import common
 
 FRAMES = 30
 
-# Flip to False when the PATCH_QUEUE_GL_OFFSCREEN.md window lands.
-EXPECT_DEFECT_ON_1_11 = True
+# Flipped False 2026-07-19: the PATCH_QUEUE_GL_OFFSCREEN.md window
+# landed (Session X part 2) — this row is now the permanent
+# zero-GL-errors guard for offscreen rendering on both engines.
+EXPECT_DEFECT_ON_1_11 = False
 
 LOG = os.path.join(common.OUTPUT_DIR, 'gl_clean_notify.log')
 

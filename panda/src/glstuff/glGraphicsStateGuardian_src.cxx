@@ -4814,7 +4814,10 @@ end_frame(Thread *current_thread) {
         }
 
         _error_count += error_count;
-        if (_error_count >= gl_max_errors) {
+        // PAX3D: honor the documented "-1 = no limit" (report_errors_loop
+        // already does; a bare >= made -1 panic-deactivate on the FIRST
+        // error instead).  Master plan fact #18.
+        if (gl_max_errors >= 0 && _error_count >= gl_max_errors) {
           panic_deactivate();
         }
       }

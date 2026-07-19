@@ -1,12 +1,15 @@
 # Queued C++ patch: offscreen GL_INVALID_OPERATION + gl-max-errors -1
 
-**Status: QUEUED for a user-authorized mini build window** (Session-R
-warning class: two one-line edits in `display`/`glstuff`, incremental
-build ~1-2 min, then full gate both engines × both baselines).
-Root-caused Session X (2026-07-19) from the FPS-lane field report;
-measurement on file in `tools/paxtest/probe_gl_errors.py` and the
-`test_gl_clean` gate rows (which assert the CURRENT defect and will
-fail "the good way" when this lands — true them up in the same window).
+**Status: LANDED — window executed Session X part 2 (2026-07-19,
+user-authorized).** Build 1 min 0 sec incremental, exit 0; wheel
+installed into pax3d-env and archived `wheels_session_x\`. Verified:
+probe_gl_errors 0 errors/frame in EVERY phase both baselines (was
+~60/phase); `test_gl_clean` flipped to its permanent zero-GL-errors
+form — now the same clean assertion on both engines; full gate green.
+The `-1` fix is validated by code symmetry with `report_errors_loop`
+(no error source remains offscreen to exercise the limit path
+end-to-end — which is the point). The rest of this file is the
+historical record of the defect and the patch as applied.
 
 ## Defect 1: one GL_INVALID_OPERATION per frame in EVERY offscreen run
 

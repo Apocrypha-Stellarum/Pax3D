@@ -305,12 +305,18 @@ int FrameBufferProperties::
 get_buffer_mask() const {
   int mask = 0;
 
-  //XXX rdb: some buffers only have a front buffer, some only a back buffer
-  //if (_property[FBP_back_buffers] > 0) {
-     mask = RenderBuffer::T_front | RenderBuffer::T_back;
-  //} else {
-  //  mask = RenderBuffer::T_front;
-  //}
+  // PAX3D: restore the 1.10 semantics — a single-buffered target has no
+  // GL_BACK, and glDrawBuffer(GL_BACK) on it raises GL_INVALID_OPERATION
+  // in every prepare_display_region (= once per frame on wgl pbuffers =
+  // every offscreen harness; the GSG panic-deactivates at gl-max-errors).
+  // Upstream bd4dc8a379 commented this conditional out for a DX9
+  // buffer-copy fix; DX9 was excised in R6 Window 2, so the
+  // accommodation is moot here.  Master plan fact #18; test_gl_clean.
+  if (_property[FBP_back_buffers] > 0) {
+    mask = RenderBuffer::T_front | RenderBuffer::T_back;
+  } else {
+    mask = RenderBuffer::T_front;
+  }
   if (_property[FBP_depth_bits] > 0) {
     mask |= RenderBuffer::T_depth;
   }
