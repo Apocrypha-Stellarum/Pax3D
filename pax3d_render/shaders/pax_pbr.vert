@@ -46,6 +46,16 @@ attribute vec2 p3d_MultiTexCoord0;
 attribute vec4 transform_weight;
 attribute vec4 transform_index;
 #endif
+#ifdef INSTANCING
+// Per-instance transform under an InstancedNode (ER-002). The engine
+// feeds this as a divisor-1 vertex attrib from InstanceList
+// (cullableObject munge_instances); draws WITHOUT an instance list get
+// the identity (glShaderContext fallback), so this declaration is safe
+// for every draw that reaches an INSTANCING compile. Panda row-major
+// affine memory reads as GL column-major mat4x3 with translation in
+// column 3 — M * vec4(v, 1) is the correct application.
+attribute mat4x3 p3d_InstanceMatrix;
+#endif
 
 
 varying vec3 v_view_position;
@@ -78,6 +88,21 @@ void main() {
     vec4 model_position = p3d_Vertex;
     vec3 model_normal = p3d_Normal;
     vec3 model_tangent = p3d_Tangent.xyz;
+#endif
+#ifdef INSTANCING
+    // Instance transform applies between the node transform (inside
+    // p3d_ModelViewMatrix / p3d_ModelMatrix) and the vertex — which is
+    // why children under an InstancedNode must be flattened (a child
+    // transform would land on the wrong side of the instance one).
+    // Skinning composes first: joint space -> model -> instance.
+    model_position = vec4(p3d_InstanceMatrix * model_position, 1.0);
+    mat3 instance_rot = mat3(p3d_InstanceMatrix[0],
+                             p3d_InstanceMatrix[1],
+                             p3d_InstanceMatrix[2]);
+    // Rotation + UNIFORM scale assumed (normalize() strips the scale,
+    // same contract as the world_normal_mat note below).
+    model_normal = instance_rot * model_normal;
+    model_tangent = instance_rot * model_tangent;
 #endif
     vec4 view_position = p3d_ModelViewMatrix * model_position;
     v_view_position = (view_position).xyz;

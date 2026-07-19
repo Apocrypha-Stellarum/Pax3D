@@ -17,6 +17,13 @@ attribute vec2 p3d_MultiTexCoord0;
 attribute vec4 transform_weight;
 attribute vec4 transform_index;
 #endif
+#ifdef INSTANCING
+// Same instancing discipline as pax_pbr.vert (ER-002): the depth pass
+// must apply the same per-instance transform or instanced casters would
+// all shadow from the node origin. Non-instanced casters get the
+// identity fallback — behavior-identical to the pre-INSTANCING compile.
+attribute mat4x3 p3d_InstanceMatrix;
+#endif
 
 
 varying vec4 v_color;
@@ -33,6 +40,9 @@ void main() {
     vec4 vert_pos4 = skin_matrix * p3d_Vertex;
 #else
     vec4 vert_pos4 = p3d_Vertex;
+#endif
+#ifdef INSTANCING
+    vert_pos4 = vec4(p3d_InstanceMatrix * vert_pos4, 1.0);
 #endif
     v_color = p3d_Color;
     v_texcoord = p3d_MultiTexCoord0;

@@ -495,6 +495,24 @@ class Pipeline:
         self._glass_nodes = []
         self._glass_shader = None
 
+        # Terrain splat nodes (set_terrain_splat, ER-001): per-subtree
+        # TERRAIN_SPLAT variant of the PBR shader. Entries are
+        # (nodepath, config dict); shaders cached per optional-feature
+        # combo and invalidated on every pipeline recompile (the glass
+        # discipline). Empty list = byte-identical to the shipped
+        # pipeline (paxtest test_terrain_splat opt-out check).
+        self._terrain_nodes = []
+        self._terrain_shaders = {}
+
+        # Instanced nodes (set_instanced, ER-002): per-node INSTANCING
+        # variant + F_hardware_instancing flag over an InstancedNode.
+        # While ANY node is registered, the shadow depth shader also
+        # compiles with INSTANCING (identity fallback keeps every
+        # non-instanced caster behavior-identical). Empty list = the
+        # shipped shaders exactly.
+        self._instanced_nodes = []
+        self._instanced_shader = None
+
         # Model-authored lights turned on via activate_model_lights():
         # (light_np, original color, root it was set_light on) — so
         # deactivation restores colors and scopes exactly.
@@ -699,6 +717,12 @@ class Pipeline:
         # would leave glass rendering with stale defines.
         self._glass_shader = None
         self._reapply_glass_shaders()
+        # Terrain splat nodes: same recompile-tracking rule as glass.
+        self._terrain_shaders = {}
+        self._reapply_terrain_splat()
+        # Instanced nodes: same recompile-tracking rule.
+        self._instanced_shader = None
+        self._reapply_instanced_shaders()
         # Orbital-atmosphere quads carry their own shader pair whose
         # USE_330/LOG_DEPTH defines must track the pipeline's (same
         # recompile-tracking rule as glass) — a log-depth toggle with
@@ -1993,6 +2017,287 @@ class Pipeline:
             else:
                 nodepath.clear_transparency()
 
+    # ------------------------------------------------------------------
+    # Terrain layer splatting (ER-001)
+    # ------------------------------------------------------------------
+
+    def _terrain_shader_for(self, config):
+        """The TERRAIN_SPLAT variant matching this config's optional
+        features (compiled lazily per combo, invalidated by
+        _recompile_pbr — the glass discipline)."""
+        key = (config['normal_array'] is not None,
+               config['orm_array'] is not None,
+               config['macro_map'] is not None)
+        shader = self._terrain_shaders.get(key)
+        if shader is None:
+            defines = self._get_pbr_defines()
+            defines['TERRAIN_SPLAT'] = True
+            if key[0]:
+                defines['TERRAIN_SPLAT_NORMALS'] = True
+            if key[1]:
+                defines['TERRAIN_SPLAT_ORM'] = True
+            if key[2]:
+                defines['TERRAIN_SPLAT_MACRO'] = True
+            shader = shaderutils.make_shader(
+                'pax_pbr_terrain', 'pax_pbr.vert', 'pax_pbr.frag', defines)
+            self._terrain_shaders[key] = shader
+        return shader
+
+    def _apply_terrain_splat(self, nodepath, config):
+        """Compose the terrain variant + its inputs onto the node (same
+        attrib discipline as _apply_glass_shader: existing shader state
+        survives; no override, so the shadow camera's initial-state
+        attrib still wins the depth pass — terrain casts/receives
+        exactly as before)."""
+        prev = nodepath.get_attrib(p3d.ShaderAttrib)
+        if prev is None:
+            prev = p3d.ShaderAttrib.make()
+        nodepath.set_attrib(prev.set_shader(
+            self._terrain_shader_for(config)))
+        nodepath.set_shader_input('terrain_albedo', config['albedo_array'])
+        nodepath.set_shader_input('terrain_splat', config['splat_map'])
+        nodepath.set_shader_input(
+            'u_terrain_uv_scales', p3d.LVecBase4(*config['uv_scales']))
+        nodepath.set_shader_input(
+            'u_terrain_splat_transform',
+            p3d.LVecBase4(*config['splat_transform']))
+        if config['normal_array'] is not None:
+            nodepath.set_shader_input('terrain_normal',
+                                      config['normal_array'])
+            nodepath.set_shader_input(
+                'u_terrain_normal_fade',
+                p3d.LVecBase2(*config['normal_fade']))
+        if config['orm_array'] is not None:
+            nodepath.set_shader_input('terrain_orm', config['orm_array'])
+        if config['macro_map'] is not None:
+            nodepath.set_shader_input('terrain_macro', config['macro_map'])
+            nodepath.set_shader_input('u_terrain_macro_scale',
+                                      float(config['macro_uv_scale']))
+            nodepath.set_shader_input('u_terrain_macro_strength',
+                                      float(config['macro_strength']))
+
+    def _reapply_terrain_splat(self):
+        """Re-push (freshly invalidated) terrain variants onto every
+        registered terrain node after a pipeline shader recompile."""
+        self._terrain_nodes = [e for e in self._terrain_nodes
+                               if not e[0].is_empty()]
+        for nodepath, config in self._terrain_nodes:
+            self._apply_terrain_splat(nodepath, config)
+
+    def set_terrain_splat(self, nodepath, albedo_array, splat_map,
+                          normal_array=None, orm_array=None,
+                          uv_scales=(1.0, 1.0, 1.0, 1.0),
+                          splat_transform=(0.0, 0.0, 1.0, 1.0),
+                          macro_map=None, macro_uv_scale=1.0,
+                          macro_strength=0.15,
+                          normal_fade=(200.0, 400.0)):
+        """Give `nodepath` (a terrain chunk subtree) a splat-blended
+        layer material (ER-001): up to 4 PBR layers weighted per-
+        fragment by an RGBA splat map, composing with sun/shadows/fog/
+        aerial-perspective/IBL exactly like every other PBR material
+        (it is the same shader — only the material inputs change).
+
+        Args:
+            albedo_array: 2D texture ARRAY (setup_2d_texture_array /
+                intake-built), one slice per layer, uniform size. Slice
+                i is weighted by splat channel i (R,G,B,A). Color
+                texture — sRGB/compression-eligible, NOT under the
+                ER-003 data contract.
+            splat_map: RGBA weight texture covering the chunk. Weights
+                are renormalized in-shader (an all-zero texel falls
+                back to layer 0). DATA texture: pass it through
+                data_texture() (the game-side ER-003 commitment) so it
+                is never compressed — DXT on weights smears blends.
+            normal_array: optional tangent-space normal array (+Y/
+                OpenGL convention, slices aligned with albedo). Chunk
+                meshes need NO tangent column: the TBN is analytic from
+                the world-planar UV convention (u->+world_x,
+                v->+world_y; Gram-Schmidt on steep faces). If your
+                planar mapping flips v, flip the green channel at
+                intake.
+            orm_array: optional occlusion(r)/roughness(g)/metallic(b)
+                array. Without it the layers use the node MATERIAL's
+                roughness/metallic (the dispatcher's per-planet
+                values). With it, material values MULTIPLY the map
+                (glTF semantic).
+            uv_scales: per-layer detail tiling scale applied to the
+                mesh UV (chunks carry world-aligned planar UVs).
+            splat_transform: (off_u, off_v, scale_u, scale_v) mapping
+                base UV -> splat UV; default identity for chunk-local
+                0..1 UVs. World-aligned continuous UVs use this to
+                window the per-chunk splat map.
+            macro_map: optional single-channel low-frequency variation
+                texture; modulates albedo brightness by
+                mix(1, 2*macro, strength) — a 0.5 texel is an exact
+                no-op. Sample at 100-500 m periods via macro_uv_scale.
+            normal_fade: (start, end) view distance over which detail
+                normals fade flat (sparkle/moire control; terrain
+                fills most of the frame).
+
+        Layer-weight computation lives in ONE shader function
+        (terrain_layer_weights) — the ratified v2 seam: hex-tiling and
+        height-blend sharpening land as new defines without
+        restructuring. Re-calling with new arguments reconfigures in
+        place; clear_terrain_splat() restores the node byte-identically
+        (paxtest test_terrain_splat).
+        """
+        config = {
+            'albedo_array': albedo_array,
+            'splat_map': splat_map,
+            'normal_array': normal_array,
+            'orm_array': orm_array,
+            'uv_scales': tuple(float(s) for s in uv_scales),
+            'splat_transform': tuple(float(s) for s in splat_transform),
+            'macro_map': macro_map,
+            'macro_uv_scale': float(macro_uv_scale),
+            'macro_strength': float(macro_strength),
+            'normal_fade': tuple(float(f) for f in normal_fade),
+        }
+        idx = next((i for i, e in enumerate(self._terrain_nodes)
+                    if e[0] == nodepath), None)
+        if idx is None:
+            self._terrain_nodes.append((nodepath, config))
+        else:
+            self._terrain_nodes[idx] = (nodepath, config)
+        self._apply_terrain_splat(nodepath, config)
+
+    def clear_terrain_splat(self, nodepath):
+        """Undo set_terrain_splat(): the node reverts to the inherited
+        pipeline shader and its prior material path, byte-identical to
+        untouched (paxtest test_terrain_splat opt-out check)."""
+        idx = next((i for i, e in enumerate(self._terrain_nodes)
+                    if e[0] == nodepath), None)
+        if idx is None:
+            return
+        self._terrain_nodes.pop(idx)
+        nodepath.clear_shader()
+        for name in ('terrain_albedo', 'terrain_splat', 'terrain_normal',
+                     'terrain_orm', 'terrain_macro',
+                     'u_terrain_uv_scales', 'u_terrain_splat_transform',
+                     'u_terrain_normal_fade', 'u_terrain_macro_scale',
+                     'u_terrain_macro_strength'):
+            nodepath.clear_shader_input(name)
+
+    # ------------------------------------------------------------------
+    # Hardware instancing (ER-002 — scatter rendering)
+    # ------------------------------------------------------------------
+
+    def _get_instanced_shader(self):
+        """The INSTANCING-defined PBR variant for the current pipeline
+        defines (lazy compile, invalidated by _recompile_pbr — the
+        glass discipline)."""
+        if self._instanced_shader is None:
+            defines = self._get_pbr_defines()
+            defines['INSTANCING'] = True
+            self._instanced_shader = shaderutils.make_shader(
+                'pax_pbr_instanced', 'pax_pbr.vert', 'pax_pbr.frag',
+                defines)
+        return self._instanced_shader
+
+    def _apply_instanced_shader(self, nodepath):
+        """Compose the instanced variant + F_hardware_instancing onto
+        the node (attrib discipline of _apply_glass_shader: existing
+        shader state survives; no override, so the shadow camera's
+        initial-state attrib still owns the depth pass)."""
+        prev = nodepath.get_attrib(p3d.ShaderAttrib)
+        if prev is None:
+            prev = p3d.ShaderAttrib.make()
+        attr = prev.set_shader(self._get_instanced_shader())
+        attr = attr.set_flag(p3d.ShaderAttrib.F_hardware_instancing, True)
+        nodepath.set_attrib(attr)
+
+    def _reapply_instanced_shaders(self):
+        """Re-push (freshly invalidated) instanced variants after a
+        pipeline shader recompile."""
+        self._instanced_nodes = [np_ for np_ in self._instanced_nodes
+                                 if not np_.is_empty()]
+        for np_ in self._instanced_nodes:
+            self._apply_instanced_shader(np_)
+
+    def _invalidate_shadow_caster_states(self):
+        """Drop the shadow ShaderAttrib from every caster's initial
+        state so the next _update rebuilds it with the current defines
+        (the set_max_skinning_bones pattern)."""
+        if not self.enable_shadows:
+            return
+        for caster in self._get_all_casters():
+            state = caster.get_initial_state()
+            if state.has_attrib(p3d.ShaderAttrib):
+                caster.set_initial_state(
+                    state.remove_attrib(p3d.ShaderAttrib))
+
+    def set_instanced(self, nodepath, enabled=True):
+        """Render `nodepath` — an InstancedNode (or its NodePath) — via
+        HARDWARE INSTANCING under the pipeline shader (ER-002): one
+        draw per Geom for the whole InstanceList, each instance
+        transformed in-vertex-shader by p3d_InstanceMatrix.
+
+        The blessed scatter pattern (rocks/boulders/debris):
+
+            inode = p3d.InstancedNode('rocks')
+            inp = chunk_np.attach_new_node(inode)
+            rock_model.instance_to(inp)     # flatten children first!
+            ilist = inode.modify_instances()
+            ilist.reserve(n)
+            for pos, hpr, scale in placements:
+                ilist.append(pos, hpr, scale)
+            pipeline.set_instanced(inp)
+
+        Facts the pattern rests on (measured, paxtest test_instancing):
+        - WITHOUT this call an InstancedNode still renders every
+          instance CORRECTLY — the cull traverser falls back to one
+          draw per instance. set_instanced is the PERFORMANCE switch
+          (N draws -> 1 instanced draw per Geom), not a correctness
+          one: prototype at low density without it, flip it on for
+          real densities.
+        - The flag and the shader must travel together: a node carrying
+          F_hardware_instancing with a non-INSTANCING shader collapses
+          every instance onto the node origin (identity matrices) —
+          this API keeps them paired; don't set the flag by hand.
+        - Children under the InstancedNode must be FLATTENED (upstream
+          contract): the instance transform applies between the node
+          transform and the vertex, so a child transform would land on
+          the wrong side.
+        - Instance rotation + UNIFORM scale are supported (normals are
+          rotated then normalized; non-uniform scale would need an
+          inverse-transpose the shader deliberately omits).
+        - Per-instance frustum culling is upstream InstancedNode
+          behavior — off-screen instances are culled per-camera.
+        - Shadows: while any node is registered, the depth-pass shader
+          carries the same instancing path, so instanced casters shadow
+          correctly; combine with exclude_from_shadows()/caster-mask
+          tiering for scatter classes that should not cast.
+
+        `enabled=False` restores the node (single-at-origin draw,
+        byte-identical to pre-call — the opt-out check)."""
+        if not hasattr(p3d.ShaderAttrib, 'F_hardware_instancing'):
+            raise RuntimeError(
+                'set_instanced needs InstancedNode/F_hardware_instancing '
+                '(Pax3D 1.11 engine; stock 1.10 does not have it)')
+        had_any = bool(self._instanced_nodes)
+        if enabled:
+            if nodepath not in self._instanced_nodes:
+                self._instanced_nodes.append(nodepath)
+            self._apply_instanced_shader(nodepath)
+        else:
+            if nodepath not in self._instanced_nodes:
+                return
+            self._instanced_nodes.remove(nodepath)
+            nodepath.clear_shader()
+            # clear_shader() keeps the attrib's FLAGS — a leftover
+            # F_hardware_instancing with the inherited (non-INSTANCING)
+            # shader would collapse every instance onto the node origin
+            # (measured; the flag engages the munge path, the shader
+            # gets identity matrices). Drop it explicitly.
+            prev = nodepath.get_attrib(p3d.ShaderAttrib)
+            if prev is not None:
+                nodepath.set_attrib(prev.clear_flag(
+                    p3d.ShaderAttrib.F_hardware_instancing))
+        if had_any != bool(self._instanced_nodes):
+            # The shadow shader's INSTANCING define flips with the
+            # first/last registration — rebuild caster initial states.
+            self._invalidate_shadow_caster_states()
+
     def set_hardware_skinning(self, nodepath, enabled):
         """Per-node override of the pipeline-wide enable_hardware_skinning
         flag: pin a problem rig to the CPU-skinning path (or force a node
@@ -2741,6 +3046,10 @@ class Pipeline:
             'IS_WEBGL': self._is_webgl,
             'ENABLE_SKINNING': self.enable_hardware_skinning,
             'MAX_SKINNING_BONES': self.max_skinning_bones,
+            # ER-002: with any instanced node registered, the depth pass
+            # carries the same instancing path (identity fallback keeps
+            # non-instanced casters behavior-identical).
+            'INSTANCING': bool(self._instanced_nodes),
         }
         shader = shaderutils.make_shader(
             'shadow', 'shadow.vert', 'shadow.frag', defines
@@ -2748,6 +3057,9 @@ class Pipeline:
         attr = p3d.ShaderAttrib.make(shader)
         if self.enable_hardware_skinning:
             attr = attr.set_flag(p3d.ShaderAttrib.F_hardware_skinning, True)
+        if self._instanced_nodes:
+            attr = attr.set_flag(
+                p3d.ShaderAttrib.F_hardware_instancing, True)
         return attr
 
     # ------------------------------------------------------------------

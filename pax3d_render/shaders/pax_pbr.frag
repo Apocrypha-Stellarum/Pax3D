@@ -18,8 +18,13 @@
     #define texture2D texture
     #define textureCube texture
     #define textureCubeLod textureLod
+    #define texture2DArray texture
 #else
     #extension GL_ARB_shader_texture_lod : require
+#ifdef TERRAIN_SPLAT
+    // sampler2DArray on the legacy path (GLSL 330 has it in core)
+    #extension GL_EXT_texture_array : require
+#endif
 #endif
 
 uniform struct p3d_MaterialParameters {
@@ -114,6 +119,56 @@ struct FunctionParamters {
     vec3 diffuse_color;
     vec3 specular_color;
 };
+
+#ifdef TERRAIN_SPLAT
+// ---- Terrain layer splatting (ER-001, pipeline.set_terrain_splat) ----
+// Per-fragment blend of up to 4 material layers packed as 2D texture
+// arrays (albedo required; normal/ORM optional), weighted by an RGBA
+// splat map. Composes with everything downstream (sun, shadows, fog,
+// aerial perspective, SH ambient, IBL) because it only replaces the
+// MATERIAL INPUTS — the lighting math below is byte-for-byte the
+// standard path.
+uniform sampler2DArray terrain_albedo;
+uniform sampler2D terrain_splat;
+uniform vec4 u_terrain_uv_scales;       // per-layer detail UV scale
+uniform vec4 u_terrain_splat_transform; // base UV -> splat UV: xy off, zw scale
+uniform mat4 p3d_ViewMatrix;            // world -> view for the terrain normal
+#ifdef TERRAIN_SPLAT_NORMALS
+uniform sampler2DArray terrain_normal;
+uniform vec2 u_terrain_normal_fade;     // (start, end) view distance
+#endif
+#ifdef TERRAIN_SPLAT_ORM
+uniform sampler2DArray terrain_orm;     // r=occlusion g=roughness b=metallic
+#endif
+#ifdef TERRAIN_SPLAT_MACRO
+uniform sampler2D terrain_macro;        // low-frequency albedo variation
+uniform float u_terrain_macro_scale;    // base UV -> macro UV scale
+uniform float u_terrain_macro_strength; // 0 = exact no-op
+#endif
+
+// THE v2 SEAM (user-ratified with the terrain dev, 2026-07-19): layer
+// weights come from here and ONLY here. Hex-tiling (Mikkelsen JCGT
+// 2022) and height-blend sharpening land later as new defines swapping
+// this function's body — nothing else in the variant restructures.
+vec4 terrain_layer_weights(vec2 base_uv) {
+    vec2 suv = base_uv * u_terrain_splat_transform.zw
+             + u_terrain_splat_transform.xy;
+    vec4 w = texture2D(terrain_splat, suv);
+    float total = w.x + w.y + w.z + w.w;
+    // Renormalize (8-bit splat maps rarely sum to exactly 1); an empty
+    // texel falls back to layer 0 rather than rendering black.
+    return (total > 1e-5) ? w / total : vec4(1.0, 0.0, 0.0, 0.0);
+}
+
+vec4 terrain_blend_array(sampler2DArray layers, vec4 w, vec2 base_uv) {
+    vec4 acc = vec4(0.0);
+    for (int i = 0; i < 4; ++i) {
+        acc += w[i] * texture2DArray(layers,
+            vec3(base_uv * u_terrain_uv_scales[i], float(i)));
+    }
+    return acc;
+}
+#endif
 
 uniform sampler2D p3d_TextureBaseColor;
 uniform sampler2D p3d_TextureMetalRoughness;
@@ -292,6 +347,59 @@ vec3 irradiance_from_sh(vec3 normal) {
 }
 
 void main() {
+#ifdef TERRAIN_SPLAT
+    // ---- Terrain splat material inputs (ER-001) ----
+    vec4 terrain_w = terrain_layer_weights(v_texcoord);
+#ifdef TERRAIN_SPLAT_ORM
+    vec4 metal_rough = terrain_blend_array(terrain_orm, terrain_w, v_texcoord);
+#else
+    vec4 metal_rough = vec4(1.0);  // material roughness/metallic drive
+#endif
+    float metallic = clamp(p3d_Material.metallic * metal_rough.b, 0.0, 1.0);
+    float perceptual_roughness = clamp(p3d_Material.roughness * metal_rough.g,  0.0, 1.0);
+    float alpha_roughness = perceptual_roughness * perceptual_roughness;
+    vec4 terrain_albedo_px = terrain_blend_array(terrain_albedo, terrain_w,
+                                                 v_texcoord);
+#ifdef TERRAIN_SPLAT_MACRO
+    // Macro variation: brightness modulation at 100-500 m scale kills
+    // the wallpaper effect. A 0.5 macro texel is an EXACT no-op
+    // (mix(1, 1, s) == 1), any strength.
+    float terrain_macro_px = texture2D(terrain_macro,
+        v_texcoord * u_terrain_macro_scale).r;
+    terrain_albedo_px.rgb *= mix(1.0, 2.0 * terrain_macro_px,
+                                 u_terrain_macro_strength);
+#endif
+    vec4 base_color = p3d_Material.baseColor * v_color * p3d_ColorScale * (terrain_albedo_px + p3d_TexAlphaOnly);
+    vec3 diffuse_color = (base_color.rgb * (vec3(1.0) - F0)) * (1.0 - metallic);
+    vec3 spec_color = mix(F0, base_color.rgb, metallic);
+
+    // Terrain normals: chunk meshes carry no tangent column (v_*_tbn is
+    // the NaN trap), so build the world TBN analytically from the
+    // world-aligned planar UV convention (u -> +world_x, v -> +world_y;
+    // on steep faces the basis Gram-Schmidts around the surface normal).
+    vec3 world_normal = normalize(v_world_normal);
+#ifdef TERRAIN_SPLAT_NORMALS
+    {
+        vec3 t_ws = normalize(vec3(1.0, 0.0, 0.0)
+                              - world_normal * world_normal.x);
+        vec3 b_ws = cross(world_normal, t_ws);
+        vec3 n_ts = vec3(0.0);
+        for (int i = 0; i < 4; ++i) {
+            n_ts += terrain_w[i] * (2.0 * texture2DArray(terrain_normal,
+                vec3(v_texcoord * u_terrain_uv_scales[i], float(i))).rgb - 1.0);
+        }
+        // Detail-normal distance fade: flat past fade_end so far-field
+        // terrain (most of the frame) cannot sparkle/moire.
+        float terrain_nf = smoothstep(u_terrain_normal_fade.x,
+                                      u_terrain_normal_fade.y,
+                                      length(v_view_position));
+        n_ts = mix(n_ts, vec3(0.0, 0.0, 1.0), terrain_nf);
+        world_normal = normalize(mat3(t_ws, b_ws, world_normal)
+                                 * normalize(n_ts));
+    }
+#endif
+    vec3 n = normalize(mat3(p3d_ViewMatrix) * world_normal);
+#else
     vec4 metal_rough = texture2D(p3d_TextureMetalRoughness, v_texcoord);
     float metallic = clamp(p3d_Material.metallic * metal_rough.b, 0.0, 1.0);
     float perceptual_roughness = clamp(p3d_Material.roughness * metal_rough.g,  0.0, 1.0);
@@ -309,6 +417,7 @@ void main() {
     vec3 n = normalize(v_view_tbn[2]);  // View-space normal = column 2
     vec3 world_normal = normalize(v_world_normal);
 #endif
+#endif  // TERRAIN_SPLAT
 
 #ifdef DOUBLE_SIDED_LIGHTING
     // glTF doubleSided semantic (Khronos sample-viewer behavior): shade
