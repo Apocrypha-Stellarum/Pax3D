@@ -437,6 +437,19 @@ void main() {
 #endif
 #endif  // TERRAIN_SPLAT
 
+#ifdef ALPHA_MASK
+    // glTF alphaMode MASK (pipeline.apply_alpha_masks): the loader's
+    // AlphaTestAttrib only reaches fixed-function GL_ALPHA_TEST, which
+    // core profile lacks — this variant applies the same keep-if-
+    // greater-equal predicate in-shader, so both baselines agree.
+    // Compat keeps the fixed-function test active too: identical
+    // predicate on the same output alpha, so the double application
+    // cannot change a pixel.
+    if (base_color.a < ALPHA_MASK_CUTOFF) {
+        discard;
+    }
+#endif
+
 #ifdef DOUBLE_SIDED_LIGHTING
     // glTF doubleSided semantic (Khronos sample-viewer behavior): shade
     // backfaces with the inverted normal, so two-sided geometry seen

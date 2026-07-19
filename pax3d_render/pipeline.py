@@ -495,6 +495,18 @@ class Pipeline:
         self._glass_nodes = []
         self._glass_shader = None
 
+        # Alpha-mask geoms (apply_alpha_masks): per-geom ALPHA_MASK PBR
+        # variant honoring the loader's AlphaTestAttrib in-shader. Core
+        # profile has no fixed-function alpha test, so glTF alphaMode
+        # MASK otherwise renders opaque under gl-version 3 2. Entries
+        # are (model_np, [(gnode, geom_index, original geom RenderState,
+        # cutoff)]) so opt-out restores the geom states exactly; shaders
+        # cached per distinct cutoff and invalidated on every pipeline
+        # recompile (the glass discipline). Empty list = the shipped
+        # pipeline exactly (paxtest test_alpha_mask opt-out check).
+        self._alpha_mask_entries = []
+        self._alpha_mask_shaders = {}
+
         # Terrain splat nodes (set_terrain_splat, ER-001): per-subtree
         # TERRAIN_SPLAT variant of the PBR shader. Entries are
         # (nodepath, config dict); shaders cached per optional-feature
@@ -750,6 +762,9 @@ class Pipeline:
         # would leave glass rendering with stale defines.
         self._glass_shader = None
         self._reapply_glass_shaders()
+        # Alpha-mask geoms: same recompile-tracking rule.
+        self._alpha_mask_shaders = {}
+        self._reapply_alpha_masks()
         # Terrain splat nodes: same recompile-tracking rule as glass.
         self._terrain_shaders = {}
         self._reapply_terrain_splat()
@@ -2474,6 +2489,120 @@ class Pipeline:
                 nodepath.set_attrib(prev_trans, prev_override)
             else:
                 nodepath.clear_transparency()
+
+    # ------------------------------------------------------------------
+    # glTF alphaMode MASK (alpha-cutoff materials)
+    # ------------------------------------------------------------------
+
+    def _get_alpha_mask_shader(self, cutoff):
+        """The ALPHA_MASK PBR variant for this cutoff (compiled lazily
+        per distinct cutoff — content overwhelmingly uses the glTF
+        default 0.5 — invalidated by _recompile_pbr, the glass
+        discipline). The cutoff is baked as a #define: it is constant
+        per material, and a define avoids per-geom ShaderInput
+        plumbing."""
+        shader = self._alpha_mask_shaders.get(cutoff)
+        if shader is None:
+            defines = self._get_pbr_defines()
+            defines['ALPHA_MASK'] = True
+            defines['ALPHA_MASK_CUTOFF'] = repr(float(cutoff))
+            shader = shaderutils.make_shader(
+                f'pax_pbr_alpha_mask_{cutoff:g}',
+                'pax_pbr.vert', 'pax_pbr.frag', defines)
+            self._alpha_mask_shaders[cutoff] = shader
+        return shader
+
+    @staticmethod
+    def _find_alpha_mask_geoms(model_np):
+        """(gnode, geom_index, geom RenderState, cutoff) for every Geom
+        in the subtree whose state carries a keep-if-greater alpha test
+        — the attrib panda3d-gltf stamps on alphaMode MASK materials
+        (geom-level, one per primitive). Cutoff 0 keeps everything, so
+        those geoms are left untouched."""
+        gnode_paths = list(model_np.find_all_matches('**/+GeomNode'))
+        if isinstance(model_np.node(), p3d.GeomNode):
+            gnode_paths.insert(0, model_np)
+        found = []
+        for np_ in gnode_paths:
+            gnode = np_.node()
+            for i in range(gnode.get_num_geoms()):
+                state = gnode.get_geom_state(i)
+                ata = state.get_attrib(p3d.AlphaTestAttrib)
+                if ata is None:
+                    continue
+                if ata.get_mode() not in (p3d.AlphaTestAttrib.M_greater_equal,
+                                          p3d.AlphaTestAttrib.M_greater):
+                    continue
+                cutoff = ata.get_reference_alpha()
+                if cutoff <= 0.0:
+                    continue
+                found.append((gnode, i, state, cutoff))
+        return found
+
+    def apply_alpha_masks(self, model_np, enabled=True):
+        """Make a loaded model's glTF alphaMode MASK materials discard
+        below their cutoff on BOTH GL baselines. Returns the number of
+        masked geoms affected (0 = the model has none).
+
+        panda3d-gltf expresses MASK as an AlphaTestAttrib, which the GL
+        backend implements with fixed-function GL_ALPHA_TEST — a compat
+        -profile feature. Under gl-version 3 2 the attrib is silently
+        ignored, so MASK content renders OPAQUE: cutout foliage becomes
+        solid cards, and a factor-only mask (baseColorFactor alpha 0,
+        no texture) draws as a solid shell (field report 2026-07-19).
+
+        Mechanism: each masked Geom's state gets an ALPHA_MASK compile
+        of the PBR shader (cutoff baked in) composed onto its existing
+        ShaderAttrib — root-level shader inputs and flags (sun
+        uniforms, hardware skinning) still compose through, and the
+        shadow camera's initial-state attrib (override 1) still wins
+        the depth pass. On the compat baseline the fixed-function test
+        stays active alongside — same predicate, so the result is
+        identical, which is what makes this safe to call under either
+        baseline. `enabled=False` restores the saved geom states
+        byte-identically (paxtest test_alpha_mask).
+
+        Depth-pass caveat: the shadow shader has no per-geom alpha
+        knowledge, so under gl-version 3 2 masked casters still cast
+        their UNMASKED silhouette (compat gets cutout shadows from the
+        fixed-function test). A fully-invisible mask shell that must
+        not shadow should use exclude_from_shadows(); a cutout-shadow
+        depth path lands only on field evidence (see master plan).
+        """
+        idx = next((i for i, e in enumerate(self._alpha_mask_entries)
+                    if e[0] == model_np), None)
+        if not enabled:
+            if idx is None:
+                return 0
+            _np, entries = self._alpha_mask_entries.pop(idx)
+            for gnode, geom_i, orig_state, _cutoff in entries:
+                gnode.set_geom_state(geom_i, orig_state)
+            return len(entries)
+        if idx is not None:
+            return len(self._alpha_mask_entries[idx][1])
+        entries = self._find_alpha_mask_geoms(model_np)
+        for gnode, geom_i, state, cutoff in entries:
+            self._apply_alpha_mask_state(gnode, geom_i, state, cutoff)
+        if entries:
+            self._alpha_mask_entries.append((model_np, entries))
+        return len(entries)
+
+    def _apply_alpha_mask_state(self, gnode, geom_i, orig_state, cutoff):
+        """Compose the mask variant onto ONE geom's original state."""
+        prev = orig_state.get_attrib(p3d.ShaderAttrib)
+        sattr = prev if prev is not None else p3d.ShaderAttrib.make()
+        sattr = sattr.set_shader(self._get_alpha_mask_shader(cutoff))
+        gnode.set_geom_state(geom_i, orig_state.set_attrib(sattr))
+
+    def _reapply_alpha_masks(self):
+        """Re-push the (freshly invalidated) mask variants onto every
+        registered geom after a pipeline shader recompile."""
+        self._alpha_mask_entries = [e for e in self._alpha_mask_entries
+                                    if not e[0].is_empty()]
+        for _np, entries in self._alpha_mask_entries:
+            for gnode, geom_i, orig_state, cutoff in entries:
+                self._apply_alpha_mask_state(gnode, geom_i, orig_state,
+                                             cutoff)
 
     # ------------------------------------------------------------------
     # Terrain layer splatting (ER-001)
