@@ -22,7 +22,7 @@ This probe measures WHERE the errors come from:
 
 Run on BOTH engines and BOTH baselines (the field claim is fork-only —
 verify): every combination of
-    C:/Python313/python.exe | C:/python/pax3d-env/Scripts/python.exe
+    C:/python/stock-panda-env/Scripts/python.exe | C:/python/pax3d-env/Scripts/python.exe
     [--baseline modern] [--gl-debug] [--show]
 """
 import argparse

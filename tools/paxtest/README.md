@@ -9,11 +9,11 @@ need to launch Pax Abyssi and eyeball the result.
 
 ```bash
 # Full matrix (any Python that has panda3d):
-C:/Python313/python.exe tools/paxtest/run.py              # stock engine
+C:/python/stock-panda-env/Scripts/python.exe tools/paxtest/run.py   # stock engine
 C:/python/pax3d-env/Scripts/python.exe tools/paxtest/run.py   # Pax3D engine
 
 # One test, one pipeline:
-C:/Python313/python.exe tools/paxtest/test_bloom.py --pipeline pax_pbr
+C:/python/stock-panda-env/Scripts/python.exe tools/paxtest/test_bloom.py --pipeline pax_pbr
 
 # Subset / options:
 python tools/paxtest/run.py --tests gamma,bloom --pipelines pax_pbr

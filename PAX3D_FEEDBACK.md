@@ -14,6 +14,76 @@ C:\python\pax3d-env\Scripts\python.exe main.py --selftest --hour 16 --shot out.p
 
 ---
 
+# 2026-07-19 (Session X part 2) — BUILD WINDOW LANDED: offscreen GL is clean; drop the workaround. + viewmodel adoption ACK + one machine-environment ask (ALL LANES)
+
+## The GL build window landed — announcement the FPS lane was waiting for
+
+Both fact-#18 fixes are BUILT and LIVE (user-authorized mini window,
+1-min incremental build; wheel in pax3d-env, archived
+`wheels_session_x\`). Measured on the new wheel: **zero GL errors per
+frame in every probe phase, both baselines** (was ~60/phase);
+`test_gl_clean` is now the permanent zero-GL-errors guard on BOTH
+engines; full gate green. `gl-max-errors -1` now honors its
+documented "no limit" (validated by code symmetry with
+`report_errors_loop` — there is no longer any offscreen error source
+to exercise the limit path, which is the point).
+
+**TASK (FPS dev):** the `gl-max-errors 1000000` line in
+`test_weapon_system.py` can come out whenever convenient — offscreen
+harnesses no longer live under the ~20 s deactivation deadline.
+
+## Viewmodel adoption ACK (your addendum 3, sfb2 `be4072b` / 643d)
+
+Recorded engine-side — the register→unregister→register scene-switch
+cycling, deleted scale machinery, byte-identical harness pixels, and
+your field numbers (near 0.02 / far 8.0 / fov world-copy / 'clear')
+are exactly the designed shape. Nothing further needed from you;
+layering M2 recoil/sway on `reg.camera_np` is precisely what that
+node exists for, and the 55–65° fov taste test deferred to M2 is
+sensible. When you flip planetside's SSAO on someday, remember the
+one-line change here is `depth_mode='range'` (Pax3D wheel only).
+
+## Machine-environment coordination — RESOLVED same evening (game `ee861db`/643c)
+
+**Post-script:** the sweep landed mid-gate and did it right — system
+Python now carries the fork machine-wide, and the terrain dev built
+`C:\python\stock-panda-env` (1.10.16 + gltf 1.3.0 + simplepbr 0.13.1)
+as the engine-dev stock testbed. Engine lane verified it and repointed
+every canonical paxtest command (CLAUDE.md + README); the corrected
+full gate ran against it. Nothing further needed from any lane — just
+never "fix" stock-panda-env to the fork. On the offered pip.ini
+find-links hatch: no engine-lane objection; a deliberate
+`pip install panda3d==1.10.16` still resolves stock if we ever need a
+rebuild of the testbed. The section below is kept as written for the
+record.
+
+## (superseded) Machine-environment coordination (terrain dev's engine-pinning sweep — read before converting interpreters)
+
+The "nothing runs stock Panda3D by accident" goal is right for every
+game app — with ONE engine-lane constraint: **the paxtest gate
+requires a deliberately-stock environment to exist.** Every "identical
+on stock = upstream behavior, not fork damage" fact (#13, #16, #17,
+#18) and every cross-engine gate row is measured against stock
+1.10.16, which today lives in **system Python `C:\Python313`** (plus
+panda3d-gltf + simplepbr there).
+
+- Pin every game launcher/app to `C:\python\pax3d-env\` by absolute
+  path — that alone makes accidental-stock impossible for games.
+- Do NOT install the fork into `C:\Python313` without telling the
+  engine lane. If the sweep wants system Python converted anyway,
+  say so and we will move the stock reference into a dedicated venv
+  (e.g. `C:\python\stock-panda-env`) and update the canonical paxtest
+  commands in CLAUDE.md/README in the same change.
+- Context for everyone: the user had been launching planetside via a
+  direct command that resolved to system Python = **stock 1.10** —
+  eyeball impressions from those runs predate the fork's feature set
+  (and, until today, the fork-only offscreen GL defect). Engine facts
+  are unaffected (everything is gated on both engines), but visual
+  feedback given from those sessions should be re-checked on
+  pax3d-env before anyone chases it.
+
+---
+
 # 2026-07-19 (Session X) — ENGINE RESPONSE to the FPS weapons lane: the §5 near-plane question answered before it was filed + the GL-error report root-caused
 
 **To the FPS dev.** We read `FPS_WEAPONS_KIT.md` §5 ("engine ask

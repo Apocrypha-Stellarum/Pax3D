@@ -104,7 +104,7 @@ full analysis in `documents/PAXTEST_FINDINGS_SESSION_A.md`):
 
 1. **Verify with the harness, not by launching the game.**
    ```bash
-   C:/Python313/python.exe tools/paxtest/run.py                 # stock engine
+   C:/python/stock-panda-env/Scripts/python.exe tools/paxtest/run.py  # stock engine
    C:/python/pax3d-env/Scripts/python.exe tools/paxtest/run.py  # Pax3D engine
    ```
    Run the relevant tests before AND after any rendering change. If a claim
@@ -187,7 +187,7 @@ the GPU and Panda's C++, not in our orchestration layer.
 | **GPU morph path** (morph deltas + slider uniforms in the skinning vertex shader — HW skinning and morphs coexist) — the measured character-quality bottleneck (fact #16: loader delivery proven; field: visors stay sealed because faces can't move; CPU valve measured ~+0.1 ms/frame on the 2,240-vert test head but **~+2 ms on the production 10,965-vert head module** (185→133 fps, field 2026-07-19) — fine for one hero behind their 30 m face LOD, ~5 close-up faces ≈ 10 ms, so it cannot scale to crowds). Per canon: Python/GLSL prototype FIRST (morph columns + slider table already reach the vdata; per-character slider push is O(sliders)) — C++ only if a profile demands | GLSL + Python (C++ on evidence) | Queued behind the character dev's morph re-export A/B; shares the vertex shader with texture-palette — one window can land both |
 | ~~Core-profile combine-mode warning~~ | New C++ warning | **DONE 2026-07-18 (Session R mini-window, user-authorized)** — `857b715086`, once-per-TextureAttrib glgsg warning in both default-shader paths; 1m22s incremental build, full gate identical both engines, wheel live in pax3d-env + archived `wheels_session_r\`. Day-one field value: the warning fired on a real silently-flattened combine state in sfb2's own boot |
 | **InstanceList bulk fill** (`set_from_buffer` — fill per-instance transforms from a flat buffer/numpy instead of 1k–10k Python `append()` calls per mesh class per chunk) | New C++ API | Queued Session U on the ER-002 volume envelope, **on profile evidence only** — the game side accepted the append loop on worker threads; `get_array_data()` already caches the GPU-side array in C++, so only the Python fill loop is per-instance. If `test_instancing`/field profiling never shows it hot, it never lands |
-| **Offscreen GL fixes** (restore the single-buffered branch of `FrameBufferProperties::get_buffer_mask()` — upstream DX9-fix regression `bd4dc8a379` makes EVERY offscreen frame raise GL_INVALID_OPERATION and panic-deactivate the GSG after ~20 s of wall time, in every Pax3D wheel since the fork; + honor the documented `gl-max-errors -1`) | Two one-line C++ fixes | **QUEUED Session X (2026-07-19), mini-window class** (Session-R shape: incremental build ~1–2 min + full gate). Patch text ready to apply in `documents/PATCH_QUEUE_GL_OFFSCREEN.md`; `test_gl_clean` asserts the defect today and flips "the good way" when it lands; interim workaround `gl-max-errors 1000000` (master plan fact #18) |
+| ~~Offscreen GL fixes~~ (restore the single-buffered branch of `FrameBufferProperties::get_buffer_mask()` — upstream DX9-fix regression `bd4dc8a379` made EVERY offscreen frame raise GL_INVALID_OPERATION and panic-deactivate the GSG after ~20 s, in every Pax3D wheel since the fork; + honor `gl-max-errors -1`) | Two one-line C++ fixes | **DONE 2026-07-19 (Session X part 2 mini-window, user-authorized)** — 1-min incremental build, probe 0 errors/frame everywhere (was ~60/phase), `test_gl_clean` now the permanent zero-GL-errors guard on both engines, full gate green, wheel live in pax3d-env + archived `wheels_session_x\`. Fact #18 |
 | Vulkan-port evaluation (hand-port from read-only upstream reference) | Port | Only when it can run the paxtest suite. Watch log 2026-07-17: ACTIVE — upstream merged `shaderpipeline` (SPIR-V) into the `vulkan` branch 2026-07-02/03; nowhere near paxtest-ready. The catch-up merge moved our base next to it — a future port got much cheaper |
 | Python→C++ promotions | Promotion | **None yet** — nothing Python has profiled hot |
 
@@ -242,8 +242,9 @@ Critical pitfalls (full detail in `documents/BUILDING_PAX3D.md`):
 
 | Environment | Python | Engine | Use for |
 |---|---|---|---|
-| System Python | `C:\Python313\python.exe` | Stock Panda3D 1.10.16 | paxtest cross-checks, quick runs |
-| Pax3D venv | `C:\python\pax3d-env\` | Pax3D 1.11.0 (Window-4 wheel — mobile-target extraction; supersedes Session-R) + full game dep stack | **The game's default engine**; engine-build testing |
+| Stock testbed | `C:\python\stock-panda-env\` | Stock Panda3D 1.10.16 + gltf 1.3.0 + simplepbr 0.13.1 | **The ONLY stock env on the machine** — paxtest cross-checks. Do not "fix" it to the fork |
+| System Python | `C:\Python313\python.exe` | **Pax3D 1.11.0 fork** (machine-wide engine pinning, game session 643c/ee861db — bare `python x.py` is the fork by construction) | makepanda builds; NO LONGER the stock reference |
+| Pax3D venv | `C:\python\pax3d-env\` | Pax3D 1.11.0 (Session-X wheel — offscreen GL fixes; supersedes Window-4) + full game dep stack | **The game's default engine**; engine-build testing |
 | Doubles venv | `C:\python\pax3d-double-env\` | Pax3D 1.11.0 `STDFLOAT_DOUBLE` wheel | The doubles experiment ONLY — never wire to launchers (stock simplepbr crashes on it) |
 
 The game (`plan.py`) and testbed run under either; paxtest runs under both —
@@ -256,7 +257,7 @@ Tools 2026) is the primary dev machine — sfb2 development moved here;
 the external T7 is the master backup; `D:\python\pax3d` is the pre-transfer
 engine backup). Wheels live in `wheels_window1\{float,double}\`,
 `wheels_window2\`, `wheels_window3\`, `wheels_session_r\`,
-`wheels_window4\` (current);
+`wheels_window4\`, `wheels_session_x\` (current);
 `wheels_float\` holds the pre-merge rollback. Smoke-boot the game with `PYTHONUTF8=1` when stdout is
 redirected (a game-side `→` print crashes under cp1252 otherwise).
 

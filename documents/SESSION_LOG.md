@@ -1075,3 +1075,46 @@ once during ShowBase init = driver init noise" note is superseded —
 that was this defect (the 1/sec sweep fires once in a short real-time
 window; pin the clock to dt>1 s and it is 1/frame, every offscreen
 run, since the fork began).
+
+**Session X part 2 (2026-07-19): the GL mini build window LANDED +
+same-day viewmodel adoption.** User authorized the window; both
+fact-#18 one-liners applied exactly as queued in
+PATCH_QUEUE_GL_OFFSCREEN.md (get_buffer_mask single-buffered branch
+restored with a PAX3D tag; gl-max-errors -1 honored). Build 1 min 0 s
+incremental, exit 0; wheel live in pax3d-env + archived
+wheels_session_x\. Verified: probe_gl_errors 0 errors/frame in EVERY
+phase both baselines (was ~60/phase); test_gl_clean flipped to its
+permanent form — the same zero-GL-errors assertion on both engines;
+full gate green, totals unchanged from part 1. ADOPTION: the FPS lane
+wired register_viewmodel_camera the same day (sfb2 be4072b / session
+643d; field report openworld/PAX3D_FEEDBACK_3.md addendum 3) — scale
+fallback deleted, scene-switch register/unregister cycling green,
+harness pixels byte-identical to the approved shots; near 0.02/far
+8.0/fov world-copy/'clear' recorded; M2 layers sway on reg.camera_np
+and runs the 55-65 degree fov taste test. OPERATIONAL: the terrain dev
+is sweeping the machine so nothing runs stock Panda3D by accident
+(the user had been launching planetside via a command resolving to
+system Python = stock 1.10 — re-check pre-fork eyeball feedback on
+pax3d-env). Engine-lane constraint filed in PAX3D_FEEDBACK.md: exactly
+one deliberately-stock environment must survive the sweep (today:
+C:\Python313) or the cross-engine gate loses its upstream reference —
+coordinate before converting system Python.
+
+**Session X part 2 addenda (2026-07-19, same evening):** (a) The
+machine engine-pinning sweep landed mid-gate (game `ee861db`/643c):
+C:\Python313 now carries the FORK machine-wide; the stock reference
+moved to `C:\python\stock-panda-env` (1.10.16 + gltf 1.3.0 +
+simplepbr 0.13.1, engine-dev-only). All canonical paxtest commands
+repointed (CLAUDE.md, README, probe docstrings); the one gate run that
+had used converted-C:\Python313 as "stock" was fork-vs-fork and was
+re-run against the real testbed. Fact-#11 discipline now explicitly
+extends to the INTERPRETER: confirm which python/wheel produced a
+field report before reproducing (the user had been eyeballing
+planetside on stock 1.10 via the old system-python resolution).
+(b) Instrument lesson (fact-#12 class): the GL fix sped offscreen
+frames up and test_screen's `uv_scroll_animates` failed rms 0.00000
+under gate load @modern — the scroll advances by wall-clock seconds
+(the game-facing contract), so 30 fast frames moved the UV sub-pixel.
+Fixed by pinning the global clock (M_non_real_time, dt=1/30) at test
+start; rms now 0.14060 deterministic on all four configs. Any future
+"did it move over N frames" check must pin the clock.
