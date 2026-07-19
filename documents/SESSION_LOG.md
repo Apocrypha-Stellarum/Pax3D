@@ -963,3 +963,52 @@ no real lights (the packs' own convention). Interior + shower-water
 recipes = existing APIs (set_uv_scroll water sheet noted). Full gates
 re-run green all four combos; totals unchanged except test_screen
 19-check rows.
+
+**Session W (2026-07-19): field triage — the alphaMode-MASK
+core-profile drop, root-caused and fixed (fact #17).** Adoption watch
+came back clean: ER-004 ADOPTED game-side (session 637 — the Phobos
+console clip flows through the engine store; contract held in the
+field at seek(0)==rest 0.0 err / travel to 1 mm / reset 1e-7),
+ER-005/006 fully resolved, no open ship-lane asks. The one real field
+defect was the character dev's note (PAX3D_FEEDBACK.md, evening): a
+textureless MASK material (baseColorFactor alpha 0) rendered as an
+opaque white shell over their hero's eyes. Root cause READ FROM THE
+ENGINE SOURCE, then measured: panda3d-gltf expresses alphaMode MASK
+as a geom-level `AlphaTestAttrib`, and the GL backend implements that
+attrib ONLY behind `has_fixed_function_pipeline()` (glGSG
+`do_issue_alpha_test` → `glAlphaFunc`) — under `gl-version 3 2` (the
+planetside build) the attrib is SILENTLY IGNORED and every MASK
+material renders opaque; pax_pbr.frag had no discard path. Identical
+on stock 1.10.16 (upstream behavior, not fork damage — the
+core-profile combine drop's sibling). Fix, opt-in per the house rule:
+`pipeline.apply_alpha_masks(model_np)` scans the subtree's geom
+states for keep-if-greater alpha tests and composes an ALPHA_MASK
+compile of the PBR shader (cutoff baked as a define, per-distinct-
+cutoff cache, glass-discipline recompile tracking) onto exactly those
+geoms; root shader inputs/flags still compose through (ShaderAttrib
+compose keeps un-set parent flags — verified in shaderAttrib.cxx),
+the shadow camera's override-1 attrib still wins the depth pass, and
+on compat the fixed-function test stays active alongside — same
+predicate, so compat is BIT-identical (measured rms 0.00e+00).
+Gated: test_alpha_mask (11 checks @game / 10 @modern; in-test GLB
+with a factor-only shell + an 8x8-alpha-texture cutout through the
+real loader; the pre-API defect is asserted per-baseline so a future
+engine change forces a true-up; opt-out restores byte-identically).
+Sample-geometry lesson re-learned in-test (fact #12): ortho rays are
+parallel but v_view_position is not — off-axis specular falloff means
+anchor comparisons must be SAME-PIXEL, and red-material checks must
+expect gray specular on top (g-collapse vs anchor, not "r >> g").
+Depth-pass caveat recorded, NOT fixed (no per-geom shadow-shader
+mechanism; compat gets cutout shadows from fixed-function, modern
+casts the unmasked silhouette): `exclude_from_shadows()` is the valve
+for invisible shells; a cutout-shadow depth path lands only on field
+evidence (foliage @modern would be the trigger). Also recorded: the
+character dev's production datapoint for the GPU-morph queue item —
+the CPU valve costs ~+2 ms on their 10,965-vert head module (185→133
+fps), not the ~+0.1 ms of the 2,240-vert test head; ~5 close-up
+morphing faces ≈ 10 ms CPU. Sharpened the queue-row evidence, no
+reprioritization (still behind field-driven demand). Intermittent
+`GL error 0x502` observed ONCE during ShowBase init in paxtest runs
+(before pipeline init, either baseline, checks unaffected) — driver
+init noise on this machine, noted so nobody chases it as a
+regression.

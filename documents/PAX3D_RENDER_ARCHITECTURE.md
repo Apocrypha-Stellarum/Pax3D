@@ -113,6 +113,7 @@ post pass). A structural change (`enable_bloom`, `bloom_levels`,
 | `ENABLE_ATMOSPHERE` | `enable_atmosphere` | **R5.1**: aerial perspective / height haze (§9) — planetside, off for space |
 | `GLASS` | `set_glass(np)` — per-NODE variant, never in the render-root compile | **Session K**: specular-preserving glass (§9) — alpha attenuates transmission terms only, premultiplied output |
 | `DOUBLE_SIDED_LIGHTING` | `double_sided_lighting` | **Session K**: backfaces shade with the inverted normal (glTF doubleSided semantic, §9) — front faces bit-identical |
+| `ALPHA_MASK` (+`ALPHA_MASK_CUTOFF`) | `apply_alpha_masks(model_np)` — per-GEOM variant, never in the render-root compile | **Session W**: glTF alphaMode MASK in-shader discard (§9) — core profile ignores the loader's AlphaTestAttrib (fact #17); cutoff baked per distinct value |
 
 Notable shader features already present (inherited from the game's fork):
 geometric specular anti-aliasing (Kaplanyan-Hill), Eddington limb darkening
@@ -450,7 +451,7 @@ Three cost classes — keep new parameters within this taxonomy:
 
 | Class | Cost | Parameters / methods |
 |---|---|---|
-| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `set_ao_radius`/`set_ao_intensity`/`set_ao_bias` (§9 Session S), `set_flare_strength`/`set_lens_dirt` (§9 Session S), `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_env_map`/`clear_env_map` (§9 R5.3), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input), `set_atmosphere_scale`/`clear_atmosphere_scale` (§9 Session S; per-node inherited input scaling the R5.1 optical depth — hull interiors), `activate_model_lights`/`deactivate_model_lights` (§9 Session P; scene-graph state only) |
+| Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `set_ao_radius`/`set_ao_intensity`/`set_ao_bias` (§9 Session S), `set_flare_strength`/`set_lens_dirt` (§9 Session S), `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_env_map`/`clear_env_map` (§9 R5.3), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `apply_alpha_masks` (§9 Session W; per-GEOM state change — lazy per-cutoff variant compile, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input), `set_atmosphere_scale`/`clear_atmosphere_scale` (§9 Session S; per-node inherited input scaling the R5.1 optical depth — hull interiors), `activate_model_lights`/`deactivate_model_lights` (§9 Session P; scene-graph state only) |
 | Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere`, `set_double_sided_lighting` (§9 Session K), `set_max_skinning_bones` (§5.8 Session S; also invalidates shadow-caster states) |
 | FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, `set_enable_ssao`, `set_enable_lens_flare` (§9 Session S; needs bloom), (`bloom_levels`, `msaa_samples`, `ao_samples` at init) |
 
@@ -1207,6 +1208,47 @@ look; every NPC and player ship):**
 Gate: test_screen 9b (envelope math pinned; pulse-ON/gap-OFF renders
 byte-identical to the emission-scale states; light-node sync + restore).
 
+### Session W — glTF alphaMode MASK: `apply_alpha_masks(model_np)` (LANDED)
+
+Field-driven (character dev: a factor-only MASK material — baseColor
+alpha 0, no texture — drew as a solid white shell under `gl-version
+3 2`). The mechanism gap is engine-wide (master plan **fact #17**):
+panda3d-gltf expresses MASK as a geom-level `AlphaTestAttrib`, and the
+GL backend implements that attrib ONLY via fixed-function
+`GL_ALPHA_TEST` — core profile silently ignores it, so ALL MASK
+content (cutout foliage included) renders opaque there. Identical on
+stock 1.10.16: upstream behavior, not fork damage.
+
+`pipeline.apply_alpha_masks(model_np)` scans the subtree's Geom states
+for keep-if-greater alpha tests (exactly what the loader stamps — one
+per MASK primitive) and composes an `ALPHA_MASK` compile of the PBR
+shader onto those geoms, cutoff baked as `ALPHA_MASK_CUTOFF` (variants
+cached per distinct cutoff — content is overwhelmingly the glTF
+default 0.5). Returns the masked-geom count (0 = nothing to do).
+Mechanics worth knowing:
+
+- The geom-level ShaderAttrib composes: root shader inputs and flags
+  (`F_hardware_skinning`) pass through (`ShaderAttrib::compose_impl`
+  only overrides explicitly-set child flags), and the shadow camera's
+  override-1 attrib still wins the depth pass.
+- On compat the fixed-function test stays active alongside — same
+  predicate on the same output alpha, so compat is BIT-identical
+  (measured rms 0.0). Safe to call unconditionally under either
+  baseline.
+- `apply_alpha_masks(np, False)` restores the saved geom states
+  byte-identically; recompile-class toggles re-push fresh variants
+  (the glass discipline).
+- **Depth-pass caveat:** the shadow shader has no per-geom alpha
+  knowledge — under gl 3 2 masked casters cast their UNMASKED
+  silhouette (compat gets cutouts from the fixed-function test).
+  Invisible shells: `exclude_from_shadows()`. A cutout-shadow depth
+  path lands only on field evidence.
+
+Gate: test_alpha_mask (in-test GLB through the real loader: factor-only
+shell + textured cutout; pre-API defect asserted per-baseline so an
+engine change forces a true-up; compat bit-identity; byte-identical
+opt-out).
+
 ---
 
 ## 10. Testing Contract
@@ -1218,7 +1260,7 @@ byte-identical to the emission-scale states; light-node sync + restore).
   local_lights (×sun-modes), orbital (+@logdepth), srgb, ssao
   (+@logdepth/@msaa4), lens_flare, morph_gltf, data_texture,
   terrain_splat (×sun-modes), instancing (×sun-modes), rigid_clips,
-  screen. Run `tools/paxtest/run.py` before and after.
+  screen, alpha_mask. Run `tools/paxtest/run.py` before and after.
 - Add a test WITH the feature, not after. Analytic checks > goldens;
   goldens (`--golden` / `--check-golden`) are a refactor safety net.
 - The testbed (`sfb2/test3d_pax.py`) is the eyeball companion — its

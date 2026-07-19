@@ -101,6 +101,29 @@ geom-level states — the same per-slot override resolution that makes
 test_screen (`clear_screen_restores` proves the saved-attrib restore is
 byte-identical).
 
+**`AlphaTestAttrib` is fixed-function-only** (`do_issue_alpha_test`,
+`glGraphicsStateGuardian_src.cxx` ~9138, inside `#ifdef
+SUPPORT_FIXED_FUNCTION` and called only under
+`has_fixed_function_pipeline()`): the attrib maps to `glAlphaFunc` +
+`GL_ALPHA_TEST`, which operate on the fragment shader's OUTPUT alpha.
+Under core profile the attrib is silently ignored — no warning, no
+shader-side substitute for custom shaders (only the shader GENERATOR
+subsumes it, via `F_subsume_alpha_test`). Consequences measured
+(Session W, fact #17): glTF alphaMode MASK (loader stamps geom-level
+`AlphaTestAttrib M_greater_equal cutoff`) works @game/compat and
+renders opaque @modern; in the depth pass the same asymmetry gives
+compat cutout shadows (shadow.frag outputs the textured base_color, so
+its alpha feeds the fixed-function test) and modern solid silhouettes.
+`apply_alpha_masks` closes the MAIN-pass gap with per-geom ALPHA_MASK
+variants (geom-STATE ShaderAttrib, not node-level — a GeomNode can mix
+masked and unmasked primitives, and node-level would mis-shade the
+others); the depth-pass gap needs a global-shadow-shader design (the
+"anything the depth pass must know" rule above) and waits for field
+evidence. `F_subsume_alpha_test` is deliberately NOT set: the flag
+composes per-bit across passes, and letting compat's fixed-function
+test run alongside the identical in-shader predicate is what makes the
+variant bit-identical there (measured rms 0.0).
+
 **Unbound vertex-attrib defaults** (`glShaderContext_src.cxx`,
 `update_shader_vertex_arrays` ~2637–2669): when a shader declares an
 attrib the vertex data lacks, the GL layer sets a current value instead —

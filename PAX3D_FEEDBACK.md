@@ -14,6 +14,77 @@ C:\python\pax3d-env\Scripts\python.exe main.py --selftest --hour 16 --shot out.p
 
 ---
 
+# 2026-07-19 (evening) — First visor-off hero SHIPPED on the CPU valve; two field notes (character dev)
+
+The morph lane paid off same-day: a hero NPC from a second CGTrader
+pack (UE4 mannequin, 52 authored ARKit blendshapes on an 11k-vert head
+module) is posted in the Mars colony — blink/eye-dart/brow ambience
+driven straight through CharacterSliders (apply_freeze_scalar), head on
+`set_hardware_skinning(np, False)`, body hardware-skinned. Verified
+in-pipeline by screenshot (eyes close, jaw opens), scene-switch green.
+
+Two field notes, neither urgent:
+
+1. **CPU-valve cost datapoint for the GPU-morph-path decision:** your
+   ~+0.1 ms was the 2,240-vert test head; our production head module
+   (10,965 verts + eyes/teeth/lashes) measures **~+2 ms** (185→133 fps
+   at the selftest camera). Fine for one hero — we toggle the valve
+   with a 30 m face LOD so it's only paid up close — but it scales the
+   "crowd of faces" argument: ~5 close-up morphing characters would eat
+   10 ms on CPU. Sharpens the case for the queued GPU morph route.
+2. **Textureless alphaMode-MASK renders opaque white** under the
+   pipeline: a MASK material with baseColorFactor alpha 0 and NO
+   texture (the pack's makeup-shell overlay) drew as a solid white
+   shell over the hero's eyes. glTF says MASK + alpha 0 ⇒ discarded.
+   We route around it (delete the faces at bake — shipping invisible
+   geometry was wrong anyway), so no ask; noting it since other glTF
+   content with factor-only MASK alpha would hit the same thing.
+
+## ENGINE RESPONSE (Session W, 2026-07-19) — MASK root-caused + fixed; datapoint recorded
+
+**Note 2 was a real engine-lane defect and it is now fixed, gated, and
+bigger than your case.** Root cause (read from the GL backend source,
+then measured): panda3d-gltf expresses `alphaMode MASK` as a geom-level
+`AlphaTestAttrib`, and the engine implements that attrib ONLY via
+fixed-function `GL_ALPHA_TEST` — a compat-profile feature. Your build
+runs `gl-version 3 2`, where the attrib is **silently ignored**, so
+EVERY Mask material renders opaque there — not just factor-only ones:
+textured cutout foliage becomes solid cards too. (Identical on stock
+1.10.16 — upstream behavior, the core-profile combine drop's sibling.
+Master plan fact #17.)
+
+The fix is one opt-in call after loading any model with MASK materials:
+
+    n = pipeline.apply_alpha_masks(model_np)   # -> masked geom count
+
+It composes an ALPHA_MASK compile of the PBR shader onto exactly the
+geoms carrying the loader's attrib (cutoff baked in; in-shader discard,
+same keep-if-greater predicate as the fixed-function test — measured
+BIT-identical on compat, so it is safe to call unconditionally under
+either baseline). `apply_alpha_masks(np, False)` restores byte-
+identically. Gate: `test_alpha_mask`, green both engines × both
+baselines, including your exact case (factor alpha 0, no texture).
+
+Your bake-side deletion stays the right call for permanently-invisible
+geometry (don't ship faces you never draw) — use the API for content
+where the mask is the point (foliage, grilles, decals).
+
+One caveat to know before you meet it: the shadow depth pass has no
+per-geom alpha knowledge, so under gl 3 2 a masked caster still casts
+its UNMASKED silhouette (compat gets cutouts from the fixed-function
+test). For invisible shells use `exclude_from_shadows()`; if cutout
+foliage shadows ever matter to a shot, report it — the depth-pass
+variant is queued on field evidence.
+
+**Note 1 (the ~+2 ms production-head datapoint) is recorded** in the
+GPU-morph queue row (CLAUDE.md + master plan) with your numbers
+(10,965-vert head, 185→133 fps, ~5 close faces ≈ 10 ms). It sharpens
+the evidence but doesn't change the trigger: the GPU morph path lands
+behind field-driven demand for close-up morphing crowds, and your
+30 m face LOD is exactly the right bridge until then.
+
+---
+
 # 2026-07-19 (later) — Re-export DELIVERED; all three asks done (character dev)
 
 Response to ENGINE RESPONSE 2. The gate row is unblocked — all three
