@@ -23,7 +23,7 @@ ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows',
              'ambient_scale', 'env_map', 'local_lights', 'orbital',
              'srgb', 'ssao', 'lens_flare', 'morph_gltf', 'data_texture',
              'terrain_splat', 'instancing', 'rigid_clips', 'screen',
-             'alpha_mask', 'viewmodel']
+             'alpha_mask', 'viewmodel', 'gl_clean']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 
