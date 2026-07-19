@@ -132,6 +132,16 @@ def main():
     base = h.base
     curve = common.CURVES['hejl_dawson']
 
+    # Deterministic time: uv_scroll/flipbook/blink advance by WALL-CLOCK
+    # frame time (that is the game-facing contract), so a fast machine
+    # can render 30 offscreen frames in ~0 real seconds and a
+    # "did it move" rms check reads 0 (this bit, Session X part 2: the
+    # GL offscreen fix sped frames up and uv_scroll_animates went 0.0
+    # under gate load). Pin the clock so 30 steps = 1.0 s, always.
+    clock = p3d.ClockObject.get_global_clock()
+    clock.set_mode(p3d.ClockObject.M_non_real_time)
+    clock.set_dt(1.0 / 30.0)
+
     alight = p3d.AmbientLight('paxtest_ambient')
     alight.set_color(p3d.LColor(AMB, AMB, AMB, 1))
     base.render.set_light(base.render.attach_new_node(alight))
