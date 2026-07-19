@@ -531,6 +531,12 @@ class Pipeline:
         self._emission_overrides = []
         self._uv_scrolls = []
         self._flipbooks = []
+        # Blinkers (Session V part 3 — ship nav/strobe/beacon lights):
+        # entries drive a pulse-train envelope onto a node's emission
+        # factor and (optionally) synced real light nodes. Edge-triggered
+        # pushes (state changes only), so a parked fleet of blinking
+        # ships costs a handful of comparisons per frame.
+        self._blinks = []
         self._screen_stages = None
         self._screen_white_tex = None
         self._screen_flat_normal_tex = None
@@ -2087,6 +2093,13 @@ class Pipeline:
 
     def _push_emission_override(self, entry):
         nodepath, scale, color = entry
+        blink = self._blink_entry(nodepath)
+        if blink is not None:
+            # The blinker owns this node's factor: change its BASE and
+            # let the next _update push scale*color*envelope (avoids a
+            # one-frame full-bright pop mid-pulse-gap).
+            blink['last'] = None
+            return
         nodepath.set_shader_input(
             'u_emission_factor',
             p3d.LVecBase3(color[0] * scale, color[1] * scale,
@@ -2129,6 +2142,139 @@ class Pipeline:
         self._emission_overrides = [e for e in self._emission_overrides
                                     if e[0] != nodepath]
         nodepath.clear_shader_input('u_emission_factor')
+        self._invalidate_blink(nodepath)
+
+    # ------------------------------------------------------------------
+    # Blinking lights (Session V part 3 — ship nav/strobe/beacon)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _blink_envelope(t, period, pulses, phase=0.0):
+        """1.0 if the cycle time ((t + phase) mod period) falls inside
+        any (start, duration) pulse window, else 0.0. Pure function —
+        the pinned pattern semantics (gated by test_screen)."""
+        ct = (t + phase) % period
+        for start, duration in pulses:
+            if start <= ct < start + duration:
+                return 1.0
+        return 0.0
+
+    def _blink_entry(self, nodepath):
+        for entry in self._blinks:
+            if entry['np'] == nodepath:
+                return entry
+        return None
+
+    def _invalidate_blink(self, nodepath):
+        """Force a blinking node to re-push next frame (its base
+        emission scale/color changed under the blinker)."""
+        entry = self._blink_entry(nodepath)
+        if entry is not None:
+            entry['last'] = None
+
+    def set_blink(self, nodepath, period=1.0, pulses=((0.0, 0.1),),
+                  phase=0.0, lights=None, off_scale=0.0):
+        """Blink `nodepath`'s emission (and optionally real light nodes,
+        in sync) on a repeating pulse train — ship navigation strobes,
+        beacons, hazard flashers (every NPC and player ship carries
+        them; the Vattalus packs script them as `VattalusStrobe`).
+
+        The envelope is 1.0 inside any `(start_s, duration_s)` window
+        of `pulses` within `period` seconds (else `off_scale`), and
+        multiplies the node's registered emission scale/color — so it
+        composes with set_emission_scale/_color and restores through
+        the same registry. `phase` shifts the cycle: give each ship a
+        different phase so a parked fleet doesn't blink in unison.
+
+        `lights` (optional): real light NodePaths (PointLight/Spotlight
+        — e.g. from activate_model_lights) whose colors gate with the
+        SAME envelope, so the glow marker and the light it casts never
+        drift apart. Their original colors are restored by
+        clear_blink().
+
+        21st-century airliner recipe (the ship-lane look target):
+          - position/nav lights (red port, green starboard, white
+            tail): STEADY — no blinker, just emissive markers (+ a
+            small light on hero ships).
+          - beacon (red, top+bottom of hull): ~45 flashes/min ->
+            set_blink(np, period=1.33, pulses=((0.0, 0.20),))
+          - strobes (white, wingtips/tail): ~1 Hz double-flash ->
+            set_blink(np, period=1.0, pulses=((0.0, 0.05),
+            (0.15, 0.05)))
+        NPC ships at range need NO real lights: emissive markers +
+        bloom read perfectly (the packs' own small lights are
+        glow-texture-only); reserve synced `lights` for hero/parked
+        ships.
+
+        Edge-triggered: uniforms/colors are pushed only when the
+        envelope VALUE changes (a strobe = ~2-4 pushes/second/node).
+        Apply to the marker geom, not a shared parent. Re-calling
+        reconfigures (light colors restored first); clear_blink()
+        stops and restores emission + light colors exactly."""
+        old = self._blink_entry(nodepath)
+        if old is not None:
+            self._restore_blink_lights(old)
+            self._blinks.remove(old)
+        light_entries = []
+        for light_np in (lights or ()):
+            node = light_np.node()
+            light_entries.append((light_np, p3d.LColor(node.get_color())))
+        entry = {
+            'np': nodepath,
+            'period': max(1e-3, float(period)),
+            'pulses': tuple((float(s), float(d)) for s, d in pulses),
+            'phase': float(phase),
+            'off_scale': max(0.0, float(off_scale)),
+            'lights': light_entries,
+            'last': None,
+        }
+        self._blinks.append(entry)
+        self._step_blink(
+            entry, p3d.ClockObject.get_global_clock().get_frame_time())
+
+    def clear_blink(self, nodepath):
+        """Stop set_blink() on the node: light colors restored exactly;
+        the emission factor reverts to the registered
+        set_emission_scale/_color state (or the inherited root default
+        if none) — byte-identical opt-out."""
+        entry = self._blink_entry(nodepath)
+        if entry is None:
+            return
+        self._restore_blink_lights(entry)
+        self._blinks.remove(entry)
+        em = next((e for e in self._emission_overrides
+                   if e[0] == nodepath), None)
+        if em is not None:
+            self._push_emission_override(em)
+        else:
+            nodepath.clear_shader_input('u_emission_factor')
+
+    def _restore_blink_lights(self, entry):
+        for light_np, orig in entry['lights']:
+            if not light_np.is_empty():
+                light_np.node().set_color(orig)
+
+    def _step_blink(self, entry, now):
+        env = self._blink_envelope(now, entry['period'], entry['pulses'],
+                                   entry['phase'])
+        factor = entry['off_scale'] + (1.0 - entry['off_scale']) * env
+        if factor == entry['last']:
+            return
+        entry['last'] = factor
+        nodepath = entry['np']
+        em = next((e for e in self._emission_overrides
+                   if e[0] == nodepath), None)
+        scale, color = (em[1], em[2]) if em is not None \
+            else (1.0, (1.0, 1.0, 1.0))
+        k = scale * factor
+        nodepath.set_shader_input(
+            'u_emission_factor',
+            p3d.LVecBase3(color[0] * k, color[1] * k, color[2] * k))
+        for light_np, orig in entry['lights']:
+            if not light_np.is_empty():
+                light_np.node().set_color(p3d.LColor(
+                    orig[0] * factor, orig[1] * factor,
+                    orig[2] * factor, orig[3]))
 
     def set_uv_transform(self, nodepath, offset=(0.0, 0.0),
                          scale=(1.0, 1.0)):
@@ -3303,9 +3449,10 @@ class Pipeline:
         if self._orbital_atmos:
             self._update_orbital_atmos(cam_pos)
 
-        # Powered displays (ER-005): UV scroll + flipbook stepping.
-        # O(active) uniform pushes; zero when the registries are empty.
-        if self._uv_scrolls or self._flipbooks:
+        # Powered displays (ER-005) + blinkers: UV scroll, flipbook, and
+        # blink stepping. O(active) per frame (blink pushes are
+        # edge-triggered); zero when the registries are empty.
+        if self._uv_scrolls or self._flipbooks or self._blinks:
             now = p3d.ClockObject.get_global_clock().get_frame_time()
             if self._uv_scrolls:
                 self._uv_scrolls = [e for e in self._uv_scrolls
@@ -3320,6 +3467,11 @@ class Pipeline:
                                    if not e['np'].is_empty()]
                 for entry in self._flipbooks:
                     self._step_flipbook(entry, now)
+            if self._blinks:
+                self._blinks = [e for e in self._blinks
+                                if not e['np'].is_empty()]
+                for entry in self._blinks:
+                    self._step_blink(entry, now)
 
         # Log-depth coefficient tracks the camera lens far plane (R4.1) —
         # the game may change near/far at runtime (regime switches)

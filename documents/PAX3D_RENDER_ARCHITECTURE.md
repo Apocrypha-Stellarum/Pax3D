@@ -1160,8 +1160,52 @@ strips):
 
 Both uniforms ride every pax_pbr variant (glass/terrain/instanced share
 the source) and survive recompiles via the input-preservation invariant
-(§3). Gate: test_screen — 15 checks, all analytic (quadrant-color map),
+(§3). Gate: test_screen — 19 checks, all analytic (quadrant-color map),
 every opt-out byte-identical (rms == 0.0).
+
+**Ship exterior lights (Session V part 3 — the Minerva gold-standard
+look; every NPC and player ship):**
+
+- `set_blink(np, period, pulses, phase, lights=None, off_scale=0.0)` /
+  `clear_blink(np)`: a pulse-train blinker for nav strobes / beacons /
+  hazard flashers. The envelope (`_blink_envelope`, pure + pinned:
+  1.0 inside any `(start_s, duration_s)` window of the period, cycle
+  shifted by `phase`) multiplies the node's REGISTERED emission
+  scale/color — it composes with `set_emission_scale/_color` (the
+  registry hands the blinker its base; setters on a blinking node
+  re-base instead of pushing, so there is no one-frame pop), and
+  `clear_blink` restores through the same registry. `lights` gates
+  real light-node colors with the SAME envelope so a marker and the
+  light it casts never drift; originals restored on clear. Pushes are
+  EDGE-triggered (a strobe ≈ 4 pushes/s/node — a parked fleet is a
+  handful of comparisons per frame). Airliner recipe in the docstring:
+  steady position lights (no blinker), beacon ≈ period 1.33 s / pulse
+  0.20 s, strobes ≈ 1 Hz double-flash (0.00/0.05 + 0.15/0.05);
+  per-ship `phase` de-syncs a fleet.
+- **Circuits, not bulbs (the 737NG-panel model — game owns the
+  switches/power bus):** author each circuit as a NAMED subtree
+  (`lights_position`, `lights_beacon`, `lights_strobe`,
+  `lights_floods`); a panel switch is then 2–3 pipeline calls on that
+  subtree — floods: `activate_/deactivate_model_lights(circuit_np)`
+  (+ emissive fixture via `set_emission_scale` 1/0); position:
+  `set_emission_scale` 1/0 (markers are emissive-only; add small real
+  lights on hero ships); beacon/strobe: `set_blink`/`clear_blink` +
+  `set_emission_scale 0` for off. All opt-outs are byte-identical
+  (gated), so power-bus wiring is pure composition.
+- **Light budget (MEASURED, this GPU, both baselines):** with
+  `enable_shadows` the binding constraint is the
+  `v_shadow_pos[MAX_LIGHTS]` varying array against the ~128-component
+  varying budget — `max_lights=16` and 20 and 22 link and light
+  correctly; **24 FAILS to link** (silent-looking GLSL link error).
+  Recommend 16 for walkable-ship scenes (9 exterior + interior
+  fixtures fits), 22 = the measured ceiling. Without shadows the
+  varying array is absent and the ceiling is far higher. NPC ships at
+  range: NO real lights — emissive markers + bloom (the packs' own
+  small lights are glow-texture-only); real lights are for hero/parked
+  ships.
+
+Gate: test_screen 9b (envelope math pinned; pulse-ON/gap-OFF renders
+byte-identical to the emission-scale states; light-node sync + restore).
 
 ---
 

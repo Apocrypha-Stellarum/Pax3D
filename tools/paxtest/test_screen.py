@@ -269,6 +269,56 @@ def main():
     h.report.check('clear_uv_scroll_restores', rms == 0.0,
                    f'rms vs screen_on = {rms:.2e}')
 
+    # --- 9b. Blinker (ship nav/strobe/beacon driver) --------------------
+    # Envelope math is a pinned pure function; the render checks force a
+    # known envelope state via phase (period >> test duration).
+    env = pipeline._blink_envelope
+    env_ok = (env(0.02, 1.0, ((0.0, 0.05), (0.15, 0.05))) == 1.0
+              and env(0.10, 1.0, ((0.0, 0.05), (0.15, 0.05))) == 0.0
+              and env(0.17, 1.0, ((0.0, 0.05), (0.15, 0.05))) == 1.0
+              and env(1.02, 1.0, ((0.0, 0.05),)) == 1.0      # wraps
+              and env(0.5, 1.0, ((0.0, 0.05),), phase=0.5) == 1.0
+              and env(0.0, 1.33, ((0.0, 0.20),), phase=0.3) == 0.0)
+    h.report.check('blink_envelope_math', env_ok,
+                   'double-flash windows, wrap, and phase all exact')
+
+    lamp = p3d.PointLight('paxtest_blink_lamp')
+    lamp.set_color(p3d.LColor(0.8, 0.4, 0.2, 1))
+    lamp_np = base.render.attach_new_node(lamp)   # never set_light: the
+    # sync contract is measured on the node color, no render impact
+    now = p3d.ClockObject.get_global_clock().get_frame_time()
+    pipeline.set_blink(card, period=1000.0, pulses=((0.0, 500.0),),
+                       phase=-(now % 1000.0), lights=[lamp_np])
+    h.step(5)
+    rms_on = common.image_rms_diff(img_screen, h.capture(), step=1)
+    lamp_on = tuple(lamp.get_color())
+    pipeline.set_blink(card, period=1000.0, pulses=((0.0, 500.0),),
+                       phase=-(now % 1000.0) + 600.0, lights=[lamp_np])
+    h.step(5)
+    rms_off = common.image_rms_diff(img_off, h.capture(), step=1)
+    lamp_off = tuple(lamp.get_color())
+    h.report.check('blink_on_off_states', rms_on == 0.0 and rms_off == 0.0,
+                   f'pulse-ON == screen_on rms {rms_on:.2e}; gap-OFF == '
+                   f'emission-0 rms {rms_off:.2e}')
+    LAMP = (0.8, 0.4, 0.2, 1.0)
+
+    def color_close(got, want):
+        return max(abs(g - w) for g, w in zip(got, want)) < 1e-6
+
+    h.report.check('blink_syncs_light',
+                   color_close(lamp_on, LAMP)
+                   and lamp_off == (0.0, 0.0, 0.0, 1.0),
+                   f'lamp color ON {tuple(round(c, 3) for c in lamp_on)} '
+                   f'/ OFF {lamp_off} (gated with the same envelope)')
+    pipeline.clear_blink(card)
+    h.step(5)
+    rms = common.image_rms_diff(img_screen, h.capture(), step=1)
+    lamp_restored = tuple(lamp.get_color())
+    h.report.check('clear_blink_restores',
+                   rms == 0.0 and color_close(lamp_restored, LAMP),
+                   f'rms vs screen_on = {rms:.2e}, lamp color restored '
+                   f'{tuple(round(c, 3) for c in lamp_restored)}')
+
     # --- 10. Emissive-only rebind (albedo=False, in-place re-call) ------
     pipeline.set_screen(card, quad_tex, albedo=False)
     h.step(5)

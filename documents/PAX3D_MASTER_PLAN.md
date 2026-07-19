@@ -415,6 +415,25 @@ evidence. Both implemented engine-side same-session (Session V,
    re-export + ClipPlayer wiring — their handover task 1 is the Phobos
    console clip on the landed store; atlas intake of the 6 loops;
    hologram stays deferred).
+3. **Ship exterior/status lights (Session V part 3, user-directed off
+   the Minerva screencaps). IMPLEMENTED + GATED same day.**
+   `set_blink(np, period, pulses, phase, lights=)` / `clear_blink()`:
+   pulse-train blinker on the emission factor (composes with the
+   Session-V emission registry — setters re-base a blinking node, no
+   one-frame pop) with optional real light nodes gated by the SAME
+   envelope; edge-triggered pushes (~4/s per strobe); per-ship phase
+   de-syncs fleets. Gate: test_screen 9b (envelope pinned; ON/OFF
+   renders byte-identical to the emission-scale states; light sync +
+   restore) — test_screen now 19 checks. Circuits model documented
+   (737NG panel: position/beacon/strobe/floods as NAMED subtrees,
+   each switch = 2–3 byte-identical-opt-out calls; airliner numbers
+   in the ER addendum + set_blink docstring). **Light budget MEASURED
+   (both baselines): with shadows, max_lights 16/20/22 link + light
+   correctly, 24 FAILS to link (v_shadow_pos varying array vs the
+   ~128-component budget) — recommend 16, ceiling 22.** NPC ships:
+   emissive markers + bloom only (the packs' own convention); real
+   lights for hero/parked ships. Interior look + shower-water recipes
+   in the ER addendum (existing APIs — no engine work).
 
 ---
 

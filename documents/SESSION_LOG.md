@@ -933,3 +933,33 @@ smoothsteps `u`; a zero-tangent CUBICSPLINE channel is the equivalent
 already evaluable in-store. Zero new engine work from the response —
 the lane is now fully game-side (their handover task 1: the Phobos
 console clip on the landed clip store). ER files trued up both repos.
+
+**Session V part 3 (2026-07-19): ship exterior/status lights** (user
+direction off the Minerva gold-standard screencaps: fixed hull-wash +
+airliner-pattern blinking white/red/green, per-circuit on/off states —
+"the 737NG lights panel is the form guide"; every NPC and player ship).
+Cap analysis mapped the look to the existing split: top-deck whites +
+ramp/underside floods are REAL lights (pool light on hull/ground),
+small red/amber dashes are emissive-only markers. ONE engine gap
+landed: `set_blink(np, period, pulses, phase, lights=, off_scale=)` /
+`clear_blink()` — pulse-train envelope (pure pinned function) on the
+node's emission factor, composing with the emission registry (setters
+on a blinking node re-base instead of pushing — no one-frame pop),
+optional real light nodes gated by the SAME envelope (originals
+restored on clear), edge-triggered pushes (~4/s per strobe; a parked
+fleet = comparisons only), per-ship phase to de-sync fleets. Gated:
+test_screen 9b (envelope math pinned; pulse-ON/gap-OFF renders
+byte-identical to the emission-scale states; light-node sync +
+restore) — test_screen now 19 checks. Circuits model documented both
+repos (position/beacon/strobe/floods as NAMED subtrees; each panel
+switch = 2-3 calls, all byte-identical opt-outs; airliner numbers:
+beacon 1.33 s/0.20 s, strobe 1 Hz double-flash 0.05+0.05@0.15).
+**Light budget MEASURED (probe_maxlights, both baselines): with
+shadows, max_lights 16/20/22 link+light correctly; 24 FAILS to link —
+the v_shadow_pos[MAX_LIGHTS] varying array vs the ~128-component
+varying budget. Recommend 16 (sun + 9 exterior floods + interior
+fits); measured ceiling 22.** NPC guidance: emissive markers + bloom,
+no real lights (the packs' own convention). Interior + shower-water
+recipes = existing APIs (set_uv_scroll water sheet noted). Full gates
+re-run green all four combos; totals unchanged except test_screen
+19-check rows.
