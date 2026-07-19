@@ -286,12 +286,14 @@ def load_data_texture(path, name=None):
 class _SceneCameraRegistration:
     """Internal record of an auxiliary camera attached to the scene buffer."""
 
-    def __init__(self, camera_np, sort, clear_color, clear_depth, name):
+    def __init__(self, camera_np, sort, clear_color, clear_depth, name,
+                 depth_range=None):
         self.camera_np = camera_np
         self.sort = sort
         self.clear_color = clear_color
         self.clear_depth = clear_depth
         self.name = name
+        self.depth_range = depth_range
         self.display_region = None
         self.buffer = None
 
@@ -839,6 +841,147 @@ class Pipeline:
         reg.buffer = None
         self._update_main_region_clears()
 
+    def register_viewmodel_camera(self, vm_root, near=0.02, far=8.0,
+                                  fov=None, sort=100, depth_mode='clear',
+                                  name='viewmodel'):
+        """Foreground viewmodel region: the standard FPS solution for
+        hands/weapons closer than the world camera's near plane.
+
+        Draws `vm_root` (and only it) through a second camera with its own
+        near/far, AFTER the world, into the same HDR scene buffer — so the
+        full post chain (bloom, tonemap, TAA) applies to the viewmodel
+        exactly as to the world. The world never sees the viewmodel: it is
+        hidden from the main camera and from the sun shadow camera (draw
+        bit VIEWMODEL_BIT is pipeline-reserved for this).
+
+        Args:
+            vm_root: NodePath holding the viewmodel subtree. Must live
+                under the pipeline's render node for PBR lighting inputs
+                to reach it — parenting it under the main camera NodePath
+                is the usual choice (hands then track the view for free).
+                The pipeline OWNS this subtree's visibility masks while
+                registered; after unregister it is left fully hidden.
+            near/far: the viewmodel lens planes (default 0.02/8.0 —
+                hands at 4 cm render; keep far tight for depth precision).
+            fov: horizontal FOV in degrees; None copies the main lens
+                (falls back to 50 if the main lens is not perspective).
+                Games often run the viewmodel a touch narrower than the
+                world FOV — pass it explicitly to taste.
+            sort: display-region sort; must stay > the main region's 0.
+            depth_mode: 'clear' (default) clears the region's depth before
+                drawing — the viewmodel always wins, but the scene buffer's
+                depth texture is stomped full-screen (SSAO reads garbage
+                world depth). 'range' compresses the viewmodel into window
+                depth [0, 0.05] via glDepthRange — no clear, world depth
+                survives outside the viewmodel silhouette (SSAO-friendly;
+                hands get a near-field AO halo at their own pixels only).
+                'range' requires enable_log_depth=False: under LOG_DEPTH
+                the PBR shader writes gl_FragDepth, which GL clamps (not
+                rescales) to the region's depth range — self-occlusion
+                inside the viewmodel would flatten. Falls back to 'clear'
+                with a warning in that case.
+
+        Returns a registration handle (reg.camera_np is the created
+        viewmodel camera — parented under the main camera at identity;
+        move/animate it for sway). Pass to unregister_viewmodel_camera().
+
+        Caveats (measured, see test_viewmodel):
+          * TAA jitters only the main camera lens; the viewmodel is
+            unjittered (no ghosting, slightly less temporal AA on hands).
+          * Other aux cameras whose camera_mask contains VIEWMODEL_BIT
+            would also draw the viewmodel — keep bit 29 out of their
+            masks (main + shadow cameras are handled automatically).
+          * One viewmodel registration at a time is the supported shape.
+        """
+        if depth_mode not in ('clear', 'range'):
+            raise ValueError(f'depth_mode must be "clear" or "range", '
+                             f'got {depth_mode!r}')
+        if depth_mode == 'range' and self.enable_log_depth:
+            print('[Pax3DRender] viewmodel depth_mode="range" is '
+                  'incompatible with enable_log_depth (gl_FragDepth is '
+                  'clamped, not rescaled, by the region depth range) — '
+                  'falling back to "clear"')
+            depth_mode = 'clear'
+        if (depth_mode == 'range'
+                and not hasattr(p3d.DisplayRegion, 'set_depth_range')):
+            # Stock 1.10 has no per-region depth range (1.11 API)
+            print('[Pax3DRender] viewmodel depth_mode="range" needs '
+                  'DisplayRegion.set_depth_range (Panda3D 1.11+) — '
+                  'falling back to "clear"')
+            depth_mode = 'clear'
+        if not self.render_node.is_ancestor_of(vm_root):
+            print(f'[Pax3DRender] WARNING: viewmodel root '
+                  f'"{vm_root.get_name()}" is not under the pipeline '
+                  f'render node — PBR lighting inputs will not reach it')
+
+        win_w = max(1, self.window.get_x_size())
+        win_h = max(1, self.window.get_y_size())
+        lens = p3d.PerspectiveLens()
+        lens.set_aspect_ratio(win_w / float(win_h))
+        main_lens = self.camera_node.node().get_lens()
+        if fov is not None:
+            lens.set_fov(float(fov))
+        elif isinstance(main_lens, p3d.PerspectiveLens):
+            lens.set_fov(main_lens.get_fov()[0])
+        else:
+            lens.set_fov(50.0)
+        lens.set_near_far(near, far)
+
+        vm_bit = p3d.DrawMask.bit(self.VIEWMODEL_BIT)
+        overall = p3d.DrawMask(p3d.PandaNode.get_overall_bit())
+        cam = p3d.Camera(f'pax3d_{name}_camera')
+        cam.set_lens(lens)
+        cam.set_camera_mask(vm_bit)
+        cam_np = self.camera_node.attach_new_node(cam)
+
+        main_cam = self.camera_node.node()
+        prev_main_mask = p3d.DrawMask(main_cam.get_camera_mask())
+        main_cam.set_camera_mask(prev_main_mask & ~vm_bit)
+
+        # World invisible to the viewmodel camera; the viewmodel subtree
+        # overrides that ancestor hide and is itself visible on the
+        # viewmodel bit ONLY (so the shadow camera — bit 29 always cleared
+        # from its mask — never rasterizes it into the depth map).
+        # show() first: a re-registered root still carries the overall
+        # hide that unregister_viewmodel_camera leaves behind.
+        vm_root.show()
+        self.render_node.hide(vm_bit)
+        vm_root.hide(p3d.DrawMask.all_on() & ~vm_bit & ~overall)
+        vm_root.show_through(vm_bit)
+
+        reg = _SceneCameraRegistration(
+            cam_np, sort, None, depth_mode == 'clear', name,
+            depth_range=(self.VIEWMODEL_DEPTH_RANGE
+                         if depth_mode == 'range' else None))
+        reg.is_viewmodel = True
+        reg.vm_root = vm_root
+        reg.prev_main_camera_mask = prev_main_mask
+        self._scene_cameras.append(reg)
+        self._attach_scene_camera(reg)
+        if self._debug:
+            print(f'[Pax3DRender] viewmodel "{name}" registered '
+                  f'(near={near}, far={far}, depth_mode={depth_mode})')
+        return reg
+
+    def unregister_viewmodel_camera(self, reg):
+        """Undo register_viewmodel_camera: removes the display region and
+        camera, restores the main camera's mask and the world's draw bits.
+        The viewmodel subtree is left FULLY HIDDEN — show()/reparent it
+        yourself if you repurpose the nodes."""
+        if not getattr(reg, 'is_viewmodel', False):
+            raise ValueError('not a viewmodel registration — use '
+                             'unregister_scene_camera for plain aux cameras')
+        self.unregister_scene_camera(reg)
+        if reg.camera_np is not None and not reg.camera_np.is_empty():
+            reg.camera_np.remove_node()
+        self.camera_node.node().set_camera_mask(reg.prev_main_camera_mask)
+        vm_bit = p3d.DrawMask.bit(self.VIEWMODEL_BIT)
+        if not any(getattr(r, 'is_viewmodel', False)
+                   for r in self._scene_cameras):
+            self.render_node.show(vm_bit)
+        if not reg.vm_root.is_empty():
+            reg.vm_root.hide()
+
     def _scene_buffer(self):
         buffers = getattr(self._filtermgr, 'buffers', None)
         return buffers[0] if buffers else None
@@ -867,6 +1010,8 @@ class Pipeline:
             dr.set_clear_color_active(True)
             dr.set_clear_color(p3d.LColor(*reg.clear_color))
         dr.set_clear_depth_active(reg.clear_depth)
+        if reg.depth_range is not None:
+            dr.set_depth_range(*reg.depth_range)
         reg.display_region = dr
         reg.buffer = buf
         self._update_main_region_clears()
@@ -1803,6 +1948,18 @@ class Pipeline:
     # picking a shadow_caster_mask bit must choose a different one.
     ORBITAL_HIDE_BIT = 30
 
+    # Draw-mask bit reserved for the foreground viewmodel subtree
+    # (register_viewmodel_camera): visible ONLY to the viewmodel camera —
+    # the shadow camera's mask always clears this bit too, so viewmodel
+    # geometry never rasterizes into the sun depth map. Games picking a
+    # shadow_caster_mask bit or hand-rolling camera masks must leave
+    # bits 29 and 30 alone.
+    VIEWMODEL_BIT = 29
+    # Window-depth slice the 'range' depth mode compresses the viewmodel
+    # into (glDepthRange): in front of everything the world lens can
+    # write except a ~2 cm shell just past the world near plane.
+    VIEWMODEL_DEPTH_RANGE = (0.0, 0.05)
+
     def _apply_shadow_caster_mask(self):
         if self.sun_light_np is None:
             return
@@ -1810,16 +1967,18 @@ class Pipeline:
             mask = p3d.DrawMask(self.shadow_caster_mask)
         else:
             # Default camera mask (all normal bits), made explicit so the
-            # reserved bit can be cleared from it.
+            # reserved bits can be cleared from it.
             mask = p3d.DrawMask.all_on() & ~p3d.DrawMask(
                 p3d.PandaNode.get_overall_bit())
-        cleared = mask & ~p3d.DrawMask.bit(self.ORBITAL_HIDE_BIT)
+        cleared = (mask & ~p3d.DrawMask.bit(self.ORBITAL_HIDE_BIT)
+                   & ~p3d.DrawMask.bit(self.VIEWMODEL_BIT))
         if cleared.is_zero():
-            # A caster mask of exactly the reserved bit: keep shadows
+            # A caster mask of exactly the reserved bits: keep shadows
             # working and warn instead of silently blanking the map.
-            print(f'[Pax3DRender] shadow_caster_mask is exactly bit '
-                  f'{self.ORBITAL_HIDE_BIT}, which is reserved for '
-                  f'pipeline overlay geometry — pick another bit')
+            print(f'[Pax3DRender] shadow_caster_mask uses only bits '
+                  f'{self.VIEWMODEL_BIT}/{self.ORBITAL_HIDE_BIT}, which are '
+                  f'reserved for pipeline overlay/viewmodel geometry — '
+                  f'pick another bit')
         else:
             mask = cleared
         self.sun_light_np.node().set_camera_mask(mask)

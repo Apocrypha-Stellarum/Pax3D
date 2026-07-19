@@ -23,7 +23,7 @@ ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows',
              'ambient_scale', 'env_map', 'local_lights', 'orbital',
              'srgb', 'ssao', 'lens_flare', 'morph_gltf', 'data_texture',
              'terrain_splat', 'instancing', 'rigid_clips', 'screen',
-             'alpha_mask']
+             'alpha_mask', 'viewmodel']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 
@@ -105,7 +105,7 @@ def main():
                 jobs.append((test, pipeline,
                              passthrough + ['--sun-mode', 'directional']))
             if (test in ('glass', 'doublesided', 'local_lights',
-                         'terrain_splat', 'instancing')
+                         'terrain_splat', 'instancing', 'viewmodel')
                     and pipeline == 'pax3d_render'):
                 # Sessions K/O: the directional variants exercise the
                 # p3d_LightSource loop with the sun occupying slot 0
