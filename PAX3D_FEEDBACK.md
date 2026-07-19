@@ -14,6 +14,114 @@ C:\python\pax3d-env\Scripts\python.exe main.py --selftest --hour 16 --shot out.p
 
 ---
 
+# 2026-07-19 (Session X) — ENGINE RESPONSE to the FPS weapons lane: the §5 near-plane question answered before it was filed + the GL-error report root-caused
+
+**To the FPS dev.** We read `FPS_WEAPONS_KIT.md` §5 ("engine ask
+drafted, not sent") and the `gl-max-errors` comment in
+`test_weapon_system.py`. Both are answered engine-side, same day —
+nothing was waiting on you filing the ask.
+
+## 1. Viewmodel display region: YES — it is now a first-class API
+
+Your option 1 (own camera/near-far, drawn after the world) is the
+right call, and it landed today, gated:
+
+```python
+vm_root = base.cam.attach_new_node('vm_root')   # hands/weapons under this
+reg = pipeline.register_viewmodel_camera(vm_root, near=0.02, far=8.0)
+# reg.camera_np = the created viewmodel camera, parented under the main
+# camera at identity — animate IT for sway/ADS. fov=None copies the
+# world FOV; pass your own (viewmodels usually run a touch narrower).
+pipeline.unregister_viewmodel_camera(reg)       # exact restore
+```
+
+Everything you asked about is measured (`test_viewmodel`, 15 checks,
+17 under directional+shadows, green both engines × both baselines):
+
+- **The post chain is NOT broken — it applies to your hands.** The
+  region draws after the world into the SAME HDR scene buffer, so
+  tonemap analytics hold on viewmodel pixels, a hot emissive viewmodel
+  feeds bloom, TAA resolves over it. PBR lighting reaches the subtree
+  (luminance parity 0.848 == 0.848 against an identical world card lit
+  by the same sun) — keep `vm_root` under render; under the camera is
+  the blessed spot (free view tracking).
+- **The mask folklore is pipeline-owned.** Draw bit 29 is reserved
+  (sibling of the orbital bit 30): hands invisible to the main camera
+  AND to the sun shadow camera — zero texels in the sun depth map,
+  gated — so no giant hand shadows and no mask dance in game code.
+  Keep bits 29/30 out of any camera masks you hand-roll.
+- **Rebuild-proof**: the region + its depth state survive every
+  FilterManager rebuild (bloom/SSAO toggles), same contract as the sky
+  camera.
+- **`depth_mode` matters the day you adopt SSAO (the Q key):**
+  `'clear'` (default) clears region depth — always wins, but the scene
+  depth texture is stomped full-screen and world AO reads garbage
+  (measured, documented-limitation gate row). `'range'` compresses the
+  viewmodel into glDepthRange [0, 0.05] — no clear, world depth
+  byte-preserved (SSAO-friendly). `'range'` needs the Pax3D wheel
+  (stock 1.10 has no `DisplayRegion.set_depth_range`; auto-falls back
+  to 'clear' with a warning) and is incompatible with
+  `enable_log_depth` (gl_FragDepth is clamped, not rescaled, to the
+  region range; auto-falls back and says so).
+- Nuances measured so you don't have to: TAA jitters only the world
+  lens (viewmodel unjittered — no ghosting, marginally less temporal
+  AA on hands); in 'range' mode world geometry inside ~0.32 m of the
+  camera still wins depth (a ~2 cm shell past the world near plane) —
+  the standard walls-clip-hands FPS behavior, invisible in practice.
+
+Your §5 option 2 (uniform scale about the camera) can be deleted once
+this is wired; `min_cam_dist_m` in your metas stays useful for
+choosing per-weapon `near` if you ever want tighter than 0.02.
+
+**TASK (FPS dev):** wire the WeaponSystem viewmodel root through
+`register_viewmodel_camera`, delete the scale fallback, and report
+field numbers (FOV taste, far plane, sway feel on `reg.camera_np`).
+API details: `PAX3D_RENDER_ARCHITECTURE.md` §6.1.
+
+## 2. Your GL-error report: root-caused — it was never about characters
+
+Filing the line number was gold
+(`glGraphicsStateGuardian_src.cxx:4817` is exactly the `-1` bug). But
+the attribution measured wrong, in an interesting way — probe matrix
+(`tools/paxtest/probe_gl_errors.py`):
+
+| Config | GL_INVALID_OPERATION |
+|---|---|
+| Pax3D, offscreen, EMPTY scene (both baselines) | **1 per frame** |
+| Pax3D, offscreen, character static / playing / posed | 1 per frame (unchanged) |
+| Pax3D, real window | 0 |
+| stock 1.10.16, offscreen | 0 |
+
+The character is irrelevant — every offscreen frame errors, and it has
+since the fork began (the Window-1 pre-surgery wheel reproduces).
+Root cause: an upstream 2024 commit (`bd4dc8a379` — ironically a
+**DX9** buffer fix; we deleted DX9 entirely) gutted the
+single-buffered branch of `FrameBufferProperties::get_buffer_mask()`,
+so the engine calls `glDrawBuffer(GL_BACK)` on the single-buffered wgl
+pbuffer every display-region prep. The once-per-second error sweep
+then reaches `gl-max-errors` (20) and panic-deactivates the GSG.
+One correction to your comment: it deactivates after ~20 **seconds of
+wall time** (the sweep is 1/s), not 20 frames — same trap, different
+clock. And your `-1` read was exactly right: the sweep's bare `>=`
+makes -1 deactivate on the FIRST error while `report_errors_loop`
+honors it as unlimited.
+
+Both fixes are one-line C++, queued for a user-authorized mini build
+window (`documents/PATCH_QUEUE_GL_OFFSCREEN.md`); `test_gl_clean`
+asserts today's defect per-engine and flips "the good way" when the
+patch lands. Master plan fact #18.
+
+**TASK (FPS dev):** keep the `gl-max-errors 1000000` workaround until
+we announce the window landed — anything offscreen running >20 s needs
+it. After the window: `-1` works as documented, and your workaround
+comment can shrink to a pointer at fact #18. Worth truing up the
+"playing character" attribution in `FPS_WEAPONS_KIT.md` §7 when you
+next touch it. One technique from your report worth stealing
+game-side: pin the global clock to dt>1 s and the engine's 1/s error
+sweep becomes per-frame — free GL-error attribution on release builds.
+
+---
+
 # 2026-07-19 (evening) — First visor-off hero SHIPPED on the CPU valve; two field notes (character dev)
 
 The morph lane paid off same-day: a hero NPC from a second CGTrader

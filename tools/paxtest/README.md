@@ -238,6 +238,28 @@ and falls back to the same default shader. Identical on stock 1.10.16 —
 expected upstream behavior, not a fork regression
 (`OPENWORLD_FEEDBACK_RESPONSE_5.md` §1).
 
+**`test_viewmodel.py`** (Session X, the FPS-lane near-plane answer) —
+gates `register_viewmodel_camera`: the near-clip defect row (0.12 m
+card invisible at world near 0.3), viewmodel drawn over CLOSER world
+geometry through the full post chain (tonemap analytic on vm pixels,
+hot vm quad feeds bloom), PBR lighting parity vs an identical world
+surface, world byte-unchanged outside the vm silhouette, exact
+unregister restore (frame + camera mask), rebuild survival
+(SSAO/bloom toggles), both depth modes proven by scene-depth
+readback ('clear' stomps world depth — documented-limitation row;
+'range' preserves it; stock 1.10 exercises the auto-fallback), and
+@directional: zero viewmodel texels in the sun depth map.
+
+**`test_gl_clean.py`** (Session X, fact #18) — engine-level, 'none'
+pipeline only: offscreen frames must not generate GL errors. Uses the
+dt>1 s clock trick to make the engine's 1/s error sweep per-frame.
+Currently asserts the KNOWN fork defect (glDrawBuffer(GL_BACK) on the
+single-buffered pbuffer, ~1 error/frame) and stock-clean; when
+`PATCH_QUEUE_GL_OFFSCREEN.md` lands it fails "the good way" — flip
+`EXPECT_DEFECT_ON_1_11` and it becomes the permanent zero-GL-errors
+guard. `probe_gl_errors.py` is the diagnostic sibling (phase
+attribution, --gl-debug, --empty-only for wheel bisection).
+
 **`test_ftl_blur.py`** — the FTL warp distortion pass (radial blur +
 chromatic aberration in tonemap); asserts zero-strength passthrough and
 effect behavior (added alongside the feature, post-Session-D).

@@ -1038,3 +1038,40 @@ Driver trap worth remembering: Panda resolves relative model paths
 against MAIN_DIR (the started script's directory), not cwd — a
 scratchpad driver script "loses" the game's GLBs while the direct run
 loads them; run drivers via stdin from the game dir.
+
+**Session X (2026-07-19): the viewmodel answer + the offscreen GL
+defect — both FPS-lane items closed engine-side, same day they were
+written.** (1) The near-plane question (FPS_WEAPONS_KIT.md §5, drafted
+but not yet filed): answered by implementation —
+`pipeline.register_viewmodel_camera(vm_root, near, far, fov,
+depth_mode)` is the blessed foreground display region (own camera and
+near/far, drawn after the world into the SAME HDR scene buffer, so
+tonemap/bloom/TAA apply identically; PBR lighting parity measured
+0.848 == 0.848 against an identical world surface). The five-step
+mask/shadow/clear folklore is pipeline-owned: draw bit 29 reserved
+(shadow camera always clears it — zero texels in the sun depth map,
+gated), main camera mask restored exactly on unregister, region +
+depth state auto-reattach across FilterManager rebuilds. Two depth
+modes, both measured by scene-depth readback: 'clear' (default;
+stomps the buffer's depth — SSAO reads garbage) and 'range'
+(glDepthRange [0,0.05] compression; world depth byte-preserved —
+SSAO-friendly; needs the fork's DisplayRegion.set_depth_range, falls
+back to 'clear' on stock 1.10, and is documented-incompatible with
+enable_log_depth: gl_FragDepth is CLAMPED to the region range, not
+rescaled). Gated by test_viewmodel (15 checks; 17 @directional incl.
+shadow-map texel diff; runner adds the @directional variant), green
+both engines × both baselines; defect row pins WHY the API exists
+(near 0.3 clips a 0.12 m card). (2) The GL_INVALID_OPERATION field
+report root-caused to two upstream one-liners — see fact #18: the
+"playing character" attribution was wrong (empty scene errors
+identically); real cause `glDrawBuffer(GL_BACK)` on the
+single-buffered wgl pbuffer (upstream bd4dc8a379, a DX9 fix,
+pre-divergence — in EVERY Pax3D wheel ever built), plus the
+`gl-max-errors -1` bare `>=`. C++ fixes queued for a mini window
+(`PATCH_QUEUE_GL_OFFSCREEN.md`); probe_gl_errors.py holds the matrix;
+test_gl_clean asserts the defect per-engine and flips "the good way"
+when the patch lands. TRUE-UP: Session W part 1's "GL error 0x502
+once during ShowBase init = driver init noise" note is superseded —
+that was this defect (the 1/sec sweep fires once in a short real-time
+window; pin the clock to dt>1 s and it is 1/frame, every offscreen
+run, since the fork began).

@@ -443,6 +443,55 @@ Gotcha for tests/tools: the FilterManager buffer appears in
 manual discovery must render ≥1 frame first (the registration API is
 immune; it holds the buffer object directly).
 
+### 6.1 Foreground viewmodel camera (Session X — the FPS near-plane answer)
+
+`register_scene_camera` covers backgrounds (sort < 0, sky). The
+foreground mirror is a first-class API — the standard FPS solution for
+hands/weapons closer than the world near plane (planetside: hands at
+~0.04 m, world near 0.3 m):
+
+```python
+vm_root = base.cam.attach_new_node('vm_root')   # under the camera: free tracking
+# ...parent hands/weapon Actors under vm_root...
+reg = pipeline.register_viewmodel_camera(vm_root, near=0.02, far=8.0,
+                                         fov=None, depth_mode='clear')
+# reg.camera_np = the created viewmodel camera (animate it for sway)
+pipeline.unregister_viewmodel_camera(reg)       # exact restore; vm_root left hidden
+```
+
+What it owns (measured, test_viewmodel — 15 checks, 17 @directional):
+
+- **A second display region on the HDR scene buffer, sort +100** — drawn
+  after the world, BEFORE post: tonemap analytics hold on viewmodel
+  pixels, a hot emissive viewmodel feeds bloom, TAA applies. PBR
+  lighting reaches the subtree (vm_root must live under the pipeline's
+  render node — the API warns if not); measured luminance parity with
+  an identical world surface.
+- **Draw-bit isolation, pipeline-reserved bit 29** (sibling of the
+  orbital bit 30): world hidden from the viewmodel camera, viewmodel
+  hidden from the main camera (mask restored exactly on unregister) and
+  from the sun shadow camera (bit 29 is always cleared from its mask —
+  zero texels in the depth map, gated @directional). Games hand-rolling
+  camera masks must leave bits 29/30 alone.
+- **Rebuild survival**: region, clears, and depth-range state re-attach
+  across every FilterManager rebuild (bloom/SSAO toggles) — same
+  contract as the sky camera.
+- **Two depth modes.** `'clear'` (default): region clears depth —
+  always wins, but the scene buffer's depth texture is stomped
+  full-screen, so **SSAO reads garbage world depth** (measured;
+  documented-limitation row). `'range'`: glDepthRange-compresses the
+  viewmodel into window depth [0, 0.05] — no clear, world depth
+  byte-preserved outside the viewmodel silhouette (SSAO-friendly;
+  hands get a near-field AO halo on their own pixels only). `'range'`
+  needs the fork's `DisplayRegion.set_depth_range` (falls back to
+  'clear' on stock 1.10 with a warning) and is incompatible with
+  `enable_log_depth` (the PBR shader writes gl_FragDepth, which GL
+  CLAMPS — not rescales — to the region's depth range; the API falls
+  back to 'clear' and says so).
+- Caveats: TAA jitters only the main lens (viewmodel unjittered — no
+  ghosting, marginally less temporal AA on hands); one viewmodel
+  registration at a time is the supported shape.
+
 ---
 
 ## 7. Runtime Parameter Model
@@ -453,7 +502,7 @@ Three cost classes — keep new parameters within this taxonomy:
 |---|---|---|
 | Uniform-only | free, per-frame safe | `set_exposure`, `set_tonemap_operator`, `set_bloom_strength`, `set_bloom_intensity`, `set_ao_radius`/`set_ao_intensity`/`set_ao_bias` (§9 Session S), `set_flare_strength`/`set_lens_dirt` (§9 Session S), `update_sun`, `set_debug_lighting`, `set_shadow_extent`, `set_shadow_bias`, `set_shadow_normal_bias` (slope-scaled, §5.2), `set_shadow_caster_mask`, `set_shadow_texel_snap` (§5.7), `exclude_from_shadows`/`include_in_shadows`, `set_hardware_skinning`/`clear_hardware_skinning` (per-node state change; no recompile), `set_atmosphere_params` (§9 R5.1), `set_ambient_sh`/`set_hemisphere_ambient`/`clear_ambient_sh` (§9 R5.2), `set_env_map`/`clear_env_map` (§9 R5.3), `set_glass` (§9 Session K; per-node state change — lazy one-time variant compile on first use, tracked across recompiles), `apply_alpha_masks` (§9 Session W; per-GEOM state change — lazy per-cutoff variant compile, tracked across recompiles), `set_ambient_scale`/`clear_ambient_scale` (§9 Session L; per-node inherited input), `set_atmosphere_scale`/`clear_atmosphere_scale` (§9 Session S; per-node inherited input scaling the R5.1 optical depth — hull interiors), `activate_model_lights`/`deactivate_model_lights` (§9 Session P; scene-graph state only) |
 | Shader recompile | one hitch; **must preserve inputs** (§3) | `set_sun_light_mode`, `set_enable_shadows`, `set_enable_log_depth`, `set_shadow_filter_size`, `set_enable_atmosphere`, `set_double_sided_lighting` (§9 Session K), `set_max_skinning_bones` (§5.8 Session S; also invalidates shadow-caster states) |
-| FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, `set_enable_ssao`, `set_enable_lens_flare` (§9 Session S; needs bloom), (`bloom_levels`, `msaa_samples`, `ao_samples` at init) |
+| FilterManager rebuild | frame hitch; aux cameras auto-reattach | `set_enable_bloom`, `set_enable_taa`, `set_enable_ssao`, `set_enable_lens_flare` (§9 Session S; needs bloom), (`bloom_levels`, `msaa_samples`, `ao_samples` at init). `register_viewmodel_camera`/`unregister_viewmodel_camera` (§6.1 Session X) are scene-graph + display-region state — no rebuild, and they survive rebuilds |
 
 Constructor parameters (all keyword): `render_node, window, camera_node,
 taskmgr, msaa_samples=4, max_lights=8, enable_shadows=False,
