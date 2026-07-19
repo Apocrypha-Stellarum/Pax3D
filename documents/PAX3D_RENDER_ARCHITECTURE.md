@@ -1362,6 +1362,56 @@ u_env_intensity 1.0, u_env_yaw (1,0)). Gate: test_env_map 6b/6c — +90°
 yaw maps −X→−Y mirror exactly, 0.25 node × 0.5 global = 0.125 analytic,
 defaults restore byte-identically.
 
+### Session Z — GPU morphs: `set_gpu_morphs(model_np)` (LANDED, opt-in)
+
+Fact #15's missing half: morph sliders render ON the hardware-skinning
+path — no CPU valve, faces animate at crowd scale. Pure Python/GLSL;
+runs unchanged on stock 1.10 (fact #19).
+
+**Data path.** At enable, every Geom whose vertex data carries a
+slider table gets: (1) a per-vdata RGB32F **delta texture** — width =
+vertex rows, height = 2×targets, position delta at row 2t, NORMAL
+delta at row 2t+1 (the loader ships `normal.morph.<slider>` columns;
+lighting morphs correctly, not just silhouettes), stamped with the
+ER-003 `data_texture()` contract, nearest-filtered, extracted from the
+morph columns by raw array-byte slicing; (2) a float32 `morph_index`
+column (its own array) carrying each vertex's row id — the ONE
+addressing mechanism that works on both GLSL baselines (120 has no
+gl_VertexID); (3) a GPU_MORPHS compile of the PBR shader composed onto
+its geom state exactly like the alpha-mask seam (root inputs + flags
+still compose through; per-geom inputs: u_morph_tex, u_morph_texel).
+Ram conventions were measured before building: row 0 = v=0,
+set_ram_image_as('RGB') keeps float order.
+
+**Per-frame path.** `_step_gpu_morphs` (in `_update`) reads each
+registered Character's slider values and refills a compact 16-slot
+(row, weight) PTA only when the live set changes — uploaded by
+reference, no set_shader_input churn. All 52 ARKit targets stay
+addressable; ≤16 live is the character-lane contract; overflow keeps
+the largest |weight| and warns once. The shader loop breaks at the
+first zero weight (slots are compact by contract) and adds
+w·Δpos/w·Δnormal BEFORE the skin matrix — glTF semantics, matching
+`animate_vertices` exactly (gate: GPU-vs-CPU-valve image rms 0.0000).
+
+**Invariants.** Not enabled = byte-identical shipped pipeline (the
+default HW path still drops morphs — hw_drops_morphs guards that);
+`set_gpu_morphs(np, False)` restores saved geom states exactly (the
+inert morph_index column stays — nothing reads it without the
+variant). Requires the HW-skinning path: combining with
+`set_hardware_skinning(np, False)` would double-apply deltas. One PBR
+variant per geom (no stacking with glass/mask/terrain). Shadow depth
+pass casts the UNMORPHED silhouette (alpha-mask depth precedent;
+lands on field evidence).
+
+**Measured (probe_gpu_morph_bench.py, hero_wren = worst-case
+14,684 verts × 52 targets, 512² offscreen):** 8 faces × 5 live
+sliders ≈ 0.3 ms/frame morph-attributable (acceptance bar ≤0.5 ms);
+CPU valve same scene 63.5 ms; 32 faces 2.42 ms total; Python push
+0.03 ms; enable cost 1.17 s + 18.3 MB per face (one-time, at load).
+Bench trap on record: `apply_freeze_scalar` without `force_update()`
+dirties nothing — an A/B without a playing clip silently measures an
+idle scene.
+
 ---
 
 ## 10. Testing Contract

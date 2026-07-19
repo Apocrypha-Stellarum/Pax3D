@@ -215,6 +215,14 @@ panda3d-gltf 1.3.0 `gltf/_converter.py`.
 - **`ModelRoot.get_fullpath()` records the source file** and survives
   the bam-cache round trip — `get_model_clips()` resolves the .glb
   through it (pass `path=` for multifile-packed assets).
+- **Morph targets land as interleaved vdata columns in their own
+  array** (Session Z dig): `vertex.morph.<slider>` AND
+  `normal.morph.<slider>` (float32×3, C_morph_delta) per target, plus
+  a `SliderTable` on the vdata and `CharacterSlider` parts in the
+  bundle. NO tangent deltas are shipped. Raw column extraction:
+  `fmt.get_array_with(iname)` → column `get_start()`/array
+  `get_stride()` → slice `get_array(ai).get_handle().get_data()` per
+  row — no per-vertex Panda calls (set_gpu_morphs' bake path).
 
 ## 6. Instrument traps (for test authors)
 
@@ -230,3 +238,19 @@ panda3d-gltf 1.3.0 `gltf/_converter.py`.
 - `grep` on paxtest console output trips on em dashes under cp1252 and
   goes binary-mode silent — assert on the `PAXTEST_JSON` line or use
   `grep -a`.
+- `apply_freeze_scalar` alone does NOT dirty a Character's bundle —
+  without `force_update()` (or a playing clip marking channels) the
+  CPU path re-animates nothing, and a slider-driving perf loop
+  silently measures an idle scene (Session Z bench: the +0.01 ms
+  animate/static delta was the tell; with force_update it was
+  +62.5 ms).
+
+## 7. Texture ram-image conventions (Session Z, measured)
+
+- **Ram row 0 = texcoord v=0** for procedural `setup_2d_texture` +
+  `set_ram_image_as` float textures (TexturePeeker probe; re-proven
+  end-to-end by test_morph_gltf's GPU-vs-CPU image check).
+- **`set_ram_image_as(data, 'RGB')` preserves float component order**
+  — it is the conversion layer; raw `set_ram_image` would store
+  Panda-native BGR ordering instead. Use the `_as` form for any
+  procedural data texture the shader reads by channel.

@@ -37,6 +37,7 @@ set_enable_shadows(); size the shadow frustum with set_shadow_extent().
 import builtins
 import math
 import os
+import struct
 
 import panda3d.core as p3d
 from direct.filter.FilterManager import FilterManager
@@ -527,6 +528,17 @@ class Pipeline:
         self._instanced_nodes = []
         self._instanced_shader = None
 
+        # GPU morphs (set_gpu_morphs, Session Z): per-geom GPU_MORPHS
+        # variant + per-vdata delta texture so morph sliders render on
+        # the hardware-skinning path (fact #15's missing half). Entries:
+        # {'np', 'geoms': [(gnode, geom_i, orig_state, tex, texel)],
+        #  'sliders': [(row, name, CharacterSlider)], 'pta', 'last',
+        #  'warned'}. Opt-out restores the saved geom states exactly;
+        # shader invalidated on every pipeline recompile (the glass
+        # discipline). Empty list = the shipped pipeline exactly.
+        self._gpu_morph_entries = []
+        self._gpu_morph_shader = None
+
         # Model-authored lights turned on via activate_model_lights():
         # (light_np, original color, root it was set_light on) — so
         # deactivation restores colors and scopes exactly.
@@ -792,6 +804,9 @@ class Pipeline:
         # Instanced nodes: same recompile-tracking rule.
         self._instanced_shader = None
         self._reapply_instanced_shaders()
+        # GPU-morph geoms: same recompile-tracking rule.
+        self._gpu_morph_shader = None
+        self._reapply_gpu_morphs()
         # Orbital-atmosphere quads carry their own shader pair whose
         # USE_330/LOG_DEPTH defines must track the pipeline's (same
         # recompile-tracking rule as glass) — a log-depth toggle with
@@ -3300,6 +3315,292 @@ class Pipeline:
             nodepath.set_attrib(
                 prev.clear_flag(p3d.ShaderAttrib.F_hardware_skinning), 2)
 
+    # ------------------------------------------------------------------
+    # GPU morphs (Session Z — fact #15's missing half)
+    # ------------------------------------------------------------------
+
+    _MORPH_LIVE_SLOTS = 16   # live-slider slots (character-lane contract:
+                             # 52 addressable, <=16 driven; ARKit viseme
+                             # ceiling). Overflow keeps the largest |w|.
+    _MORPH_EPS = 1e-4        # slider magnitude below this is "at rest"
+
+    def _get_gpu_morph_shader(self):
+        """The GPU_MORPHS PBR variant for the CURRENT pipeline defines
+        (invalidated by _recompile_pbr, the glass discipline)."""
+        if self._gpu_morph_shader is None:
+            defines = self._get_pbr_defines()
+            defines['GPU_MORPHS'] = True
+            defines['MORPH_LIVE'] = self._MORPH_LIVE_SLOTS
+            self._gpu_morph_shader = shaderutils.make_shader(
+                'pax_pbr_gpu_morphs', 'pax_pbr.vert', 'pax_pbr.frag',
+                defines)
+        return self._gpu_morph_shader
+
+    @staticmethod
+    def _extract_morph_col3(vdata, name):
+        """Tightly-packed float32x3 bytes of one morph column (rows *
+        12 bytes), or None if the column is absent. Reads the array's
+        raw bytes and slices per row — no per-vertex Panda calls."""
+        iname = p3d.InternalName.make(name)
+        fmt = vdata.get_format()
+        ai = fmt.get_array_with(iname)
+        if ai < 0:
+            return None
+        arrf = fmt.get_array(ai)
+        col = arrf.get_column(iname)
+        if (col.get_numeric_type() != p3d.Geom.NT_float32
+                or col.get_num_components() != 3):
+            raise ValueError(
+                f'morph column {name} is not float32x3 '
+                f'(type {col.get_numeric_type()}, '
+                f'{col.get_num_components()} comps)')
+        start = col.get_start()
+        stride = arrf.get_stride()
+        raw = bytes(vdata.get_array(ai).get_handle().get_data())
+        n = vdata.get_num_rows()
+        out = bytearray(12 * n)
+        for r in range(n):
+            o = r * stride + start
+            out[12 * r:12 * r + 12] = raw[o:o + 12]
+        return bytes(out)
+
+    @classmethod
+    def _bake_morph_texture(cls, vdata, slider_names):
+        """RGB32F delta texture for one vdata: width = vertex rows,
+        height = 2 * len(slider_names) — position delta at row 2t,
+        normal delta at row 2t+1, rows keyed by the CHARACTER-level
+        slider order so every vdata under one character agrees on
+        target indices. Missing columns bake as zero rows (a slider
+        that does not touch this vdata is a no-op there, same as the
+        CPU path). Returns (texture, texel_size) or None if the vdata
+        carries no morph columns for any of the names.
+
+        Ram row 0 = texcoord v=0 and set_ram_image_as('RGB') keeps
+        float component order — both MEASURED (TexturePeeker probe,
+        Session Z) and re-proven end-to-end by the gate's GPU-vs-CPU
+        image check. data_texture() pins the ER-003 contract; nearest
+        filtering + texel-center UVs make every fetch exact."""
+        n = vdata.get_num_rows()
+        zeros = None
+        rows = []
+        found = False
+        for name in slider_names:
+            pos = cls._extract_morph_col3(vdata, 'vertex.morph.' + name)
+            nrm = cls._extract_morph_col3(vdata, 'normal.morph.' + name)
+            if pos is not None or nrm is not None:
+                found = True
+            if pos is None or nrm is None:
+                if zeros is None:
+                    zeros = bytes(12 * n)
+                pos = pos if pos is not None else zeros
+                nrm = nrm if nrm is not None else zeros
+            rows.append(pos)
+            rows.append(nrm)
+        if not found:
+            return None
+        tex = p3d.Texture('pax3d_morph_deltas')
+        tex.setup_2d_texture(n, len(rows), p3d.Texture.T_float,
+                             p3d.Texture.F_rgb32)
+        tex.set_minfilter(p3d.SamplerState.FT_nearest)
+        tex.set_magfilter(p3d.SamplerState.FT_nearest)
+        tex.set_wrap_u(p3d.SamplerState.WM_clamp)
+        tex.set_wrap_v(p3d.SamplerState.WM_clamp)
+        tex.set_ram_image_as(b''.join(rows), 'RGB')
+        data_texture(tex)
+        return tex, p3d.LVecBase2(1.0 / n, 1.0 / len(rows))
+
+    @staticmethod
+    def _character_sliders(model_np):
+        """[(row, name, CharacterSlider)] for the first Character under
+        model_np that carries sliders, in bundle tree order (stable —
+        fixed by the file, unlike get_anim_names(), fact #12)."""
+        for char_np in model_np.find_all_matches('**/+Character'):
+            bundle = char_np.node().get_bundle(0)
+            out = []
+
+            def walk(group):
+                for i in range(group.get_num_children()):
+                    child = group.get_child(i)
+                    if isinstance(child, p3d.CharacterSlider):
+                        out.append(child)
+                    walk(child)
+
+            walk(bundle)
+            if out:
+                return [(row, s.get_name(), s)
+                        for row, s in enumerate(out)]
+        return []
+
+    def set_gpu_morphs(self, model_np, enabled=True):
+        """Render this character's morph sliders on the GPU while
+        hardware skinning stays ON — the fix for fact #15 (the HW
+        skinning path silently drops sliders; the CPU valve renders
+        them but costs ~2 ms per production head and cannot scale to
+        crowds). Returns the number of morph geoms converted (0 = the
+        model has no morph columns).
+
+        Mechanism: every Geom whose vertex data carries a slider table
+        gets (1) a per-vdata RGB32F delta texture (position + normal
+        deltas per target, ER-003 data-texture contract), (2) a plain
+        float32 'morph_index' vertex column carrying the row id — one
+        addressing mechanism on BOTH GLSL baselines, GLSL 120 has no
+        gl_VertexID — and (3) a GPU_MORPHS compile of the PBR shader
+        composed onto its geom state (the alpha-mask seam: root-level
+        inputs and flags still compose through). Slider values are
+        read from the Character each frame and pushed as a compact
+        <=16-slot (row, weight) uniform array per model — O(live
+        sliders), the writes-are-sparse contract from the character
+        lane. All 52 ARKit targets stay addressable; overflow beyond
+        16 live keeps the largest |weight| and warns once.
+
+        Requires the hardware-skinning path to be ACTIVE on the node
+        (the pipeline default): with CPU skinning the vdata is already
+        morph-animated on the CPU and the shader would apply deltas
+        twice. Do not combine with set_hardware_skinning(np, False).
+
+        `enabled=False` restores the saved geom states byte-identically
+        (the added inert vertex column stays — no shader reads it
+        without the GPU_MORPHS attribute binding).
+
+        Known limits (documented, field-evidence-gated like the
+        alpha-mask depth caveat): the shadow depth pass renders the
+        UNMORPHED silhouette; tangents keep base values (the loader
+        ships no tangent deltas — measured); a geom carries ONE PBR
+        variant, so glass/alpha-mask/terrain and GPU morphs do not
+        stack on the same geom."""
+        idx = next((i for i, e in enumerate(self._gpu_morph_entries)
+                    if e['np'] == model_np), None)
+        if not enabled:
+            if idx is None:
+                return 0
+            entry = self._gpu_morph_entries.pop(idx)
+            for gnode, geom_i, orig_state, _tex, _texel in entry['geoms']:
+                gnode.set_geom_state(geom_i, orig_state)
+            model_np.clear_shader_input('u_morphs')
+            return len(entry['geoms'])
+        if idx is not None:
+            return len(self._gpu_morph_entries[idx]['geoms'])
+
+        sliders = self._character_sliders(model_np)
+        if not sliders:
+            return 0
+        names = [name for _row, name, _s in sliders]
+
+        geoms = []
+        baked = {}   # id(original vdata) -> (new vdata, tex, texel)
+        gnode_paths = list(model_np.find_all_matches('**/+GeomNode'))
+        if isinstance(model_np.node(), p3d.GeomNode):
+            gnode_paths.insert(0, model_np)
+        for np_ in gnode_paths:
+            gnode = np_.node()
+            for i in range(gnode.get_num_geoms()):
+                vdata = gnode.get_geom(i).get_vertex_data()
+                if vdata.get_slider_table() is None:
+                    continue
+                orig_state = gnode.get_geom_state(i)
+                cached = baked.get(id(vdata))
+                if cached is None:
+                    result = self._bake_morph_texture(vdata, names)
+                    if result is None:
+                        continue
+                    tex, texel = result
+                    new_vdata = self._add_morph_index_column(
+                        gnode, i, vdata)
+                    baked[id(vdata)] = (new_vdata, tex, texel)
+                else:
+                    new_vdata, tex, texel = cached
+                    gnode.modify_geom(i).set_vertex_data(new_vdata)
+                geoms.append((gnode, i, orig_state, tex, texel))
+        if not geoms:
+            return 0
+
+        pta = p3d.PTA_LVecBase2f.empty_array(self._MORPH_LIVE_SLOTS)
+        for i in range(self._MORPH_LIVE_SLOTS):
+            pta.set_element(i, p3d.LVecBase2f(0.0, 0.0))
+        model_np.set_shader_input('u_morphs', pta)
+
+        entry = {'np': model_np, 'geoms': geoms, 'sliders': sliders,
+                 'pta': pta, 'last': None, 'warned': False}
+        self._gpu_morph_entries.append(entry)
+        for gnode, geom_i, orig_state, tex, texel in geoms:
+            self._apply_gpu_morph_state(gnode, geom_i, orig_state,
+                                        tex, texel)
+        return len(geoms)
+
+    @staticmethod
+    def _add_morph_index_column(gnode, geom_i, vdata):
+        """Append a float32 'morph_index' column (its own array) filled
+        with each vertex's row id, in place on this geom's vdata.
+        Returns the (possibly new) vdata for cache sharing."""
+        new_vdata = gnode.modify_geom(geom_i).modify_vertex_data()
+        fmt = p3d.GeomVertexFormat(new_vdata.get_format())
+        arr = p3d.GeomVertexArrayFormat()
+        arr.add_column(p3d.InternalName.make('morph_index'), 1,
+                       p3d.Geom.NT_float32, p3d.Geom.C_other)
+        fmt.add_array(arr)
+        new_vdata.set_format(p3d.GeomVertexFormat.register_format(fmt))
+        writer = p3d.GeomVertexWriter(new_vdata, 'morph_index')
+        for r in range(new_vdata.get_num_rows()):
+            writer.set_data1(float(r))
+        return new_vdata
+
+    def _apply_gpu_morph_state(self, gnode, geom_i, orig_state, tex,
+                               texel):
+        """Compose the GPU_MORPHS variant + per-geom inputs onto ONE
+        geom's original state (the alpha-mask pattern)."""
+        prev = orig_state.get_attrib(p3d.ShaderAttrib)
+        sattr = prev if prev is not None else p3d.ShaderAttrib.make()
+        sattr = sattr.set_shader(self._get_gpu_morph_shader())
+        sattr = sattr.set_shader_input(p3d.ShaderInput('u_morph_tex', tex))
+        sattr = sattr.set_shader_input(
+            p3d.ShaderInput('u_morph_texel', texel))
+        gnode.set_geom_state(geom_i, orig_state.set_attrib(sattr))
+
+    def _reapply_gpu_morphs(self):
+        """Re-push the (freshly invalidated) morph variants onto every
+        registered geom after a pipeline shader recompile."""
+        self._gpu_morph_entries = [e for e in self._gpu_morph_entries
+                                   if not e['np'].is_empty()]
+        for entry in self._gpu_morph_entries:
+            for gnode, geom_i, orig_state, tex, texel in entry['geoms']:
+                self._apply_gpu_morph_state(gnode, geom_i, orig_state,
+                                            tex, texel)
+
+    def _step_gpu_morphs(self):
+        """Per-frame slider push: read each registered character's
+        slider values, refill its compact (row, weight) uniform array
+        only when the live set changed. O(sliders) per character —
+        the PTA is uploaded by reference, no set_shader_input churn."""
+        self._gpu_morph_entries = [e for e in self._gpu_morph_entries
+                                   if not e['np'].is_empty()]
+        for entry in self._gpu_morph_entries:
+            live = []
+            for row, _name, slider in entry['sliders']:
+                v = slider.get_value()
+                if abs(v) > self._MORPH_EPS:
+                    live.append((row, v))
+            if len(live) > self._MORPH_LIVE_SLOTS:
+                live.sort(key=lambda rv: -abs(rv[1]))
+                live = live[:self._MORPH_LIVE_SLOTS]
+                if not entry['warned']:
+                    entry['warned'] = True
+                    print(f'[Pax3DRender] set_gpu_morphs: '
+                          f'{entry["np"].get_name()} drives more than '
+                          f'{self._MORPH_LIVE_SLOTS} sliders at once; '
+                          f'keeping the largest |weight| ones')
+            key = tuple(live)
+            if key == entry['last']:
+                continue
+            entry['last'] = key
+            pta = entry['pta']
+            for i in range(self._MORPH_LIVE_SLOTS):
+                if i < len(live):
+                    pta.set_element(
+                        i, p3d.LVecBase2f(float(live[i][0]),
+                                          float(live[i][1])))
+                else:
+                    pta.set_element(i, p3d.LVecBase2f(0.0, 0.0))
+
     def set_sun_light_mode(self, mode):
         """Switch between 'uniforms' (legacy) and 'directional' (real
         DirectionalLight) at runtime. Recompiles the PBR shader."""
@@ -4023,6 +4324,10 @@ class Pipeline:
         # ER-008 local light budgets: re-score and rebind on change
         if self._light_budgets:
             self._step_light_budgets()
+
+        # GPU morphs (Session Z): per-character slider push, O(sliders)
+        if self._gpu_morph_entries:
+            self._step_gpu_morphs()
 
         # Log-depth coefficient tracks the camera lens far plane (R4.1) —
         # the game may change near/far at runtime (regime switches)

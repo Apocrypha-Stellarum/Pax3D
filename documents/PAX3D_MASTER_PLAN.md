@@ -88,10 +88,11 @@ Each was established mechanically; each has a permanent guard.
 | 12 | A luminance check is only as good as its sample geometry — and pose sources must be pinned. The promoted glTF-caster assertion FAILED on a healthy engine because (a) `get_anim_names()` ordering is nondeterministic (historical 0.086 readings were pose luck) and (b) the "pole" sample pixel is the receiver sphere's FRONT surface (y=−0.76), outside a thin caster's shadow column. Verify the sample point lies inside the caster's depth-map footprint before trusting a NO-SHADOW result | Session G; test_shadows comments + deterministic pose |
 | 13 | The 94-joint Rigify hardware-skinning concertina (openworld P1) does NOT reproduce on a clean engine: GPU palette math == `animate_vertices` exactly; rendered GPU/CPU A/B ≤0.25% (shading-level) across all 50 Walk frames (pack 1: 0.00%); the compensating-scale chains compose to net 1.000; the shader palette cap was [100] in every era. Awaiting field re-measurement; per-node `set_hardware_skinning()` exists as the safety valve | Session G; test_skinning (permanent gate coverage) |
 | 14 | The openworld direction-gated "vanishing shadows" (P0 addendum) are **grazing-angle self-shadow acne**: at low sun one shadow-map texel spans a large receiver depth, so a CONSTANT bias sized for normal incidence self-shadows the open ground into terracing bands (error ∝ 1/tan(alt) — the exact western-low-sun signature); the acne drops ground luminance so real cast shadows lose contrast and read as "gone." Byte-identical on stock 1.10.16 and Pax3D (GLSL, not C++). Fix = **slope-scaled bias** (`shadow_normal_bias_world`, opt-in, 0=off): adds bias ∝ tan(θ) only where the receiver grazes, so it clears acne without peter-panning the large-gap real shadows a bigger constant bias would erase. Proven on the real village GLB at az 240 (terracing gone, building/tree shadows kept) | Session I; test_shadow_grazing + probe_openworld_scale `--normal-bias` |
-| 15 | **Vertex morphs (egg Dxyz sliders) are silently dropped by the hardware-skinning render path** — the loader creates the CharacterSlider and the CPU path (`animate_vertices`) applies the morph exactly, but under GPU skinning the rendered vertices never move (identical stock + Pax3D = upstream behavior, not a fork artifact). The working morphs path today: `set_hardware_skinning(np, False)` per character. The bone-palette ceiling is now a knob (`max_skinning_bones`, default 100; [200] measured inert for small rigs — identity padding) | Session S; probe_morph.py + test_skinning `bone_palette_*` |
+| 15 | **Vertex morphs (egg Dxyz sliders) are silently dropped by the hardware-skinning render path** — the loader creates the CharacterSlider and the CPU path (`animate_vertices`) applies the morph exactly, but under GPU skinning the rendered vertices never move (identical stock + Pax3D = upstream behavior, not a fork artifact). **CLOSED OPT-IN Session Z (2026-07-20): `set_gpu_morphs(np)` renders sliders ON the hardware-skinning path** (delta texture + GPU_MORPHS variant, §4.12); the DEFAULT path still drops them (byte-identical shipped behavior, hw_drops_morphs stays the guard) and `set_hardware_skinning(np, False)` remains the no-flags fallback. The bone-palette ceiling is now a knob (`max_skinning_bones`, default 100; [200] measured inert for small rigs — identity padding) | Session S; probe_morph.py + test_skinning `bone_palette_*`; Session Z test_morph_gltf `gpu_*` |
 | 16 | **panda3d-gltf (pip 1.3.0) cannot load a real Blender morph export — three loader defects, all fixed by `pax3d_render.gltf_compat.install()`**: (a) sparse accessors (Blender's DEFAULT shape-key encoding; `bufferView` is legally optional) crash with `KeyError: 'bufferView'` (upstream Moguri#103, open); (b) an anim channel whose keys end before the clip's global end (legal, normal) crashes `get_next_time_index`; (c) `get_lerp_factor` clamps with `max(t,1)` instead of `min(t,1)`, so every LINEAR sample between keys snaps to the NEXT key's value — joints and morphs alike. All three are masked by dense per-frame bakes, which is why upstream ships them. With the shim, glTF morph delivery is CORRECT end-to-end: sliders + slider tables + morph columns arrive, CPU truth matches the Blender ground-truth manifest to 4 decimals, and a real weights channel drives sliders exactly (proven by byte-patching known values into the GLB — LINEAR lerp analytic to 0.001, short-channel hold exact). Fact #15 extends to glTF and to JOINT-LESS meshes: the scene-wide `F_hardware_skinning` flag drops morphs on static geometry too (image rms 0.000000); the per-node CPU opt-out renders them (~+0.1 ms/frame per 2240-vert head). Instrument trap: cached bams bypass the loader entirely — disable `BamCache` when measuring loader behavior | Session T; probe_morph_gltf.py (SK_SFM_Head1 + manifest, 26 facts, identical both engines) |
 | 17 | **glTF alphaMode MASK only works in the compat profile** — panda3d-gltf expresses MASK as a geom-level `AlphaTestAttrib`, and the GL backend implements that attrib solely via fixed-function `GL_ALPHA_TEST` (`do_issue_alpha_test` sits behind `has_fixed_function_pipeline()`); under `gl-version 3 2` it is silently ignored and ALL MASK content renders opaque (a factor-only mask = a solid shell — the character dev's field report; cutout foliage = solid cards). Identical on stock 1.10.16 — upstream behavior, not fork damage. Fix: `pipeline.apply_alpha_masks(model_np)` composes an ALPHA_MASK PBR variant onto exactly the stamped geoms (in-shader discard, same predicate ⇒ compat bit-identical, measured rms 0.0). Depth-pass caveat: compat gets cutout shadows from the fixed-function test, modern casts the unmasked silhouette — `exclude_from_shadows()` is the valve; a cutout-shadow depth path lands only on field evidence | Session W; test_alpha_mask (both engines × both baselines) |
 | 18 | **Every offscreen frame on the 1.11 fork raises one GL_INVALID_OPERATION — and it was never about characters.** The FPS-lane field attribution ("playing characters") measured wrong: an EMPTY offscreen scene errors identically (probe matrix: fork offscreen 1/frame both baselines; fork real window 0; stock 1.10.16 0 everywhere; the Window-1 wheel reproduces → predates all R6 surgery). Root cause: upstream `bd4dc8a379` (2024-10, a **DX9** wdxGraphicsBuffer copy fix, before our divergence point) commented out the single-buffered branch of `FrameBufferProperties::get_buffer_mask()`, so `prepare_display_region` issues `glDrawBuffer(GL_BACK)` on the single-buffered wgl pbuffer. Consequence: the once-per-second error sweep reaches `gl-max-errors` (default 20) after ~20 s of offscreen wall time and **panic-deactivates the GSG — frozen framebuffer, silently stale screenshots** (every paxtest process runs under this deadline; the runner never surfaced the stderr noise). Sibling defect: `gl-max-errors -1` (documented "no limit") deactivates on the FIRST error — bare `>=` at glGraphicsStateGuardian_src.cxx:4817 (`report_errors_loop` honors -1 correctly). One-line C++ fixes **LANDED (Session X part 2 mini-window, 2026-07-19)**: `PATCH_QUEUE_GL_OFFSCREEN.md` — probe now 0 errors/frame everywhere (was ~60/phase); the `gl-max-errors 1000000` workarounds can come out of game harnesses. Technique worth keeping: pin the global clock to dt>1 s so the 1/sec sweep runs every frame — per-frame GL-error attribution on a release build | Session X; probe_gl_errors.py + test_gl_clean (now the permanent zero-GL-errors guard, both engines) |
+| 19 | **The GPU morph path needs NO engine change and NO gl_VertexID — it runs on stock 1.10 too.** Morph deltas ride a per-vdata RGB32F data texture (width = vertex rows, height = 2×targets: position row 2t, normal row 2t+1) addressed by a plain float32 `morph_index` column — one mechanism on BOTH GLSL baselines. Two conventions MEASURED before building (TexturePeeker probe): Texture ram row 0 = texcoord v=0, and `set_ram_image_as(data,'RGB')` preserves float component order. Panda ships normal deltas alongside positions (`normal.morph.<slider>` columns — the GPU path is lighting-correct, not position-only). Instrument trap the bench exposed: `apply_freeze_scalar` alone does NOT dirty the bundle — without `force_update()` (or a playing clip) the CPU path re-animates nothing and a perf A/B silently measures an idle scene (the +0.01 ms tell) | Session Z; probe_ram_order (scratchpad), test_morph_gltf `gpu_*` (12/12 both engines × both baselines), probe_gpu_morph_bench.py |
 
 ---
 
@@ -494,6 +495,51 @@ Python/GLSL, no build window, everything opt-in/default-exact-no-op:
 
 Remaining on all three: game-side adoption. ER statuses updated in
 place (`sfb2/documents/ENGINE_REQUESTS/`), README index trued up.
+
+### 4.12 Session Z (2026-07-20) — GPU morphs: fact #15 closed opt-in
+
+The queued "GPU morph path" (the measured character-quality
+bottleneck) landed as a pure Python/GLSL prototype per canon — no
+build window, works unchanged on stock 1.10 (fact #19):
+
+1. **`set_gpu_morphs(model_np)` / `(np, False)`** — morph sliders now
+   render ON the hardware-skinning path. Mechanism: per-vdata RGB32F
+   delta texture (ER-003 data-texture contract; position + normal
+   deltas per target), a float32 `morph_index` vertex column for
+   both-baseline addressing, and a GPU_MORPHS variant of the PBR
+   shader composed per-geom at the alpha-mask seam. Slider values are
+   read from the Character each frame and pushed as a compact 16-slot
+   (row, weight) array — all 52 ARKit targets addressable, ≤16 live
+   (the character lane's contract), overflow keeps the largest
+   |weight| + warns once. Displacement applies pre-skinning; the
+   loader ships no tangent deltas (measured), tangents keep base.
+2. **Gate:** test_morph_gltf +5 checks — gpu_renders_morphs (the
+   fact-#15 flip, opt-in), gpu_matches_cpu + sparse compose vs the
+   CPU valve (rms 0.0000 measured, bar 0.02), byte-identical opt-out
+   restore, convert count. 12/12 on Pax3D AND stock × both baselines;
+   full gate totals UNCHANGED from Session Y (the row grew
+   internally) — @game 71/6/106 Pax3D · 69/6/108 stock; @modern
+   70/7/106 · 68/7/108.
+3. **Perf (probe_gpu_morph_bench.py, hero_wren.glb = the worst-case
+   14,684×52 production head, 8 faces driving 5 sliders each,
+   offscreen 512²):** GPU path 1.27 ms/frame total scene (static
+   floor 0.97 → **~0.3 ms morph-attributable, meets the 8-face
+   ≤0.5 ms acceptance with margin**); CPU valve same scene 63.5
+   ms/frame (~50× worse); 32-face stretch datapoint 2.42 ms. Python
+   push 0.03 ms/frame for 8×52 sliders. Enable cost (one-time, load):
+   1.17 s bake + 18.3 MB delta texture per face — pure-Python column
+   slicing; optimize only on evidence (canon).
+4. **Known limits (documented, field-evidence-gated):** shadow depth
+   pass casts the UNMORPHED silhouette (the alpha-mask depth
+   precedent); one PBR variant per geom (glass/mask/terrain do not
+   stack with morphs on the same geom); requires the HW-skinning path
+   (combining with the CPU valve would double-apply).
+
+Remaining: character-lane adoption (their hero_closeup PS_BENCH=300
+A/B re-measures the 185→133 datapoint on the GPU path); texture-
+palette skinning + 8-influence option still queued separately (§2 of
+the build-window queue) and unblocked by this in one direction —
+the GPU morph shader is where a palette texture would also land.
 
 ---
 

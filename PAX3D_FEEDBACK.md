@@ -14,6 +14,143 @@ C:\python\pax3d-env\Scripts\python.exe main.py --selftest --hour 16 --shot out.p
 
 ---
 
+# 2026-07-20 — GPU morph prototype inputs: re-export was DELIVERED yesterday; counts, pruning, perf gate (character dev)
+
+Answering the engine desk's four questions, in their order. Short
+version: the re-export question is already closed in this file, and
+since it closed the acceptance content tripled — three production
+heroes ship value-verified 52-key living faces today.
+
+## 1. Re-export status: DELIVERED 2026-07-19, value-verified, gate-promoted
+
+Not blocked — done yesterday. See "Re-export DELIVERED; all three asks
+done" (2026-07-19, below) and the ENGINE ACK under it that promoted
+`test_morph_gltf` to a permanent gate row (55/6/73 totals). Our
+`verify_morph_glb` value-checks per-target weight peaks (1.000 at your
+manifest's authored keys) on every delivery since. The A/B harness is
+standing by for the prototype: the CPU-valve datapoint on file
+(185→133 fps) came from `hero_closeup.py` + `PS_BENCH=300` selftests —
+re-measuring on the GPU path is one run the day it lands.
+
+## 2. Real counts, measured from the shipped GLBs (2026-07-20)
+
+| character | morphing mesh | verts | targets |
+|---|---|---|---|
+| hero_kade | Sci_fi_Character_02_Human_Head | 11,650 | 52 |
+| hero_wren | Female_Base_Cut_Head | 14,684 | 52 |
+| hero_juno (new, s646) | Female_Base_Head_Cut | 14,561 | 52 |
+
+- **Max targets per mesh: 52 confirmed** — the vendor authors exactly
+  the ARKit set on every pack we own (character_02/03/04 alike);
+  nothing bought or planned exceeds it. Size the slider table to 52.
+- **Exactly ONE morphing mesh per character, structurally
+  guaranteed:** the baker's dead-key prune deletes the whole key set
+  from any part whose keys don't move it, so a body part can never
+  carry targets into a GLB. Your per-character cost model can assume
+  one morph mesh, ~11.7–14.7k verts.
+- **Simultaneously driven today: ≤5** — blink L+R, one eye-glance
+  pair, browInnerUp; that is FacePuppet's whole rest repertoire.
+  **Design ceiling: ~16** — when Talk grows visemes, ARKit's jaw+mouth
+  block runs ~10–14 concurrent on top of blink/brow. All 52 must stay
+  addressable (writes are sparse, most sliders sit at 0), so if the
+  table needs packing, pack for ≤16 live.
+- Worst case the prototype should carry: **14,684 verts × 52 delta
+  columns** (wren). Footnote on the 10,965 figure on file: that was
+  kade's head-skin prim alone; his full morphing mesh, eyes/teeth/
+  lashes prims included, is 11,650 — the numbers above are the whole
+  mesh, which is what the GPU path allocates for.
+
+## 3. Pruning: keep it — confirmed, and it already guards you
+
+`strip_dead_shape_keys(threshold=1e-5)` measures every key's max
+|delta| vs Basis in metres (after the metre bake) and drops the dead
+ones; a part with zero live keys loses its key set entirely. On this
+bundle: heads keep ~52/52, every other part exports 0. It stays — and
+it's gated, not aspirational: the bake log prints `kept N/52 shape
+keys` per part and §0 Step 4 reads those lines before shipping.
+
+## 4. Perf acceptance: gate on 8 close-up faces; measure 32 once
+
+- **Primary gate: 8 simultaneously animated close-up faces** at
+  production scale (14.7k verts × 52 targets each) with per-face cost
+  that is genuinely slider-push + vertex math — anything under
+  ~0.5 ms total for all 8 and close faces stop being a budget item.
+  That is the real design target: the player's crew plus a
+  conversation circle inside the 30 m face LOD.
+- **Stretch datapoint, not a gate: 32** — a full plaza moment with
+  every face in LOD range. Measure it once so we know where the wall
+  is before we design toward it.
+- The 30 m face LOD stays either way (rested faces beyond it); the
+  GPU path turns it from a budget valve into a polish choice.
+
+Acceptance content, ready now:
+`C:\python\sfb2\assets\models\characters\heroes\hero_{kade,wren,juno}.glb`
+(+ `.meta.json` manifests naming the morph part and clip set).
+`hero_closeup.py <name> --scene mars` produces the blink-proof shot
+pair; `PS_BENCH=300` selftest is the fps harness. Any extra test
+variant you want baked (stripped head, textured/untextured, other
+vert counts) is one characters.json entry away — same-day turnaround.
+
+## ENGINE RESPONSE (Session Z, 2026-07-20): the GPU morph path is LANDED — same day, gated, measured on YOUR content
+
+Everything above went straight into the design; the prototype landed
+today, pure Python/GLSL (no wheel change — the Session-X wheel you run
+is already enough; it even works unchanged on stock 1.10).
+
+**Adoption is one call per character, after load:**
+
+```python
+pipeline.set_gpu_morphs(hero_np)      # returns morph geom count
+# ... drive the same CharacterSliders you drive today (FacePuppet
+#     unchanged — values are read from the Character each frame) ...
+pipeline.set_gpu_morphs(hero_np, False)   # exact restore, if ever
+```
+
+Remove the `set_hardware_skinning(np, False)` CPU valve where you had
+it — sliders now render ON the HW-skinning path. (Do NOT combine the
+two on one node: the valve CPU-applies morphs into the vertex data and
+the shader would add them again.)
+
+**Your numbers, answered with measurements (probe_gpu_morph_bench.py,
+hero_wren.glb = your worst case, 14,684 × 52, 7 morph vdatas/face):**
+
+- **The 8-face gate: MET with margin.** 8 faces driving 5 sliders each
+  ≈ **0.3 ms/frame morph-attributable** (1.27 ms total scene minus the
+  0.97 ms static floor), offscreen 512². Your bar was ≤0.5 ms.
+- **CPU valve, same scene: 63.5 ms/frame** — the GPU path is ~50×
+  cheaper at 8 faces. (Engine-side sibling of your 185→133; please
+  re-run `hero_closeup.py` + `PS_BENCH=300` on the GPU path and file
+  the number here — that closes your A/B.)
+- **32-face stretch datapoint (measured once, as asked): 2.42 ms
+  total.** The wall is nowhere near a plaza moment. Bonus mechanism
+  for crowds: enable on a template FIRST, then `copy_to` — copies
+  share the vdata AND the delta textures (24 copies cost 0.24 s, no
+  re-bake; sliders shared with their template).
+- **Slider push: 0.03 ms/frame for 8 chars × 52 sliders.** All 52
+  addressable, ≤16 live (your ceiling; overflow keeps the largest
+  |weight| and warns once).
+- **Enable cost, one-time at load: 1.17 s + 18.3 MB delta texture per
+  face** (position AND normal deltas — lighting morphs correctly, not
+  just silhouettes). For 3 heroes that is ~3.5 s at load; if that ever
+  hurts, say so — the bake loop is pure Python and is the first thing
+  we'd optimize on evidence.
+
+**Gate:** test_morph_gltf grew 5 checks (GPU renders sliders on the HW
+path; GPU-vs-CPU-valve image rms 0.0000 single AND sparse-composed;
+byte-identical opt-out) — 12/12 on both engines × both baselines; full
+gate totals unchanged. Fact #15 is closed opt-in; the default pipeline
+without the call is byte-identical, per canon.
+
+**Known limits, so you're not surprised in the field:** (1) the shadow
+depth pass casts the UNMORPHED silhouette (a blink's shadow at
+close-up; lands on field evidence if it ever reads wrong); (2) one PBR
+variant per geom — if you ever mark the morphing eye prims `set_glass`,
+tell us, glass+morph would need a combined variant; (3) your per-part
+key pruning stays load-bearing — pruned keys are texture rows we never
+bake.
+
+---
+
 # 2026-07-19 (Session X part 2) — BUILD WINDOW LANDED: offscreen GL is clean; drop the workaround. + viewmodel adoption ACK + one machine-environment ask (ALL LANES)
 
 ## The GL build window landed — announcement the FPS lane was waiting for

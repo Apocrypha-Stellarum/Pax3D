@@ -4,6 +4,10 @@
     #define MAX_LIGHTS 8
 #endif
 
+#ifdef USE_330
+    #define texture2D texture
+#endif
+
 #ifdef ENABLE_SHADOWS
 uniform struct p3d_LightSourceParameters {
     vec4 position;
@@ -46,6 +50,25 @@ attribute vec2 p3d_MultiTexCoord0;
 attribute vec4 transform_weight;
 attribute vec4 transform_index;
 #endif
+#ifdef GPU_MORPHS
+// Session Z: morph targets on the GPU (fact #15's missing half — the
+// hardware-skinning path used to drop sliders). Deltas live in a
+// per-vdata RGB32F data texture: width = vertex rows, height =
+// 2 * targets, position delta at row 2t, normal delta at row 2t+1.
+// morph_index is a plain float32 column (the vertex's own row id) —
+// one addressing mechanism on BOTH GLSL baselines instead of
+// gl_VertexID, which 120 does not have. Nearest filtering + texel
+// centers make every fetch exact (the ER-003 data-texture pattern).
+#ifndef MORPH_LIVE
+    #define MORPH_LIVE 16
+#endif
+uniform sampler2D u_morph_tex;
+uniform vec2 u_morph_texel;        // (1/W, 1/H)
+// x = target row t, y = slider weight. The pipeline fills live slots
+// first (compact) so the shader may stop at the first zero weight.
+uniform vec2 u_morphs[MORPH_LIVE];
+attribute float morph_index;
+#endif
 #ifdef INSTANCING
 // Per-instance transform under an InstancedNode (ER-002). The engine
 // feeds this as a divisor-1 vertex attrib from InstanceList
@@ -73,6 +96,27 @@ varying float v_log_depth_w;
 #endif
 
 void main() {
+    vec4 base_vertex = p3d_Vertex;
+    vec3 base_normal = p3d_Normal;
+#ifdef GPU_MORPHS
+    // Morphs displace the bind pose BEFORE skinning (glTF semantics,
+    // and what the CPU path does via animate_vertices). Tangents keep
+    // their base values — the loader ships no tangent deltas
+    // (measured: vertex.morph.* + normal.morph.* only). base_normal
+    // stays unnormalized here exactly like the CPU path's column sum;
+    // the normalize() calls below handle both paths identically.
+    float morph_u = (morph_index + 0.5) * u_morph_texel.x;
+    for (int i = 0; i < MORPH_LIVE; ++i) {
+        float w = u_morphs[i].y;
+        if (w == 0.0) break;   // slots are compact by contract
+        float v_pos = (u_morphs[i].x * 2.0 + 0.5) * u_morph_texel.y;
+        base_vertex.xyz += w * texture2D(u_morph_tex,
+                                         vec2(morph_u, v_pos)).xyz;
+        base_normal += w * texture2D(u_morph_tex,
+                                     vec2(morph_u,
+                                          v_pos + u_morph_texel.y)).xyz;
+    }
+#endif
 #ifdef ENABLE_SKINNING
     mat4 skin_matrix = (
         p3d_TransformTable[int(transform_index.x)] * transform_weight.x +
@@ -80,13 +124,13 @@ void main() {
         p3d_TransformTable[int(transform_index.z)] * transform_weight.z +
         p3d_TransformTable[int(transform_index.w)] * transform_weight.w
     );
-    vec4 model_position = skin_matrix * p3d_Vertex;
+    vec4 model_position = skin_matrix * base_vertex;
     mat3 skin_matrix3 = mat3(skin_matrix);
-    vec3 model_normal = skin_matrix3 * p3d_Normal;
+    vec3 model_normal = skin_matrix3 * base_normal;
     vec3 model_tangent = skin_matrix3 * p3d_Tangent.xyz;
 #else
-    vec4 model_position = p3d_Vertex;
-    vec3 model_normal = p3d_Normal;
+    vec4 model_position = base_vertex;
+    vec3 model_normal = base_normal;
     vec3 model_tangent = p3d_Tangent.xyz;
 #endif
 #ifdef INSTANCING

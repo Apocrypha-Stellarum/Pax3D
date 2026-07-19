@@ -12,12 +12,17 @@ What this row guards, permanently:
   2. The loader delivers sliders + slider tables on skinned AND
      joint-less meshes, and the CPU path reproduces the Blender
      ground-truth manifest exactly.
-  3. Fact #15/#16 render behavior: the hardware-skinning path drops
-     morphs (silently), the per-node CPU opt-out renders them. If
-     hw_drops_morphs ever FAILS "the good way" (image moves), the GPU
-     morph path has landed — update this row and the facts register
-     together.
-  4. A real exporter-authored weights animation drives the sliders
+  3. Fact #15/#16 render behavior: the DEFAULT hardware-skinning path
+     drops morphs (silently) — that stays true and hw_drops_morphs
+     stays its guard, because the GPU morph path (Session Z,
+     set_gpu_morphs) landed OPT-IN: enabling it is the fix, not
+     enabling it is byte-identical to the shipped pipeline.
+  4. The GPU morph path itself: set_gpu_morphs makes sliders render
+     on the HW-skinning path (delta texture + morph_index column +
+     GPU_MORPHS variant), matches the CPU-valve ground truth within
+     the fact-#13 image bar, composes sparse multi-slider sets, and
+     restores byte-identically on opt-out.
+  5. A real exporter-authored weights animation drives the sliders
      through Actor (structural clip pick — Blender 5 ACTIVE_ACTIONS
      merges under the exporter-default name 'Animation').
 
@@ -139,16 +144,72 @@ def main():
 
         rms_hw = rms_ab(sliders['jaw_open'])
         h.report.check('hw_drops_morphs', rms_hw < 1e-6,
-                       f'jaw_open 0->1 rms {rms_hw:.6f} on the HW path '
-                       f'(fact #16 — if this fails because the image '
-                       f'MOVES, the GPU morph path landed: update this '
-                       f'row + the facts register together)')
+                       f'jaw_open 0->1 rms {rms_hw:.6f} on the DEFAULT '
+                       f'HW path (fact #16; the opt-in fix is '
+                       f'set_gpu_morphs — gpu_renders_morphs below)')
         pipeline.set_hardware_skinning(skinned, False)
         rms_cpu = rms_ab(sliders['jaw_open'])
         h.report.check('cpu_optout_renders_morphs', rms_cpu > 0.002,
                        f'same A/B on set_hardware_skinning(np, False): '
                        f'rms {rms_cpu:.5f}')
         pipeline.clear_hardware_skinning(skinned)
+
+        # --- GPU morph path (Session Z: set_gpu_morphs) --------------
+        def capture_at(values):
+            """Capture with the named sliders held at the given values
+            (all back to 0 afterwards)."""
+            for name, v in values.items():
+                set_slider(char_np, sliders[name], v)
+            h.step(4)
+            img = h.capture()
+            for name in values:
+                set_slider(char_np, sliders[name], 0.0)
+            h.step(1)
+            return img
+
+        img_before = capture_at({})
+        n_geoms = pipeline.set_gpu_morphs(skinned)
+        h.report.check('gpu_morphs_convert', n_geoms == 1,
+                       f'set_gpu_morphs converted {n_geoms} morph '
+                       f'geom(s) (expected 1)')
+
+        rms_gpu = rms_ab(sliders['jaw_open'])
+        h.report.check('gpu_renders_morphs', rms_gpu > 0.002,
+                       f'jaw_open 0->1 rms {rms_gpu:.5f} on the HW '
+                       f'path WITH set_gpu_morphs — sliders render '
+                       f'without the CPU valve (fact #15 closed, '
+                       f'opt-in)')
+
+        img_gpu_jaw = capture_at({'jaw_open': 1.0})
+        # Sparse compose: first and LAST texture rows together proves
+        # row addressing + the compact live-slot fill, not just "moves".
+        img_gpu_two = capture_at({'blink': 0.6, 'brow_raise': 1.0})
+
+        pipeline.set_gpu_morphs(skinned, False)
+        img_after = capture_at({})
+        rms_restore = common.image_rms_diff(img_before, img_after,
+                                            step=1)
+        h.report.check('gpu_optout_restores', rms_restore < 1e-6,
+                       f'set_gpu_morphs(np, False): rms vs pre-enable '
+                       f'{rms_restore:.6f} (geom states restored '
+                       f'exactly)')
+
+        pipeline.set_hardware_skinning(skinned, False)
+        img_cpu_jaw = capture_at({'jaw_open': 1.0})
+        img_cpu_two = capture_at({'blink': 0.6, 'brow_raise': 1.0})
+        pipeline.clear_hardware_skinning(skinned)
+
+        rms_jaw = common.image_rms_diff(img_gpu_jaw, img_cpu_jaw,
+                                        step=1)
+        h.report.check('gpu_matches_cpu', rms_jaw < 0.02,
+                       f'jaw_open=1 image, GPU morphs vs CPU valve: '
+                       f'rms {rms_jaw:.4f} (fact-#13 bar 0.02; both '
+                       f'paths apply position AND normal deltas)')
+        rms_two = common.image_rms_diff(img_gpu_two, img_cpu_two,
+                                        step=1)
+        h.report.check('gpu_sparse_compose_matches_cpu', rms_two < 0.02,
+                       f'blink=0.6 + brow_raise=1 image, GPU vs CPU: '
+                       f'rms {rms_two:.4f}')
     skinned.detach_node()
 
     # --- static (joint-less) variant: delivery only (render behavior
