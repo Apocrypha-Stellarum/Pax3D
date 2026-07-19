@@ -396,13 +396,25 @@ evidence. Both implemented engine-side same-session (Session V,
    machine's ffmpeg CLI works, tested end-to-end). **Engine fact the
    lane rests on: the Pax3D wheel builds `--no-ffmpeg` — MP4 decode
    does not exist engine-side.** The flipbook is the sanctioned video
-   path; re-adding ffmpeg = a user build-window decision (queued
-   question in ER-005). Both uniforms are root-default exact no-ops;
-   scroll/flipbook are pipeline-task-driven (O(active)/frame, zero
-   idle). Gate: test_screen (15 analytic checks, every opt-out
-   rms 0.0). Remaining: game-side adoption (screen-node marking at
-   conversion, atlas intake of the 6 mp4s, hologram treatment stays
-   deferred per the ER).
+   path. Both uniforms are root-default exact no-ops; scroll/flipbook
+   are pipeline-task-driven (O(active)/frame, zero idle). Gate:
+   test_screen (15 analytic checks, every opt-out rms 0.0).
+   **Questions RESOLVED (ship-lane Session 634 + user sign-off,
+   2026-07-19): video carrier = TRIMMED flipbooks (long loops cut to
+   10–20 s at intake; three of six run 1–2.8 min but are ambient FUI
+   dressing) — the ffmpeg build-window question is CLOSED, the build
+   stays `--no-ffmpeg`; converter splits per-screen nodes (49 screen
+   bindings / 6 shared materials measured — set_emission_scale is
+   per-node so materials stay shared); from_delta's local-frame
+   compose VALIDATED against VattalusInteractable.cs source (line 248
+   right-first multiply = our `delta * rest` exactly). Bonus census
+   correction: pack easing is smoothstep (two-key zero-tangent
+   AnimationCurve), not linear — game smoothsteps `u` (player is
+   stateless by contract; a zero-tangent CUBICSPLINE channel is the
+   in-store equivalent).** Remaining: game-side adoption (converter
+   re-export + ClipPlayer wiring — their handover task 1 is the Phobos
+   console clip on the landed store; atlas intake of the 6 loops;
+   hologram stays deferred).
 
 ---
 

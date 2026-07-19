@@ -905,3 +905,31 @@ engine responses + adoption snippets + three questions for the ship
 dev (video carrier decision for the user, screen-node split at
 conversion, delta-rotation validation). Remaining: game-side adoption
 on both ERs; hologram treatment stays deferred.
+
+**Session V part 2 (2026-07-19): all three ship-dev questions RESOLVED
+same day (ship-lane Session 634, measured; user sign-off relayed).**
+(1) Video carrier = TRIMMED FLIPBOOKS — ffprobe on all six loops showed
+three at 1–2.8 min (eDEX-UI 111.9 s, Quantum 59.8 s, EmotionGraphics
+166.8 s), but they are ambient FUI dressing: intake trims each to a
+10–20 s clean loop, atlases at ~10 fps / ~256×144 (worst case
+≈4096×2048; ~100–140 MB RGBA8 for the whole shared six-material set).
+**The ffmpeg build-window question is CLOSED — the build stays
+`--no-ffmpeg`;** long-form video, if ever content, goes game-side
+set_ram_image decode first. (2) Converter granularity confirmed: the
+converter never merges geometry, the FBXs already model screens as
+dedicated meshes — 49 screen renderer bindings / 6 shared materials
+traced (Bridge 29; census's "≥4 rooms" corrected in the ER perf
+envelope); interactive screens get named nodes + material clones (the
+stacked-glass anti-flatten trick); materials stay shared because
+set_emission_scale is per-node. (3) from_delta local-frame compose
+VALIDATED AT THE SOURCE: VattalusInteractable.cs:248
+`initialRotation * Quaternion.Euler(delta)` (Unity right-first) ==
+our `delta * rest` (Panda left-first) exactly; position add likewise.
+Axis conversion of delta VALUES stays game-side (ZXY-order quats
+passed as quat_delta; Bathroom door + one cupboard as in-scene
+validators). Bonus census correction: pack easing is SMOOTHSTEP
+(two-key zero-tangent AnimationCurve), not linear — the game
+smoothsteps `u`; a zero-tangent CUBICSPLINE channel is the equivalent
+already evaluable in-store. Zero new engine work from the response —
+the lane is now fully game-side (their handover task 1: the Phobos
+console clip on the landed clip store). ER files trued up both repos.
