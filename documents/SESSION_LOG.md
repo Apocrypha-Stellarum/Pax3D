@@ -1012,3 +1012,29 @@ reprioritization (still behind field-driven demand). Intermittent
 (before pipeline init, either baseline, checks unaffected) — driver
 init noise on this machine, noted so nobody chases it as a
 regression.
+
+**Session W part 2 (2026-07-19): the eyeball rigs — testbed keys for
+the Session-V AND outstanding Session-S features** (the Phase-2
+headline from the Session-V handover; sfb2 commit `daaf291`,
+test3d_pax.py only, filtered staging). All lazy-built (scene untouched
+until the key): **P** cycles the showcase display panel (off →
+whole-atlas test card → play_flipbook 8 fps on a procedural 4×4 sweep
+atlas (no asset dependency — bar position + frame-counter strip make
+fps/looping eyeballable) → set_emission_scale 0 powered-off →
+clear_screen restore + stash); **C** toggles nav-light circuits on the
+destroyer per the ER-005 addendum airliner grammar (red beacon 45/min
+with a REAL PointLight gated by the same envelope, white 1 Hz
+double-flash wingtip strobes, steady red/green position markers —
+markers are set_screen-emissive billboards so the whole chain is
+public API); **Y** toggles a clip-driven door slab
+(RigidClip.from_delta + RigidClipPlayer + game-side smoothstep drive —
+the exact Minerva prefab-lerp shape); **F/Q** close the Session-S key
+gap (set_enable_lens_flare / set_enable_ssao runtime toggles).
+Verified headless: full key-path drive (states, stash/restore, door
+travel measured moving) + showcase screenshot
+(`screencaps/pax_testbed_sessionw_showcase.png` — flipbook mid-sweep,
+door mid-travel, markers lit); plain --selftest byte-unchanged boot.
+Driver trap worth remembering: Panda resolves relative model paths
+against MAIN_DIR (the started script's directory), not cwd — a
+scratchpad driver script "loses" the game's GLBs while the direct run
+loads them; run drivers via stdin from the game dir.
