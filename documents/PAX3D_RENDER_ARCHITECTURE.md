@@ -1112,9 +1112,11 @@ material inputs: 4 layers from 2D texture arrays weighted by an RGBA
 splat map (renormalized in-shader), per-layer uv_scale, splat-UV window,
 macro brightness variation, detail-normal distance fade, analytic world
 TBN (u→+world_x, v→+world_y — chunks carry no tangents). The layer-weight
-function is the ratified v2 seam (hex-tiling lands there as a define).
-sampler2DArray works on the 120 path via GL_EXT_texture_array (measured).
-Gate: test_terrain_splat — 12 exact analytics + directional variant.
+function is the ratified v2 seam (hex-tiling LANDED there Session Y —
+TERRAIN_HEX_TILING, see the Session Y section; height-blend sharpening
+still slots in the same way). sampler2DArray works on the 120 path via
+GL_EXT_texture_array (measured). Gate: test_terrain_splat — 12 exact
+analytics + 12 hex checks + directional variant.
 
 **ER-002 — `set_instanced(np)`**: hardware instancing over upstream
 `InstancedNode` — INSTANCING compile of pax_pbr + F_hardware_instancing
@@ -1297,6 +1299,68 @@ Gate: test_alpha_mask (in-test GLB through the real loader: factor-only
 shell + textured cutout; pre-API defect asserted per-baseline so an
 engine change forces a true-up; compat bit-identity; byte-identical
 opt-out).
+
+### Session Y — ER-007 hex-tiling, ER-008 light policy, env controls (LANDED)
+
+**ER-007 — hex-tiling (`set_terrain_splat(..., hex_tiling=True,
+hex_cell_size=4.0, hex_rotation=1.0, hex_contrast=6.0)`):** the
+TERRAIN_HEX_TILING define lands at the ratified v2 seam. Mikkelsen-
+style stochastic tiling on the dual triangle lattice: per fragment the
+3 nearest hex cells' samples blend, each cell hashed (fract-mix, no
+sin — well-distributed into tens of thousands of repeats) to a random
+phase offset + rotation about its center. KEY DESIGN FACT: per-cell
+transforms are constant, so every tap's UV is continuous wherever its
+weight is nonzero (the tap whose cell changes at a blend boundary has
+weight ~0 there) — plain sampling mips correctly on BOTH GLSL
+baselines, no textureGrad (which the 120 array path lacks). Normals
+ride the same cells/weights and each sampled tangent-space xy is
+back-rotated with its motif; ORM likewise; 3x taps on the hex path.
+`hex_rotation` is per-layer (scalar or 4-seq — 0 keeps anisotropic
+sets axis-aligned); `hex_contrast` is the cheap variance-preserving
+weight-sharpen (histogram-preserving needs per-texture LUTs; on the
+books if the field shows washout). Gate: test_terrain_splat phases
+8-12 (12 checks): uniform-layer invariance, shift-rms 0.0014→0.2296
+periodicity break, mean preserved, |dy|/|dx| 0.19 rot0 vs 1.14 rot1,
+normal back-rotation live, byte-identical opt-out.
+
+**ER-008 — the light drop policy, answered + armed:** overflow beyond
+MAX_LIGHTS uploads the LightAttrib's priority-sorted head and silently
+drops the rest — `Light.set_priority()` descending (fully dynamic: a
+global sort-seq bump re-sorts every attrib lazily), ties by class rank
+(spot > directional > point), equal ties effectively ARBITRARY
+(measured differing between identical runs). Three consequences
+engineered this session:
+- **Sun eviction guard (default-on):** in directional mode the sun
+  competes in the same array and spots outrank directionals — floods
+  on an overflowing hull would have evicted the sun + its shadows.
+  `_create_sun_light` pins priority 1<<20.
+- **`set_light_budget(root, lights, budget=None, anchor=None,
+  radius=0.0, hysteresis=1.25)` / `clear_light_budget`:** per-root
+  nearest-N warden (the ER's structural ask) — per frame each
+  candidate scores luma/(kc+kl·d+kq·d²) via its OWN attenuation at
+  d = |light−anchor|−radius; top-N bound, rest unbound, rebinds only
+  on membership change; incumbents get the hysteresis multiplier;
+  blinking lights score by STEADY color (the set_blink registry).
+  Budget defaults to max_lights−1 in directional sun mode. Refuses
+  directional/ambient candidates. Python-canon orchestration
+  (microseconds; no per-frame state churn).
+- **Zero-light quirk on record:** a draw with NO active lights gets a
+  default WHITE light in slot 0 (GSG default-fill, degenerate params)
+  — invisible in practice, but it is the no-light ground truth.
+Gate: test_light_priority (+@directional): overflow binds exactly
+array-size, priority selects/re-sorts live, warden binds/rebinds/
+restores, sun survives spot overflow; tie order reported as INFO only.
+
+**Env controls (Round-5 asks):** `set_env_scale(np, s)` /
+`clear_env_scale` (per-node, ibl_spec ONLY — SH diffuse + flat ambient
+untouched, unlike set_ambient_scale), `set_env_intensity(s)` (global,
+multiplies with per-node scale), `set_env_map_rotation(deg)` (yaws the
+specular lookup about world +Z in the skybox set_h sense: the shader
+samples at Rz(−θ)·r; pair with the game-side SH yaw). All three are
+root-defaulted shader inputs with exact no-op defaults (u_env_scale /
+u_env_intensity 1.0, u_env_yaw (1,0)). Gate: test_env_map 6b/6c — +90°
+yaw maps −X→−Y mirror exactly, 0.25 node × 0.5 global = 0.125 analytic,
+defaults restore byte-identically.
 
 ---
 

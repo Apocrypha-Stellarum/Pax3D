@@ -36,7 +36,7 @@ Identical paxtest results on both engines = the defect is Python/GLSL, not C++.
 
 | Phase | What | Status (evidence) |
 |---|---|---|
-| R0 harness | `tools/paxtest/` — 31 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; grown every session since — Session X totals: @game 69 PASS / 6 documented FAIL / 102 SKIP Pax3D · 67/6/104 stock; @modern 68/7/102 · 66/7/104; the FAIL set is the same six documented rows everywhere, +lighting/none @modern) |
+| R0 harness | `tools/paxtest/` — 32 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; grown every session since — Session Y totals: @game 71 PASS / 6 documented FAIL / 106 SKIP Pax3D · 69/6/108 stock; @modern 70/7/106 · 68/7/108; the FAIL set is the same six documented rows everywhere, +lighting/none @modern) |
 | R1 unified renderer | `pax3d_render/` (pax_pbr ⊕ pax3d_simplepbr merge), color contract, `register_scene_camera()` | **Core done** (Sessions B, D — game flag flipped, boots clean). sRGB linearization experiment LANDED gated (Session R — `set_srgb_inputs`, test_srgb, ACES verdict on file). Open: in-game parity eyeball (user), sRGB default flip (game retune + sign-off), GLSL-120 path removal (needs game `gl-version 3 2`) |
 | R2 directional sun + shadows | Pipeline-owned DirectionalLight, HPR-driven; shadows with world-space extent center; **hardened Session E**: world-unit bias, 3×3 PCF, no-cast API, skinned casters proven; **hardened Session G**: glTF caster darkening is a hard assertion, glTF caster+receiver test (angled sun), per-node `set_hardware_skinning()` opt-out; **Session I**: slope-scaled bias (`shadow_normal_bias_world`, opt-in) kills grazing-angle acne (fact 14) | **Core done + hardened** (test_shadows 13+13, test_shadow_quality 9, test_shadows_gltf 6, test_shadow_grazing 6, test_skinning 12). Open: in-game validation — set `shadow_bias_world` (~0.5 IEU) first; openworld dev A/Bs `shadow_normal_bias_world` at az 240 low sun |
 | R3 bloom + HDR | F3 root-caused (8-bit intermediate FBOs) and fixed; float fbprops everywhere | **Core done** (Session D; test_bloom green both sizes). Open: content retune, light units, auto-exposure stretch |
@@ -334,7 +334,8 @@ palettes become drop-in). Sequencing agreed with the terrain dev:
    transform, macro variation, detail-normal distance fade, analytic
    world TBN (chunks need no tangent column; u→+world_x, v→+world_y
    convention). The layer-weight function is the isolated v2 define
-   seam (hex-tiling, height-blend sharpening). Gate: test_terrain_splat
+   seam (hex-tiling LANDED there Session Y — §4.11; height-blend
+   sharpening still pending a height source). Gate: test_terrain_splat
    — 12 EXACT analytic checks (quadrants, bilinear blend, renorm,
    macro, uv_scale, normal tilt+fade, byte-identical opt-out) + a
    directional-sun variant row; green both engines × both baselines.
@@ -440,6 +441,59 @@ evidence. Both implemented engine-side same-session (Session V,
    emissive markers + bloom only (the packs' own convention); real
    lights for hero/parked ships. Interior look + shower-water recipes
    in the ER addendum (existing APIs — no engine work).
+
+### 4.11 Session Y (2026-07-20) — ER-007 hex-tiling, ER-008 light policy, Round-5 env asks
+
+The full outstanding game→engine queue cleared in one session — all
+Python/GLSL, no build window, everything opt-in/default-exact-no-op:
+
+1. **ER-007 — hex-tiling. IMPLEMENTED ENGINE-SIDE + GATED.**
+   `set_terrain_splat(..., hex_tiling=True, hex_cell_size=4.0,
+   hex_rotation=1.0 (per-layer capable), hex_contrast=6.0)` — the
+   TERRAIN_HEX_TILING define at the ratified v2 seam. Mikkelsen-style
+   3-tap stochastic tiling; per-cell constant transforms keep every
+   tap's UV continuous wherever its weight is nonzero, so plain
+   sampling mips correctly on BOTH GLSL baselines (no textureGrad —
+   the 120 array path has none). Normals ride the same cells with
+   back-rotated tangent xy; contrast = the cheap variance-preserving
+   weight sharpen (histo-preserving on the books). Gate:
+   test_terrain_splat +12 checks (uniform-layer invariance exact;
+   shift-rms 0.0014→0.2296 periodicity break; mean preserved;
+   anisotropy contract |dy|/|dx| 0.19 rot0 / 1.14 rot1; normal
+   back-rotation live; byte-identical opt-out) — identical on all four
+   engine × baseline configs. Height-blend rider NOT shipped: needs a
+   height source; proposed carrier = albedo array alpha (terrain-unused)
+   — question posed to the terrain dev in the ER.
+2. **ER-008 — light selection policy. ANSWERED + ARMED + GATED.**
+   The policy (from the C++, then measured): overflow uploads the
+   priority-sorted head (`Light.set_priority` desc — fully dynamic),
+   ties by class rank (spot > directional > point), equal ties
+   ARBITRARY (measured differing between identical runs), excess
+   silently dropped. Delivered: (a) **sun eviction guard, default-on**
+   — the directional-mode sun competes in the same array and spots
+   outrank directionals, so overflowing floods would have evicted the
+   sun + shadows; `_create_sun_light` now pins priority 1<<20;
+   (b) **`set_light_budget(root, lights, budget, anchor, radius,
+   hysteresis)` / `clear_light_budget`** — the per-root nearest-N
+   warden (the structural ask): scores luma over the light's own
+   attenuation, binds top-N, rebinds only on membership change,
+   blink-steady scoring, budgets LOCAL per hull; (c) Q3's priority
+   field = `set_priority`, already existing, now documented + gated.
+   Bonus fact on record: zero-light draws get a default WHITE slot-0
+   light (GSG default-fill). Gate: NEW test_light_priority
+   (+@directional variant) — 7+2 checks green on both engines × both
+   baselines.
+3. **Round-5 env asks (PAX3D_FEEDBACK_3.md §3). ALL THREE
+   IMPLEMENTED + GATED.** `set_env_scale(np, s)`/`clear_env_scale`
+   (per-node, ibl_spec only — ambient untouched), `set_env_intensity(s)`
+   (global, composes multiplicatively), `set_env_map_rotation(deg)`
+   (specular lookup yaw about +Z, skybox set_h sense, Rz(−θ)·r in-
+   shader). Root-defaulted exact no-ops. Gate: test_env_map +5 checks
+   (yaw −X→−Y mirror proof exact; 0.25×0.5=0.125 analytic; byte-
+   identical restores). Response appended to PAX3D_FEEDBACK_3.md.
+
+Remaining on all three: game-side adoption. ER statuses updated in
+place (`sfb2/documents/ENGINE_REQUESTS/`), README index trued up.
 
 ---
 
