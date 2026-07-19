@@ -27,6 +27,23 @@ Checks, in order:
      carries NO tangent column, like real chunk meshes.
   7. Opt-out: clear_terrain_splat() restores the untouched-card capture
      byte-identically (rms == 0).
+  8. Hex-tiling uniform invariant (ER-007): solid-color layers render
+     the SAME quadrant analytics with hex_tiling=True — any blend of
+     identical samples with weights summing to 1 is that color (pins
+     hex weight normalization exactly).
+  9. Hex breaks periodicity: a patterned layer tiled plain is exactly
+     self-similar under a one-period pixel shift; hex-tiled it is not.
+     Mean luminance is preserved (stochastic resampling of the same
+     tile).
+ 10. Hex rotation semantics: vertical stripes with per-layer
+     rotation=0 keep gradients x-dominant (anisotropy preserved for
+     directional sets); rotation=1 mixes gradient directions.
+ 11. Hex normals: a uniform tilted normal map with rotation=0 renders
+     identically to hex-off (offset-only taps of a uniform map are the
+     map); rotation=1 changes the render (per-cell back-rotation of
+     the sampled tangent-space normal is live).
+ 12. Hex opt-out: clear_terrain_splat() after hex restores the
+     untouched capture byte-identically.
 
 The directional-sun variant run (run.py) re-runs the quadrant checks
 with sun_light_mode='directional' — proving the variant compiles and
@@ -281,6 +298,170 @@ def main():
     rms = common.image_rms_diff(img_bare, img_restored, step=1)
     h.report.check('opt_out_restores', rms == 0.0,
                    f'clear_terrain_splat(): rms vs untouched baseline = '
+                   f'{rms:.2e} (byte-identical opt-out)')
+
+    # ==== ER-007: hex-tiling phases =====================================
+
+    def shift_rms(img, dx, x0=64, x1=416, y0=64, y1=448, step=4):
+        """rms of lum(x, y) vs lum(x+dx, y) over the central region —
+        ~0 for an image that is exactly dx-periodic in x."""
+        total, count = 0.0, 0
+        for yy in range(y0, y1, step):
+            for xx in range(x0, x1, step):
+                d = common.lum_at(img, xx, yy) - common.lum_at(
+                    img, xx + dx, yy)
+                total += d * d
+                count += 1
+        return (total / count) ** 0.5
+
+    def grad_aniso(img, x0=64, x1=448, y0=64, y1=448, step=2):
+        """(sum |dL/dy|) / (sum |dL/dx|) over the central region."""
+        sx, sy = 0.0, 0.0
+        for yy in range(y0, y1, step):
+            for xx in range(x0, x1, step):
+                l0 = common.lum_at(img, xx, yy)
+                sx += abs(common.lum_at(img, xx + 1, yy) - l0)
+                sy += abs(common.lum_at(img, xx, yy + 1) - l0)
+        return sy / max(sx, 1e-9)
+
+    def mean_lum(img, x0=64, x1=448, y0=64, y1=448, step=4):
+        total, count = 0.0, 0
+        for yy in range(y0, y1, step):
+            for xx in range(x0, x1, step):
+                total += common.lum_at(img, xx, yy)
+                count += 1
+        return total / count
+
+    # --- Phase 8: hex uniform invariant ---------------------------------
+    # Solid-color layers: every hex tap reads the same texel, so the
+    # blend must reproduce phase 1's analytics exactly — this pins the
+    # sharpened weights renormalizing to 1 through the whole hex path.
+    pipeline.set_terrain_splat(card, albedo, splat_quad,
+                               hex_tiling=True, hex_cell_size=2.0)
+    h.step(5)
+    img = h.capture()
+    for tag, ((fx, fy), rgb) in QUADS.items():
+        x, y = px(fx, fy)
+        got = common.avg_lum(img, x, y)
+        want = expected_lum(rgb)
+        h.report.check(f'hex_{tag}', abs(got - want) < 0.02,
+                       f'lum={got:.3f} expected {want:.3f} '
+                       f'(uniform layers: hex == plain)')
+
+    # --- Phase 9: hex breaks periodicity, preserves the mean ------------
+    # Asymmetric 4x4 gray tile on layer 0, uv_scale 16 -> the plain
+    # render repeats every 32 px exactly (nearest filter, ortho 1:1).
+    pat_img = p3d.PNMImage(4, 4, 3)
+    pat_vals = (0.9, 0.6, 0.15, 0.75, 0.3, 0.85, 0.5, 0.05,
+                0.7, 0.2, 0.95, 0.4, 0.1, 0.55, 0.25, 0.8)
+    for i, v in enumerate(pat_vals):
+        pat_img.set_xel(i % 4, i // 4, v, v, v)
+    pat_array = p3d.Texture('albedo_pattern')
+    pat_array.setup_2d_texture_array(4, 4, 4, p3d.Texture.T_unsigned_byte,
+                                     p3d.Texture.F_rgb8)
+    pat_array.load(pat_img, 0, 0)
+    for z in range(1, 4):
+        pat_array.load(solid_image(4, (0, 0, 0)), z, 0)
+    pat_array.set_minfilter(p3d.SamplerState.FT_nearest)
+    pat_array.set_magfilter(p3d.SamplerState.FT_nearest)
+
+    pipeline.set_terrain_splat(card, pat_array, splat_l0,
+                               uv_scales=(16, 1, 1, 1))
+    h.step(5)
+    img_plain = h.capture()
+    pipeline.set_terrain_splat(card, pat_array, splat_l0,
+                               uv_scales=(16, 1, 1, 1),
+                               hex_tiling=True, hex_cell_size=2.0)
+    h.step(5)
+    img_hex = h.capture()
+    h.save_capture(img_hex, 'hex_pattern')
+
+    srms_plain = shift_rms(img_plain, 32)
+    srms_hex = shift_rms(img_hex, 32)
+    h.report.check('hex_plain_is_periodic', srms_plain < 0.005,
+                   f'plain tiling one-period shift rms={srms_plain:.4f} '
+                   f'(exactly self-similar)')
+    h.report.check('hex_breaks_periodicity',
+                   srms_hex > max(0.05, 10.0 * srms_plain),
+                   f'hex one-period shift rms={srms_hex:.4f} vs plain '
+                   f'{srms_plain:.4f} (motif repetition broken)')
+    m_plain = mean_lum(img_plain)
+    m_hex = mean_lum(img_hex)
+    h.report.check('hex_preserves_mean', abs(m_hex - m_plain) < 0.03,
+                   f'mean lum hex={m_hex:.3f} plain={m_plain:.3f} '
+                   f'(stochastic resample of the same tile)')
+
+    # --- Phase 10: rotation semantics (per-layer contract) --------------
+    # Vertical stripes: 2 bright / 2 dark columns -> 16-px bands.
+    stripe_img = p3d.PNMImage(4, 4, 3)
+    for xx in range(4):
+        v = 0.8 if xx < 2 else 0.0
+        for yy in range(4):
+            stripe_img.set_xel(xx, yy, v, v, v)
+    stripe_array = p3d.Texture('albedo_stripes')
+    stripe_array.setup_2d_texture_array(4, 4, 4,
+                                        p3d.Texture.T_unsigned_byte,
+                                        p3d.Texture.F_rgb8)
+    stripe_array.load(stripe_img, 0, 0)
+    for z in range(1, 4):
+        stripe_array.load(solid_image(4, (0, 0, 0)), z, 0)
+    stripe_array.set_minfilter(p3d.SamplerState.FT_nearest)
+    stripe_array.set_magfilter(p3d.SamplerState.FT_nearest)
+
+    ratios = {}
+    for rot, tag in ((0.0, 'rot0'), (1.0, 'rot1')):
+        pipeline.set_terrain_splat(card, stripe_array, splat_l0,
+                                   uv_scales=(16, 1, 1, 1),
+                                   hex_tiling=True, hex_cell_size=2.0,
+                                   hex_rotation=rot)
+        h.step(5)
+        ratios[tag] = grad_aniso(h.capture())
+    h.report.check('hex_rotation_off_keeps_anisotropy',
+                   ratios['rot0'] < 0.4,
+                   f'rotation=0: |dy|/|dx|={ratios["rot0"]:.3f} '
+                   f'(stripes stay axis-aligned; offsets only)')
+    h.report.check('hex_rotation_mixes_directions',
+                   ratios['rot1'] > max(0.6, 2.0 * ratios['rot0']),
+                   f'rotation=1: |dy|/|dx|={ratios["rot1"]:.3f} vs rot0 '
+                   f'{ratios["rot0"]:.3f} (random rotation live)')
+
+    # --- Phase 11: hex normals (back-rotation contract) -----------------
+    card.set_material(mat_diel, 1)
+    h.adapter.update_sun((1, 0, 0), (2.0, 2.0, 2.0))
+    imgs = {}
+    for tag, kwargs in (
+            ('off', {}),
+            ('hex_r0', {'hex_tiling': True, 'hex_cell_size': 2.0,
+                        'hex_rotation': 0.0}),
+            ('hex_r1', {'hex_tiling': True, 'hex_cell_size': 2.0,
+                        'hex_rotation': 1.0})):
+        pipeline.set_terrain_splat(card, white_array, splat_l0,
+                                   normal_array=norm_array,
+                                   normal_fade=(1e6, 2e6), **kwargs)
+        h.step(5)
+        imgs[tag] = h.capture()
+    lum_off = common.avg_lum(imgs['off'], cx, cy)
+    lum_r0 = common.avg_lum(imgs['hex_r0'], cx, cy)
+    h.report.check('hex_normals_r0_matches_plain',
+                   abs(lum_r0 - lum_off) < 0.01,
+                   f'uniform tilted normal, rotation=0: lum={lum_r0:.3f} '
+                   f'vs plain {lum_off:.3f} (offset taps of a uniform '
+                   f'map are the map)')
+    rms_rot = common.image_rms_diff(imgs['hex_r0'], imgs['hex_r1'],
+                                    step=1)
+    h.report.check('hex_normals_backrotation_live', rms_rot > 0.02,
+                   f'rotation=1 vs rotation=0 rms={rms_rot:.4f} '
+                   f'(sampled normals rotate with the motif)')
+
+    # --- Phase 12: hex opt-out ------------------------------------------
+    pipeline.clear_terrain_splat(card)
+    card.set_material(mat_metal, 1)
+    h.adapter.update_sun((1, 0, 0), (0, 0, 0))
+    h.step(5)
+    img_restored = h.capture()
+    rms = common.image_rms_diff(img_bare, img_restored, step=1)
+    h.report.check('hex_opt_out_restores', rms == 0.0,
+                   f'clear after hex: rms vs untouched baseline = '
                    f'{rms:.2e} (byte-identical opt-out)')
 
     h.report.finish()

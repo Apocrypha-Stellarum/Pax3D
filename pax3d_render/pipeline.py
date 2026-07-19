@@ -532,6 +532,12 @@ class Pipeline:
         # deactivation restores colors and scopes exactly.
         self._model_lights = []
 
+        # ER-008 local light budgets: per-root wardens that keep the
+        # top-N scoring candidate lights bound (set_light_budget).
+        # Entries: {'root', 'lights', 'budget', 'anchor', 'radius',
+        # 'hysteresis', 'bound'}.
+        self._light_budgets = []
+
         # Powered displays (ER-005, Session V — walkable-ship screens):
         # set_screen() binds a texture as albedo+emission on marked
         # nodes (registry saves the node-level texture/material attribs
@@ -624,6 +630,11 @@ class Pipeline:
         self._env_map = None
         self._env_map_lod = 0
 
+        # Global specular-env controls (Round-5 asks): intensity ramp
+        # and lookup yaw, both exact no-ops at defaults.
+        self._env_intensity = 1.0
+        self._env_yaw_deg = 0.0
+
         # Auxiliary scene cameras (survive rebuilds) — R1 addition
         self._scene_cameras = []
 
@@ -666,6 +677,14 @@ class Pipeline:
         # Per-node ambient scale root default (Session L): 1.0 = exact
         # no-op; interiors override via set_ambient_scale(np, k).
         self.render_node.set_shader_input('u_ambient_scale', 1.0)
+
+        # Specular-env controls root defaults (Round-5 asks): all exact
+        # no-ops (x*1.0 == x; yaw (1,0) rotates by nothing). Per-node
+        # set_env_scale, global set_env_intensity / set_env_map_rotation.
+        self.render_node.set_shader_input('u_env_scale', 1.0)
+        self.render_node.set_shader_input('u_env_intensity', 1.0)
+        self.render_node.set_shader_input('u_env_yaw',
+                                          p3d.LVecBase2(1.0, 0.0))
 
         # Per-node atmosphere scale root default (Session S): 1.0 = exact
         # no-op; hull interiors override via set_atmosphere_scale(np, k).
@@ -1749,6 +1768,14 @@ class Pipeline:
         if self.sun_light_np is not None:
             return
         dlight = p3d.DirectionalLight('pax3d_sun')
+        # ER-008: the sun must survive shader-array overflow. When a
+        # node's active lights exceed max_lights, the engine keeps the
+        # highest-priority ones — and at EQUAL priority the tie-break
+        # is class rank (spot > directional > point), so an
+        # overflowing hull's flood spotlights would silently evict the
+        # sun (and its shadows) from every draw they touch. Pin it
+        # above any sane content priority.
+        dlight.set_priority(1 << 20)
         c = self._last_sun_color
         dlight.set_color(p3d.LColor(c[0], c[1], c[2], 1))
         self.sun_light_np = self.render_node.attach_new_node(dlight)
@@ -2084,6 +2111,152 @@ class Pipeline:
             else:
                 kept.append(entry)
         self._model_lights = kept
+
+    # ------------------------------------------------------------------
+    # Local light budgets (ER-008 — nearest-N binding per root)
+    # ------------------------------------------------------------------
+
+    def set_light_budget(self, root, lights, budget=None, anchor=None,
+                         radius=0.0, hysteresis=1.25):
+        """Keep only the top-N most relevant of `lights` bound on
+        `root` (ER-008): light budgets become LOCAL — each hull binds
+        its own best N, and total scene light counts scale per ship
+        instead of against one global array.
+
+        Background (the ER-008 answer, measured + read from the
+        engine): when a node's active lights exceed max_lights, the
+        shader array keeps the highest-`Light.set_priority()` lights;
+        ties break by CLASS (spot > directional > point), and within
+        equal priority+class the order is effectively arbitrary — a
+        nearby cabin lamp CAN lose its slot to a 300 m flood. This
+        warden replaces that lottery with distance-scored selection.
+
+        Every frame (O(len(lights)) vector math, rebinding only on
+        membership change) each candidate is scored
+        luma(color) / (kc + kl*d + kq*d^2) using the light's OWN
+        attenuation, where d = max(0, |light - anchor| - radius);
+        the top `budget` scores are bound via root.set_light(), the
+        rest unbound. Blinking lights (set_blink) are scored by their
+        STEADY color, so a strobe's slot does not flicker with its
+        envelope.
+
+        Args:
+            root: receiver subtree (a hull root; or render for e.g.
+                colony ground lights).
+            lights: candidate PointLight/Spotlight NodePaths (e.g.
+                from activate_model_lights). Directional/ambient
+                lights are refused — the pipeline owns the sun and
+                ambients don't occupy array slots.
+            budget: max lights bound at once. Default: max_lights
+                minus 1 when the pipeline sun is a real
+                DirectionalLight (it occupies one slot on every draw),
+                else max_lights.
+            anchor: NodePath whose world position measures relevance
+                (default: root — hull-centered. Pass the camera for
+                interest-based selection inside a walkable hull).
+            radius: subtracted from the distance before scoring —
+                approximate hull half-extent, so a light AT the hull's
+                far end still scores as "touching" it.
+            hysteresis: score multiplier for currently-bound lights
+                (>1 = sticky), preventing bind flicker when two
+                candidates trade places at the boundary.
+
+        Re-calling with the same root reconfigures (bound set is
+        re-scored next frame). clear_light_budget(root) unbinds every
+        warden-bound light and forgets the entry. The warden never
+        touches lights bound outside it (the sun, game-managed
+        set_light calls on other roots)."""
+        for lnp in lights:
+            node = lnp.node()
+            if node.is_ambient_light() or isinstance(
+                    node, p3d.DirectionalLight):
+                raise ValueError(
+                    f'set_light_budget: {node.get_name()!r} is '
+                    f'directional/ambient — pass point/spot lights '
+                    f'only (the pipeline owns the sun)')
+        entry = {
+            'root': root,
+            'lights': list(lights),
+            'budget': None if budget is None else int(budget),
+            'anchor': anchor if anchor is not None else root,
+            'radius': float(radius),
+            'hysteresis': float(hysteresis),
+            'bound': set(),
+        }
+        idx = next((i for i, e in enumerate(self._light_budgets)
+                    if e['root'] == root), None)
+        if idx is None:
+            self._light_budgets.append(entry)
+        else:
+            entry['bound'] = self._light_budgets[idx]['bound']
+            self._light_budgets[idx] = entry
+        self._step_light_budgets()
+
+    def clear_light_budget(self, root):
+        """Undo set_light_budget(): every warden-bound light is
+        cleared from the root and the entry forgotten. Lights bound on
+        the root by other callers are untouched."""
+        idx = next((i for i, e in enumerate(self._light_budgets)
+                    if e['root'] == root), None)
+        if idx is None:
+            return
+        entry = self._light_budgets.pop(idx)
+        if not root.is_empty():
+            for lnp in entry['bound']:
+                if not lnp.is_empty():
+                    root.clear_light(lnp)
+
+    def _steady_light_color(self, light_np):
+        """The light's color net of any blink envelope (set_blink
+        stores originals) — budget scoring must not flicker with a
+        strobe's phase."""
+        for entry in self._blinks:
+            for lnp, orig in entry['lights']:
+                if lnp == light_np:
+                    return orig
+        return light_np.node().get_color()
+
+    def _step_light_budgets(self):
+        """Re-score every budget entry and rebind on membership change
+        (called per frame from _update; O(entries x candidates))."""
+        self._light_budgets = [e for e in self._light_budgets
+                               if not e['root'].is_empty()]
+        for entry in self._light_budgets:
+            root = entry['root']
+            anchor = entry['anchor']
+            if anchor.is_empty():
+                anchor = root
+            center = anchor.get_pos(self.render_node)
+            budget = entry['budget']
+            if budget is None:
+                budget = self.max_lights - (
+                    1 if self.sun_light_np is not None else 0)
+            scored = []
+            for lnp in entry['lights']:
+                if lnp.is_empty():
+                    continue
+                c = self._steady_light_color(lnp)
+                luma = (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2])
+                d = max(0.0, (lnp.get_pos(self.render_node)
+                              - center).length() - entry['radius'])
+                att = lnp.node().get_attenuation()
+                denom = max(1e-6,
+                            att[0] + att[1] * d + att[2] * d * d)
+                score = luma / denom
+                if lnp in entry['bound']:
+                    score *= entry['hysteresis']
+                scored.append((score, lnp))
+            scored.sort(key=lambda sl: -sl[0])
+            want = {lnp for score, lnp in scored[:max(0, budget)]
+                    if score > 0.0}
+            if want == entry['bound']:
+                continue
+            for lnp in entry['bound'] - want:
+                if not lnp.is_empty():
+                    root.clear_light(lnp)
+            for lnp in want - entry['bound']:
+                root.set_light(lnp)
+            entry['bound'] = want
 
     # ------------------------------------------------------------------
     # Per-node ambient scale (hull interiors)
@@ -2773,7 +2946,8 @@ class Pipeline:
         _recompile_pbr — the glass discipline)."""
         key = (config['normal_array'] is not None,
                config['orm_array'] is not None,
-               config['macro_map'] is not None)
+               config['macro_map'] is not None,
+               config['hex_tiling'])
         shader = self._terrain_shaders.get(key)
         if shader is None:
             defines = self._get_pbr_defines()
@@ -2784,6 +2958,8 @@ class Pipeline:
                 defines['TERRAIN_SPLAT_ORM'] = True
             if key[2]:
                 defines['TERRAIN_SPLAT_MACRO'] = True
+            if key[3]:
+                defines['TERRAIN_HEX_TILING'] = True
             shader = shaderutils.make_shader(
                 'pax_pbr_terrain', 'pax_pbr.vert', 'pax_pbr.frag', defines)
             self._terrain_shaders[key] = shader
@@ -2821,6 +2997,14 @@ class Pipeline:
                                       float(config['macro_uv_scale']))
             nodepath.set_shader_input('u_terrain_macro_strength',
                                       float(config['macro_strength']))
+        if config['hex_tiling']:
+            nodepath.set_shader_input(
+                'u_terrain_hex',
+                p3d.LVecBase2(config['hex_cell_size'],
+                              config['hex_contrast']))
+            nodepath.set_shader_input(
+                'u_terrain_hex_rot',
+                p3d.LVecBase4(*config['hex_rotation']))
 
     def _reapply_terrain_splat(self):
         """Re-push (freshly invalidated) terrain variants onto every
@@ -2836,7 +3020,9 @@ class Pipeline:
                           splat_transform=(0.0, 0.0, 1.0, 1.0),
                           macro_map=None, macro_uv_scale=1.0,
                           macro_strength=0.15,
-                          normal_fade=(200.0, 400.0)):
+                          normal_fade=(200.0, 400.0),
+                          hex_tiling=False, hex_cell_size=4.0,
+                          hex_rotation=1.0, hex_contrast=6.0):
         """Give `nodepath` (a terrain chunk subtree) a splat-blended
         layer material (ER-001): up to 4 PBR layers weighted per-
         fragment by an RGBA splat map, composing with sun/shadows/fog/
@@ -2879,14 +3065,44 @@ class Pipeline:
             normal_fade: (start, end) view distance over which detail
                 normals fade flat (sparkle/moire control; terrain
                 fills most of the frame).
+            hex_tiling: enable stochastic hex-tiling of the DETAIL
+                sampling (ER-007): every fragment blends the 3 nearest
+                hex cells' samples, each cell with a hashed phase
+                offset + rotation — the verbatim motif repetition of
+                wrap-repeat tiling ("sand ripples marching in rows")
+                breaks up. Costs 3x the array taps (normals ride the
+                same cells; the normal_fade still flattens them at
+                range). Off = byte-identical to the pre-ER-007 path.
+            hex_cell_size: hex cell size in DETAIL-UV repeats (~how
+                many texture repeats each cell shows verbatim).
+                Smaller de-repeats harder but spends more area in
+                blend seams.
+            hex_rotation: per-cell random rotation range as a fraction
+                of +-180 deg — scalar or per-layer 4-sequence.
+                Rotation is what kills directional motifs (dune
+                ripples); set a layer to 0.0 to keep a strongly
+                anisotropic set axis-aligned (offsets still apply).
+            hex_contrast: weight-sharpening exponent (the cheap
+                variance-preserving stand-in for histogram-preserving
+                blending). Higher = narrower blend seams, more of each
+                cell shown pure; 1.0 = plain barycentric (washed-out
+                seams).
 
         Layer-weight computation lives in ONE shader function
-        (terrain_layer_weights) — the ratified v2 seam: hex-tiling and
-        height-blend sharpening land as new defines without
+        (terrain_layer_weights) — the ratified v2 seam. Hex-tiling
+        landed there as TERRAIN_HEX_TILING (ER-007); height-blend
+        sharpening still lands as a future define without
         restructuring. Re-calling with new arguments reconfigures in
         place; clear_terrain_splat() restores the node byte-identically
         (paxtest test_terrain_splat).
         """
+        try:
+            hex_rot = tuple(float(r) for r in hex_rotation)
+        except TypeError:
+            hex_rot = (float(hex_rotation),) * 4
+        if len(hex_rot) != 4:
+            raise ValueError('hex_rotation must be a scalar or a '
+                             '4-sequence (one value per layer)')
         config = {
             'albedo_array': albedo_array,
             'splat_map': splat_map,
@@ -2898,6 +3114,10 @@ class Pipeline:
             'macro_uv_scale': float(macro_uv_scale),
             'macro_strength': float(macro_strength),
             'normal_fade': tuple(float(f) for f in normal_fade),
+            'hex_tiling': bool(hex_tiling),
+            'hex_cell_size': float(hex_cell_size),
+            'hex_rotation': hex_rot,
+            'hex_contrast': float(hex_contrast),
         }
         idx = next((i for i, e in enumerate(self._terrain_nodes)
                     if e[0] == nodepath), None)
@@ -2921,7 +3141,8 @@ class Pipeline:
                      'terrain_orm', 'terrain_macro',
                      'u_terrain_uv_scales', 'u_terrain_splat_transform',
                      'u_terrain_normal_fade', 'u_terrain_macro_scale',
-                     'u_terrain_macro_strength'):
+                     'u_terrain_macro_strength', 'u_terrain_hex',
+                     'u_terrain_hex_rot'):
             nodepath.clear_shader_input(name)
 
     # ------------------------------------------------------------------
@@ -3705,6 +3926,44 @@ class Pipeline:
         self._env_map_lod = 0
         self._set_env_map_uniforms()
 
+    def set_env_scale(self, nodepath, scale):
+        """Scale ONLY the specular env-map reflection term for
+        `nodepath` and its subtree (Round-5 ask). Unlike
+        set_ambient_scale (which damps SH diffuse + flat ambient too),
+        this touches nothing but ibl_spec — stylised geometry keeps a
+        TRACE of sky sheen (e.g. terrain at ~0.15) instead of the
+        binary black-cube exclusion. Inherits down the subtree,
+        survives recompiles, composes multiplicatively with the global
+        set_env_intensity. Root default 1.0 = exact no-op."""
+        nodepath.set_shader_input('u_env_scale', float(scale))
+
+    def clear_env_scale(self, nodepath):
+        """Undo set_env_scale(): the subtree reverts to the inherited
+        (root default 1.0) env scale, byte-identical to untouched."""
+        nodepath.clear_shader_input('u_env_scale')
+
+    def set_env_intensity(self, intensity):
+        """Global multiplier on the specular env-map term (Round-5
+        ask): within a held sky segment the game ramps sky brightness
+        (midday bell, dusk darken) and crossfades skyboxes — SH tracks
+        that game-side (linear coefficients); this lets specular track
+        it too. Multiplies with any per-node set_env_scale. 1.0 =
+        exact no-op."""
+        self._env_intensity = float(intensity)
+        self.render_node.set_shader_input('u_env_intensity',
+                                          self._env_intensity)
+
+    def set_env_map_rotation(self, degrees):
+        """Yaw the specular env-map lookup about world +Z (Round-5
+        ask): the environment reads as rotated by `degrees` in the
+        same sense as set_h(degrees) on a skybox dome — drift-rotating
+        skies keep reflections in sync with the game-side yawed SH.
+        0.0 = exact no-op (cos/sin (1, 0))."""
+        self._env_yaw_deg = float(degrees)
+        a = math.radians(self._env_yaw_deg)
+        self.render_node.set_shader_input(
+            'u_env_yaw', p3d.LVecBase2(math.cos(a), -math.sin(a)))
+
     # ------------------------------------------------------------------
     # Per-frame update
     # ------------------------------------------------------------------
@@ -3760,6 +4019,10 @@ class Pipeline:
                                 if not e['np'].is_empty()]
                 for entry in self._blinks:
                     self._step_blink(entry, now)
+
+        # ER-008 local light budgets: re-score and rebind on change
+        if self._light_budgets:
+            self._step_light_budgets()
 
         # Log-depth coefficient tracks the camera lens far plane (R4.1) —
         # the game may change near/far at runtime (regime switches)

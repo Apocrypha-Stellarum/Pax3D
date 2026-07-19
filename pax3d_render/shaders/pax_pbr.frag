@@ -182,6 +182,96 @@ vec4 terrain_blend_array(sampler2DArray layers, vec4 w, vec2 base_uv) {
     }
     return acc;
 }
+
+#ifdef TERRAIN_HEX_TILING
+// ---- Hex-tiling / stochastic detail sampling (ER-007) ----
+// Mikkelsen "Practical Real-Time Hex-Tiling" (JCGT 2022) on the dual
+// triangle lattice: each fragment blends the 3 nearest hex cells'
+// samples, each cell hashed to a random phase offset (+ optional
+// rotation about the cell center). The verbatim motif repetition of
+// wrap-repeat tiling breaks up; wrap addressing and mip selection are
+// untouched, so BOTH GLSL baselines work without textureGrad — a
+// per-cell offset/rotation is constant across the cell, so every
+// tap's UV is continuous wherever that tap's weight is nonzero (the
+// tap whose cell assignment jumps at a blend-region boundary always
+// carries weight ~0 there).
+uniform vec2 u_terrain_hex;      // x = cell size in detail-UV repeats,
+                                 // y = contrast (weight-sharpen exp)
+uniform vec4 u_terrain_hex_rot;  // per-layer random-rotation range as
+                                 // a fraction of +-180 deg (0 = off)
+
+// Per-cell hash (Hoskins fract-mix): no sin(), so it stays well
+// distributed at the large lattice ids planetary detail UVs produce
+// (float-exact into the tens of thousands of repeats).
+vec2 hex_hash(vec2 id) {
+    vec3 p3 = fract(vec3(id.x, id.y, id.x)
+                    * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+// The 3 nearest hex-cell ids + contrast-sharpened barycentric weights
+// for st = detail_uv / cell_size. The pow sharpen is the cheap
+// variance-preserving stand-in for histogram-preserving blending:
+// blend zones narrow, so most of every cell shows one sample nearly
+// pure and the material grain survives.
+void hex_grid(vec2 st, out vec2 id0, out vec2 id1, out vec2 id2,
+              out vec3 w) {
+    vec2 skewed = vec2(st.x, -0.57735027 * st.x + 1.15470054 * st.y);
+    vec2 base_id = floor(skewed);
+    vec3 t = vec3(fract(skewed), 0.0);
+    t.z = 1.0 - t.x - t.y;
+    if (t.z > 0.0) {
+        w = vec3(t.z, t.y, t.x);
+        id0 = base_id;
+        id1 = base_id + vec2(0.0, 1.0);
+        id2 = base_id + vec2(1.0, 0.0);
+    } else {
+        w = vec3(-t.z, 1.0 - t.y, 1.0 - t.x);
+        id0 = base_id + vec2(1.0, 1.0);
+        id1 = base_id + vec2(1.0, 0.0);
+        id2 = base_id + vec2(0.0, 1.0);
+    }
+    w = pow(w, vec3(u_terrain_hex.y));
+    w /= (w.x + w.y + w.z);
+}
+
+// One cell's tap UV: random phase offset + rotation about the cell
+// center. cs returns (cos, sin) of the tap rotation so normal taps
+// can rotate the sampled tangent-space xy back into the surface frame.
+vec2 hex_tap_uv(vec2 duv, vec2 id, float rot_range, out vec2 cs) {
+    float ang = (hex_hash(id + 17.31).x - 0.5) * 6.28318530718
+                * rot_range;
+    cs = vec2(cos(ang), sin(ang));
+    vec2 center = vec2(id.x, 0.5 * id.x + 0.8660254 * id.y)
+                  * u_terrain_hex.x;
+    vec2 d = duv - center;
+    return center + hex_hash(id)
+           + vec2(cs.x * d.x - cs.y * d.y,
+                  cs.y * d.x + cs.x * d.y);
+}
+
+// Drop-in hex replacement for terrain_blend_array (albedo / ORM).
+vec4 hex_blend_array(sampler2DArray layers, vec4 w, vec2 base_uv) {
+    vec4 acc = vec4(0.0);
+    for (int i = 0; i < 4; ++i) {
+        vec2 duv = base_uv * u_terrain_uv_scales[i];
+        vec2 id0, id1, id2;
+        vec3 hw;
+        hex_grid(duv / u_terrain_hex.x, id0, id1, id2, hw);
+        float rot = u_terrain_hex_rot[i];
+        vec2 cs;
+        vec4 s = hw.x * texture2DArray(layers,
+                     vec3(hex_tap_uv(duv, id0, rot, cs), float(i)))
+               + hw.y * texture2DArray(layers,
+                     vec3(hex_tap_uv(duv, id1, rot, cs), float(i)))
+               + hw.z * texture2DArray(layers,
+                     vec3(hex_tap_uv(duv, id2, rot, cs), float(i)));
+        acc += w[i] * s;
+    }
+    return acc;
+}
+#endif  // TERRAIN_HEX_TILING
 #endif
 
 uniform sampler2D p3d_TextureBaseColor;
@@ -192,6 +282,17 @@ uniform sampler2D p3d_TextureEmission;
 uniform sampler2D brdf_lut;
 uniform samplerCube filtered_env_map;
 uniform float max_reflection_lod;
+
+// Specular-env controls (Round-5 asks). u_env_scale is per-node
+// (subtree-inherited, like u_ambient_scale but env-only — SH diffuse
+// and flat ambient untouched); u_env_intensity is global (sky
+// brightness ramps / skybox crossfades track game-side SH scaling);
+// u_env_yaw = (cos, sin) rotates the reflection lookup about world +Z
+// so drift-rotating skies keep specular in sync with the yawed SH.
+// Root defaults (1.0, 1.0, (1,0)) are exact no-ops.
+uniform float u_env_scale;
+uniform float u_env_intensity;
+uniform vec2 u_env_yaw;
 
 #ifdef ENABLE_SHADOWS
 // Depth bias in NORMALIZED light-space depth (world offset = bias *
@@ -368,16 +469,21 @@ void main() {
 #ifdef TERRAIN_SPLAT
     // ---- Terrain splat material inputs (ER-001) ----
     vec4 terrain_w = terrain_layer_weights(v_texcoord);
+#ifdef TERRAIN_HEX_TILING
+    #define TERRAIN_SAMPLE hex_blend_array
+#else
+    #define TERRAIN_SAMPLE terrain_blend_array
+#endif
 #ifdef TERRAIN_SPLAT_ORM
-    vec4 metal_rough = terrain_blend_array(terrain_orm, terrain_w, v_texcoord);
+    vec4 metal_rough = TERRAIN_SAMPLE(terrain_orm, terrain_w, v_texcoord);
 #else
     vec4 metal_rough = vec4(1.0);  // material roughness/metallic drive
 #endif
     float metallic = clamp(p3d_Material.metallic * metal_rough.b, 0.0, 1.0);
     float perceptual_roughness = clamp(p3d_Material.roughness * metal_rough.g,  0.0, 1.0);
     float alpha_roughness = perceptual_roughness * perceptual_roughness;
-    vec4 terrain_albedo_px = terrain_blend_array(terrain_albedo, terrain_w,
-                                                 v_texcoord);
+    vec4 terrain_albedo_px = TERRAIN_SAMPLE(terrain_albedo, terrain_w,
+                                            v_texcoord);
 #ifdef TERRAIN_SPLAT_MACRO
     // Macro variation: brightness modulation at 100-500 m scale kills
     // the wallpaper effect. A 0.5 macro texel is an EXACT no-op
@@ -402,10 +508,40 @@ void main() {
                               - world_normal * world_normal.x);
         vec3 b_ws = cross(world_normal, t_ws);
         vec3 n_ts = vec3(0.0);
+#ifdef TERRAIN_HEX_TILING
+        // Hex taps for normals: same cells/weights/rotations as the
+        // albedo taps (material coherence), with each sampled tangent-
+        // space xy rotated BACK by the tap rotation so the normal
+        // follows the rotated motif.
+        for (int i = 0; i < 4; ++i) {
+            vec2 duv = v_texcoord * u_terrain_uv_scales[i];
+            vec2 id0, id1, id2;
+            vec3 hw;
+            hex_grid(duv / u_terrain_hex.x, id0, id1, id2, hw);
+            float rot = u_terrain_hex_rot[i];
+            vec2 cs;
+            vec3 s;
+            vec3 acc = vec3(0.0);
+            s = 2.0 * texture2DArray(terrain_normal,
+                vec3(hex_tap_uv(duv, id0, rot, cs), float(i))).rgb - 1.0;
+            acc += hw.x * vec3(cs.x * s.x + cs.y * s.y,
+                               -cs.y * s.x + cs.x * s.y, s.z);
+            s = 2.0 * texture2DArray(terrain_normal,
+                vec3(hex_tap_uv(duv, id1, rot, cs), float(i))).rgb - 1.0;
+            acc += hw.y * vec3(cs.x * s.x + cs.y * s.y,
+                               -cs.y * s.x + cs.x * s.y, s.z);
+            s = 2.0 * texture2DArray(terrain_normal,
+                vec3(hex_tap_uv(duv, id2, rot, cs), float(i))).rgb - 1.0;
+            acc += hw.z * vec3(cs.x * s.x + cs.y * s.y,
+                               -cs.y * s.x + cs.x * s.y, s.z);
+            n_ts += terrain_w[i] * acc;
+        }
+#else
         for (int i = 0; i < 4; ++i) {
             n_ts += terrain_w[i] * (2.0 * texture2DArray(terrain_normal,
                 vec3(v_texcoord * u_terrain_uv_scales[i], float(i))).rgb - 1.0);
         }
+#endif
         // Detail-normal distance fade: flat past fade_end so far-field
         // terrain (most of the frame) cannot sparkle/moire.
         float terrain_nf = smoothstep(u_terrain_normal_fade.x,
@@ -618,9 +754,15 @@ void main() {
     vec3 ibl_diff = base_color.rgb * max(irradiance_from_sh(world_normal), 0.0) * diffuse_function();
 
     vec3 ibl_r = reflect(-world_view, world_normal);
+    // Env yaw: sample the map at Rz(-theta)*r — the environment reads
+    // as rotated by +theta (the skybox set_h sense). (1,0) exact no-op.
+    ibl_r = vec3(u_env_yaw.x * ibl_r.x - u_env_yaw.y * ibl_r.y,
+                 u_env_yaw.y * ibl_r.x + u_env_yaw.x * ibl_r.y,
+                 ibl_r.z);
     vec2 env_brdf = texture2D(brdf_lut, vec2(n_dot_v, perceptual_roughness)).rg;
     vec3 ibl_spec_color = textureCubeLod(filtered_env_map, ibl_r, perceptual_roughness * max_reflection_lod).rgb;
-    vec3 ibl_spec = ibl_spec_color * (ibl_f * env_brdf.x + env_brdf.y);
+    vec3 ibl_spec = ibl_spec_color * (ibl_f * env_brdf.x + env_brdf.y)
+                    * (u_env_scale * u_env_intensity);
 #ifdef GLASS
     color.rgb += ibl_kd * ibl_diff * ambient_occlusion;
     glass_spec += ibl_spec * ambient_occlusion;

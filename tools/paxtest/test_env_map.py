@@ -32,6 +32,13 @@ Checks:
      -Y face; pitched 45 degrees it reflects the +Z face — sampling
      ORIENTATION is correct (the Session J sh_from_cubemap soft spot,
      shader-sampling side).
+  6b. Env yaw (Round-5 ask): set_env_map_rotation(90) brings the -X
+     face content to -Y (the skybox set_h sense); yaw 0 restores the
+     pre-yaw capture byte-identically.
+  6c. Env scale/intensity (Round-5 asks): per-node set_env_scale and
+     global set_env_intensity multiply ONLY the env term (flat
+     ambient intact), compose multiplicatively, and restore to an
+     exact full-strength default.
   7. Glass composition: on a set_glass node the reflection term rides
      at FULL strength through alpha 0.15 (the canopy case).
   8-11. The GGX prefilter tool (Session Q / R5.4, tools/
@@ -254,6 +261,55 @@ def main():
     check_rgb(h, 'mirror_reflects_pos_z', got, want_pz, tol=0.06,
               extra=' (45-degree pitch -> +Z face, blue)')
     card.set_p(0)
+
+    # --- 6b. Env yaw (Round-5 ask): set_env_map_rotation ----------------
+    # Environment rotated +90 in the skybox set_h sense: content that
+    # sat at -X (green) arrives at -Y, so the normal-incidence mirror
+    # now reflects green. Yaw 0 restores the pre-yaw capture exactly.
+    if hasattr(pipeline, 'set_env_map_rotation'):
+        a, b = lut_ab(lut, 1.0, 0.0)
+        pipeline.set_env_map_rotation(90.0)
+        h.step(5)
+        img_yaw = h.capture()
+        h.save_capture(img_yaw, 'mirror_yaw90')
+        want_yaw = tuple(curve(c * (a + b) + AMB) for c in FACE_COLORS[1])
+        check_rgb(h, 'env_yaw_rotates_lookup', avg_rgb(img_yaw, cx, cy),
+                  want_yaw, extra=' (+90 yaw: -X green arrives at -Y — '
+                  'the skybox set_h sense)')
+        pipeline.set_env_map_rotation(0.0)
+        h.step(5)
+        rms = common.image_rms_diff(img_mirror, h.capture(), step=1)
+        h.report.check('env_yaw_zero_restores', rms == 0.0,
+                       f'yaw back to 0: rms vs pre-yaw mirror = '
+                       f'{rms:.2e} (exact no-op default)')
+
+    # --- 6c. Env scale + intensity (Round-5 asks) -----------------------
+    # Constant cubemap, metallic 1: pixel = curve(C*(A+B)*s*k + AMB) —
+    # per-node scale s and global intensity k multiply the env term
+    # ONLY (the flat ambient stays untouched) and compose.
+    if hasattr(pipeline, 'set_env_scale'):
+        pipeline.set_env_map(env_const)
+        apply_surface(card, rough_tc, 1.0)
+        a, b = lut_ab(lut, 1.0, rough_tc)
+        pipeline.set_env_scale(card, 0.25)
+        h.step(5)
+        want_s = tuple(curve(c * (a + b) * 0.25 + AMB) for c in C_ENV)
+        check_rgb(h, 'env_scale_scales_env_only',
+                  avg_rgb(h.capture(), cx, cy), want_s,
+                  extra=' (per-node 0.25: sheen trace, ambient intact)')
+        pipeline.set_env_intensity(0.5)
+        h.step(5)
+        want_sk = tuple(curve(c * (a + b) * 0.125 + AMB) for c in C_ENV)
+        check_rgb(h, 'env_intensity_composes',
+                  avg_rgb(h.capture(), cx, cy), want_sk,
+                  extra=' (global 0.5 x node 0.25 = 0.125 multiply)')
+        pipeline.clear_env_scale(card)
+        pipeline.set_env_intensity(1.0)
+        h.step(5)
+        want_1 = tuple(curve(c * (a + b) + AMB) for c in C_ENV)
+        check_rgb(h, 'env_controls_restore',
+                  avg_rgb(h.capture(), cx, cy), want_1,
+                  extra=' (defaults back: exact full-strength env)')
 
     # --- 7. Glass composition: reflections survive alpha ----------------
     pipeline.set_env_map(env_const)
