@@ -238,6 +238,17 @@ panda3d-gltf 1.3.0 `gltf/_converter.py`.
 - `grep` on paxtest console output trips on em dashes under cp1252 and
   goes binary-mode silent — assert on the `PAXTEST_JSON` line or use
   `grep -a`.
+- Cross-run frame-time deltas are not trustworthy for sub-millisecond
+  attribution on this machine — Session AB measured the same 8-face
+  scene's static floor drifting 0.92 → 1.48 ms across consecutive
+  probe runs (background load), which made a 0.3 ms morph cost read
+  as 0.55–0.83. Attribute sub-ms costs with an INTERLEAVED in-process
+  A/B (alternate legs A/B/A/B… in one process, take min per leg):
+  min-of-5 pinned the morph-attributable cost at 0.19 ms while the
+  floor moved. Pattern: scratchpad `bench_morph_ab.py`, Session AB.
+- Panda Python wrapper `id()` is not object identity — same C++
+  object, different wrappers per lookup; compare/key by `.this`
+  (fact #20; the false-hit hazard class after wrapper collection).
 - `apply_freeze_scalar` alone does NOT dirty a Character's bundle —
   without `force_update()` (or a playing clip marking channels) the
   CPU path re-animates nothing, and a slider-driving perf loop

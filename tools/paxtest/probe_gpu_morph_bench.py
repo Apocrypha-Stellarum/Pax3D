@@ -18,7 +18,13 @@ answers the character lane's perf questions from PAX3D_FEEDBACK.md
      baked copies at zero extra bake cost.
 
 Run:  <python> tools/paxtest/probe_gpu_morph_bench.py --pipeline pax3d_render
-      [--hero-dir DIR] [--faces 8]
+      [--hero-dir DIR] [--hero hero_kade.glb] [--faces 8]
+
+Session AB updates: the bake is the zero-copy vertex-major path (the
+enable-cost fact re-measured), --hero selects any delivered head, and
+the 32-face stretch leg registers every copy_to clone with its OWN
+sliders (set_gpu_morphs(clone) — the crowd-independence contract) and
+animates all 32 independently, which is what a real plaza does.
 """
 import argparse
 import os
@@ -62,6 +68,7 @@ def find_char_sliders(model_np):
 def main():
     parser = common.add_common_args(argparse.ArgumentParser())
     parser.add_argument('--hero-dir', default=HERO_DIR)
+    parser.add_argument('--hero', default='hero_wren.glb')
     parser.add_argument('--faces', type=int, default=8)
     args = parser.parse_args()
 
@@ -78,7 +85,7 @@ def main():
     from pax3d_render import gltf_compat
     gltf_compat.install()
 
-    hero = os.path.join(args.hero_dir, 'hero_wren.glb')
+    hero = os.path.join(args.hero_dir, args.hero)
     if not os.path.exists(hero):
         print(f'hero content not found, falling back to {FALLBACK}')
         hero = FALLBACK
@@ -114,7 +121,8 @@ def main():
     for _g, _i, _s, t, _tx in entry['geoms']:
         seen[id(t)] = t
     tex_bytes = sum(t.get_ram_image_size() for t in seen.values())
-    verts = sum(t.get_x_size() for t in seen.values())
+    # vertex-major since Session AB: height = vertex rows
+    verts = sum(t.get_y_size() for t in seen.values())
     fact('morph_mesh', f'{verts} verts x {n_sliders} targets',
          f'{n_geoms} morph geom(s) / {len(seen)} vdata(s) per face')
     fact('bake_s_per_face', f'{sum(bake_s) / len(bake_s):.2f}',
@@ -198,7 +206,13 @@ def main():
         pipeline.clear_hardware_skinning(m)
         pipeline.set_gpu_morphs(m)
 
-    # --- 32-face stretch datapoint (baked copies, zero re-bake) ------
+    # --- 32-face stretch datapoint: registered clones, all driven ----
+    # Session AB: clones share the delta TEXTURES (pointer-shared by
+    # the copied geom states; the vdata is deep-copied by the
+    # Character — ~the morph-column bytes per clone in RAM) and each
+    # gets its OWN face via set_gpu_morphs(clone): zero re-bake,
+    # independent sliders. All 32 animate independently here — the
+    # honest plaza scenario, not 24 statues wearing one face.
     copies = []
     extra = 32 - args.faces
     if extra > 0:
@@ -207,14 +221,17 @@ def main():
             c = models[i % len(models)].copy_to(base.render)
             c.set_x((i - extra / 2.0) * 0.5)
             c.set_y(1.0 + 0.5 * (i % 4))
+            pipeline.set_gpu_morphs(c)
             copies.append(c)
         fact('copy_s_total', f'{time.perf_counter() - t0:.2f}',
-             f'{extra} baked copies (shared vdata + delta textures, '
-             f'sliders shared with their template)')
+             f'{extra} clones copied AND registered (delta textures '
+             f'pointer-shared, zero re-bake, independent sliders)')
+        chars.extend(find_char_sliders(c) for c in copies)
+        drive.extend(sl[:5] for _c, sl in chars[len(drive):])
         ms_32 = measure()
         fact('ms_frame_gpu_32faces', f'{ms_32:.2f}',
-             f'{1000.0 / ms_32:.0f} fps offscreen — stretch datapoint, '
-             f'not a gate')
+             f'{1000.0 / ms_32:.0f} fps offscreen, all 32 driven '
+             f'independently — stretch datapoint, not a gate')
 
     print('done')
 

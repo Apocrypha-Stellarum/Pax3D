@@ -92,7 +92,8 @@ Each was established mechanically; each has a permanent guard.
 | 16 | **panda3d-gltf (pip 1.3.0) cannot load a real Blender morph export — three loader defects, all fixed by `pax3d_render.gltf_compat.install()`**: (a) sparse accessors (Blender's DEFAULT shape-key encoding; `bufferView` is legally optional) crash with `KeyError: 'bufferView'` (upstream Moguri#103, open); (b) an anim channel whose keys end before the clip's global end (legal, normal) crashes `get_next_time_index`; (c) `get_lerp_factor` clamps with `max(t,1)` instead of `min(t,1)`, so every LINEAR sample between keys snaps to the NEXT key's value — joints and morphs alike. All three are masked by dense per-frame bakes, which is why upstream ships them. With the shim, glTF morph delivery is CORRECT end-to-end: sliders + slider tables + morph columns arrive, CPU truth matches the Blender ground-truth manifest to 4 decimals, and a real weights channel drives sliders exactly (proven by byte-patching known values into the GLB — LINEAR lerp analytic to 0.001, short-channel hold exact). Fact #15 extends to glTF and to JOINT-LESS meshes: the scene-wide `F_hardware_skinning` flag drops morphs on static geometry too (image rms 0.000000); the per-node CPU opt-out renders them (~+0.1 ms/frame per 2240-vert head). Instrument trap: cached bams bypass the loader entirely — disable `BamCache` when measuring loader behavior | Session T; probe_morph_gltf.py (SK_SFM_Head1 + manifest, 26 facts, identical both engines) |
 | 17 | **glTF alphaMode MASK only works in the compat profile** — panda3d-gltf expresses MASK as a geom-level `AlphaTestAttrib`, and the GL backend implements that attrib solely via fixed-function `GL_ALPHA_TEST` (`do_issue_alpha_test` sits behind `has_fixed_function_pipeline()`); under `gl-version 3 2` it is silently ignored and ALL MASK content renders opaque (a factor-only mask = a solid shell — the character dev's field report; cutout foliage = solid cards). Identical on stock 1.10.16 — upstream behavior, not fork damage. Fix: `pipeline.apply_alpha_masks(model_np)` composes an ALPHA_MASK PBR variant onto exactly the stamped geoms (in-shader discard, same predicate ⇒ compat bit-identical, measured rms 0.0). **Extended Session AA (ER-009):** `TransparencyAttrib M_binary` is the SAME class of defect — cull composes `AlphaTestAttrib(GE, 0.5)` at max priority (`cullResult.cxx`), fixed-function-only, so M_binary foliage also renders solid @modern; detection now catches it (geom- or node-level), and `apply_alpha_masks(np, instanced=True)` keeps the mask variant paired with INSTANCING under set_instanced (the default variant collapses instances onto the origin — gate-measured). Depth-pass caveat: compat gets cutout shadows from the fixed-function test, modern casts the unmasked silhouette — `exclude_from_shadows()` is the valve; a cutout-shadow depth path lands only on field evidence | Session W; test_alpha_mask (both engines × both baselines); Session AA `binary_*`/`instanced_*` checks |
 | 18 | **Every offscreen frame on the 1.11 fork raises one GL_INVALID_OPERATION — and it was never about characters.** The FPS-lane field attribution ("playing characters") measured wrong: an EMPTY offscreen scene errors identically (probe matrix: fork offscreen 1/frame both baselines; fork real window 0; stock 1.10.16 0 everywhere; the Window-1 wheel reproduces → predates all R6 surgery). Root cause: upstream `bd4dc8a379` (2024-10, a **DX9** wdxGraphicsBuffer copy fix, before our divergence point) commented out the single-buffered branch of `FrameBufferProperties::get_buffer_mask()`, so `prepare_display_region` issues `glDrawBuffer(GL_BACK)` on the single-buffered wgl pbuffer. Consequence: the once-per-second error sweep reaches `gl-max-errors` (default 20) after ~20 s of offscreen wall time and **panic-deactivates the GSG — frozen framebuffer, silently stale screenshots** (every paxtest process runs under this deadline; the runner never surfaced the stderr noise). Sibling defect: `gl-max-errors -1` (documented "no limit") deactivates on the FIRST error — bare `>=` at glGraphicsStateGuardian_src.cxx:4817 (`report_errors_loop` honors -1 correctly). One-line C++ fixes **LANDED (Session X part 2 mini-window, 2026-07-19)**: `PATCH_QUEUE_GL_OFFSCREEN.md` — probe now 0 errors/frame everywhere (was ~60/phase); the `gl-max-errors 1000000` workarounds can come out of game harnesses. Technique worth keeping: pin the global clock to dt>1 s so the 1/sec sweep runs every frame — per-frame GL-error attribution on a release build | Session X; probe_gl_errors.py + test_gl_clean (now the permanent zero-GL-errors guard, both engines) |
-| 19 | **The GPU morph path needs NO engine change and NO gl_VertexID — it runs on stock 1.10 too.** Morph deltas ride a per-vdata RGB32F data texture (width = vertex rows, height = 2×targets: position row 2t, normal row 2t+1) addressed by a plain float32 `morph_index` column — one mechanism on BOTH GLSL baselines. Two conventions MEASURED before building (TexturePeeker probe): Texture ram row 0 = texcoord v=0, and `set_ram_image_as(data,'RGB')` preserves float component order. Panda ships normal deltas alongside positions (`normal.morph.<slider>` columns — the GPU path is lighting-correct, not position-only). Instrument trap the bench exposed: `apply_freeze_scalar` alone does NOT dirty the bundle — without `force_update()` (or a playing clip) the CPU path re-animates nothing and a perf A/B silently measures an idle scene (the +0.01 ms tell) | Session Z; probe_ram_order (scratchpad), test_morph_gltf `gpu_*` (12/12 both engines × both baselines), probe_gpu_morph_bench.py |
+| 19 | **The GPU morph path needs NO engine change and NO gl_VertexID — it runs on stock 1.10 too.** Morph deltas ride a per-vdata RGB32F data texture addressed by a plain float32 `morph_index` column — one mechanism on BOTH GLSL baselines. **Layout is VERTEX-MAJOR since Session AB** (width = 2×targets: position x=2t, normal x=2t+1; height = vertex rows) — byte-identical to the loader's own interleaved morph array (`[vertex.morph.s, normal.morph.s, …]` tightly packed per vertex, measured on production heads), so when a vdata's column order matches the character slider order the bake is a ZERO-COPY upload of the array's raw bytes (wren/juno: 5/7 vdatas ≈95% of rows; kade's pack orders non-canonically → numpy column gather, pure-Python fallback; all three variants byte-compared in-gate). Two conventions MEASURED before building (TexturePeeker probe): Texture ram row 0 = texcoord v=0, and `set_ram_image_as(data,'RGB')` preserves float component order. Panda ships normal deltas alongside positions (`normal.morph.<slider>` columns — the GPU path is lighting-correct, not position-only). Instrument trap the bench exposed: `apply_freeze_scalar` alone does NOT dirty the bundle — without `force_update()` (or a playing clip) the CPU path re-animates nothing and a perf A/B silently measures an idle scene (the +0.01 ms tell) | Session Z; probe_ram_order (scratchpad), test_morph_gltf `gpu_*` + `bake_fast_matches_reorder` (both engines × both baselines), probe_gpu_morph_bench.py |
+| 20 | **Panda Python wrapper identity lies in both directions — key caches by `.this`, never `id()`.** Two lookups of the SAME C++ object return different wrapper objects (`id(a) != id(b)`, `a.this == b.this`, measured), so an `id()`-keyed cache never hits for shared objects — and worse, a collected wrapper's id can be REUSED by a different object (false hit → wrong data bound; the Session Z bake cache carried exactly this latent hazard, fixed Session AB). Same trap inverted: pointer-equality conclusions drawn from `id()` are wrong — Session Z's "copy_to clones share the vdata AND the delta textures" was HALF wrong: `copy_to` on a Character subtree pointer-shares RenderStates and their textures (delta textures ARE shared, `.this`-verified) but DEEP-COPIES the animated vdata (≈ the morph-column bytes per clone in RAM, ~18 MB on a production head). Corollary contract (Session AB): a clone of an enabled template arrives converted-but-puppeted (it inherits the template's `u_morphs` block) — `set_gpu_morphs(clone)` detects the variant states, skips the bake, and gives it its own face | Session AB; probe_identity (scratchpad), test_morph_gltf `copy_*` checks |
 
 ---
 
@@ -616,6 +617,69 @@ understory classes in `scatter_palettes.json` with
 rewrite). ER statuses updated in place; the "related observation"
 (instanced nodes under a state-less parent) stays open pending their
 game-side repro — not reproduced in the harness idiom, offer stands.
+
+### 4.14 Session AB (2026-07-21) — GPU morph crowds: zero-copy bake, independent clone faces
+
+Character-side session, driven by the lane's 2026-07-20 counts entry
+(all consumed by Session Z same-day) and by what the shipped
+three-hero roster exposed that a single-model bench could not. Probing
+before building found two facts that reshaped the plan (fact #20):
+`copy_to` does NOT share vdata (the Session Z claim was wrapper-id
+artifact — textures ARE shared, vdata is deep-copied), and calling
+`set_gpu_morphs` on a clone re-baked 1.17 s + 18.3 MB AND duplicated
+the `morph_index` column. All pure Python/GLSL, runs on stock 1.10:
+
+1. **Zero-copy bake (enable cost 1.17 s → 0.07–0.08 s per face,
+   ~15×).** The loader stores all 104 morph columns in ONE
+   interleaved, tightly-packed array per vdata — which is
+   byte-identical to a VERTEX-MAJOR delta texture. The texture layout
+   flipped (width = 2×targets, height = rows; shader axis swap), so a
+   vdata whose column order matches the character slider order
+   uploads its raw array bytes directly. Non-canonical orders (kade:
+   5/6 prims) take a numpy column gather (numpy ships with
+   panda3d-gltf, so it is present wherever glTF morphs are;
+   pure-Python fallback stays). Measured per hero (8-face load):
+   wren 0.07 s, kade 0.08 s, juno 0.08 s.
+2. **Clone registration — the synchronized-face defect closed.**
+   `set_gpu_morphs(clone)` on a `copy_to` clone of an enabled
+   template now detects the variant states that came with the copy,
+   reuses the pointer-shared delta textures (ZERO re-bake, ~0 s), and
+   registers the clone's own CharacterSliders + uniform block —
+   without the call, every clone in a plaza wears the template's
+   face (they inherit its `u_morphs` block; pre-AB that was the ONLY
+   behavior available). Clone opt-out parks a zeroed block (its
+   as-copied geom states still carry the variant shader — clearing
+   the input asserts at draw; the gate caught this) and never touches
+   the template. Also fixed: the bake cache is keyed by `vdata.this`
+   (the id() false-hit hazard, fact #20) and `_add_morph_index_column`
+   is idempotent.
+3. **Gate:** test_morph_gltf +5 checks (17 total per config) —
+   `bake_fast_matches_reorder` (zero-copy vs numpy-gather vs
+   pure-Python bakes byte-identical AND the fast path stays available
+   on loader output — a loader layout change fails loudly),
+   `copy_reuses_textures` (pointer-set equality, zero re-bake),
+   `copy_drives_own_face`, `copy_ignores_template_sliders` (the
+   synchronized-face defect, rms 0.000000), `copy_optout_isolated`.
+   17/17 on Pax3D AND stock × both baselines. Full gate totals
+   IDENTICAL to Sessions Y/Z/AA on all four configs (the row grew
+   internally) — @game 71/6/106 Pax3D · 69/6/108 stock; @modern
+   70/7/106 · 68/7/108; FAIL sets unchanged. Logs `gate_ab_*.log`.
+4. **Three-hero validation (probe_gpu_morph_bench --hero, all
+   measured):** kade 11,650×52 / 6 vdatas / 14.5 MB, wren 14,684×52 /
+   7 / 18.3 MB, juno 14,561×52 / 7 / 18.2 MB — all load, bake,
+   register, render. 8-face morph-attributable cost re-measured with
+   an interleaved min-of-5 A/B (the machine was under variable load —
+   single-run deltas drifted 0.4–0.8 ms): **0.19 ms** for 8 faces × 5
+   sliders (bar ≤0.5 ms, more margin than Session Z's 0.3). 32-face
+   stretch leg upgraded to the honest plaza: every clone registered
+   AND independently driven — 4.3 ms (was 2.42 with 24 statues
+   sharing one face). 24 clones copy+register in 0.25–0.49 s.
+
+Remaining: character-lane adoption (crowd pattern is now
+`enable template → copy_to → set_gpu_morphs(clone)` per clone; the
+hero_closeup + PS_BENCH=300 GPU-path re-measure still stands). The
+clone-RAM lever (strip morph columns from render vdata, ~18 MB/clone)
+stays unbuilt pending evidence that clone RAM matters.
 
 ---
 

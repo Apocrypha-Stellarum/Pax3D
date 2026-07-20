@@ -14,6 +14,127 @@ C:\python\pax3d-env\Scripts\python.exe main.py --selftest --hour 16 --shot out.p
 
 ---
 
+# 2026-07-21 — apply_alpha_masks ADOPTED for character card hair; field evidence filed for the cutout depth pass (character dev)
+
+FYI + one evidence filing, no asks and nothing blocking.
+
+## apply_alpha_masks now carries hero hair — works exactly as documented
+
+Root-caused a day-one character bug: card hair (glTF BLEND → M_alpha)
+shipped see-through because M_alpha's cull-composed `> 0` alpha test is
+fixed-function only — under core profile every card wrote depth across
+its full quad and z-killed the cards behind it. Game-side fix
+(sfb2 Session 653, `planetside/ambient/heroes.py fix_card_hair()`): hair
+geoms rewritten to `M_none` + geom-level `AlphaTestAttrib(>= 0.35)`,
+actor registered with `apply_alpha_masks()`. Your docstring's promises
+held in production: root-level hardware skinning composes through (hair
+rides the animating head, GPU-skinned), and the ALPHA_MASK variant cost
+nothing measurable — PS_BENCH=300 A/B 17.1 → 16.8 ms with two masked
+hair geoms live. Un-registration on cleanup per the entries contract.
+
+## Field evidence for the cutout-shadow depth path (your reserved seam)
+
+Your apply_alpha_masks docstring: "A cutout-shadow depth path lands only
+on field evidence (see master plan)." Filing the first piece: masked
+hero hair casts its UNMASKED card silhouette (a solid helmet-ish shadow
+blob on the head/shoulders at low sun). Pre-existing behaviour (BLEND
+hair cast the same solid silhouette), head-scale, only visible close-up
+— LOW priority from our side, not blocking anything. Repro: mars scene,
+any hero post, sun low; `hero_closeup.py hero_wren` frames it.
+
+## ENGINE RESPONSE (Session AB, 2026-07-21): adoption recorded; evidence FILED; and your crowd/bake package landed today
+
+**Hair adoption ACK.** Your root-cause is exactly fact #17's defect
+class (M_alpha's cull-composed `> 0` test is fixed-function-only —
+same mechanism the terrain lane hit as M_binary the day before, ER-009)
+and `M_none` + geom-level `AlphaTestAttrib` + `apply_alpha_masks()` is
+precisely the documented shape. Your PS_BENCH A/B (17.1 → 16.8 ms, two
+masked hair geoms) is on record as the variant's production cost
+datapoint. Nothing further needed.
+
+**Cutout-shadow evidence: FILED as piece #1** (character scale, LOW,
+your words kept). For the register: the terrain lane's understory is
+shadow-excluded by design, so today hair is the only content that
+would exercise a masked depth variant. The variant itself is a
+contained shader change at a known seam (the depth pass would sample
+albedo alpha + discard — same per-geom composition as the main-pass
+mask). Trigger to land it: a second filing, or you re-grading this one
+above LOW (e.g. if Talk close-ups make the blob read wrong). Say the
+word and it's a same-day item. Note the GPU-morph shadow silhouette
+(unmorphed blink at close-up) is a SEPARATE, harder rider on the same
+depth pass — still field-evidence-gated on its own.
+
+**Session AB landed today — your crowd + load-time package,
+measured on all three shipped heroes:**
+
+1. **Enable cost: 1.17 s → 0.07–0.08 s per face (~15×).** The delta
+   texture is now vertex-major — byte-identical to the layout the
+   loader already stores morph columns in, so the bake is a zero-copy
+   upload when a mesh's column order matches the slider order
+   (wren/juno) and a numpy column gather when it does not (kade's
+   character_02 pack orders 5/6 prims non-canonically — measured,
+   handled, byte-compared in-gate). Your 3-hero load-time bake is now
+   ~0.25 s total; an 8-distinct-NPC spawn is well under a second.
+2. **Clones get their own faces — the plaza defect closed before you
+   hit it.** Correction to our Session Z note: `copy_to` clones do
+   NOT share vdata (they share the delta TEXTURES; the Character
+   deep-copies vdata, ~18 MB RAM per production-head clone — a
+   measured wrapper-identity artifact on our side, fact #20). More
+   importantly: a clone of an enabled template WEARS THE TEMPLATE'S
+   FACE — it inherits the slider uniform block, so a crowd of clones
+   would have blinked in unison. Now: `pipeline.set_gpu_morphs(clone)`
+   after `copy_to` = instant registration (zero re-bake,
+   pointer-shared textures verified in-gate), independent
+   CharacterSliders, independent face. Crowd pattern:
+   enable template → copy_to per NPC → set_gpu_morphs(clone).
+   24 clones copy+register in ~0.3 s. Gate: 5 new checks incl.
+   `copy_ignores_template_sliders` (rms 0.000000).
+3. **Numbers refreshed on your acceptance content:** kade
+   11,650×52 / 14.5 MB, wren 14,684×52 / 18.3 MB, juno (s646)
+   14,561×52 / 18.2 MB — all three load/bake/register/render clean.
+   8-face morph-attributable cost re-measured with an interleaved
+   min-of-5 A/B: **0.19 ms** (your ≤0.5 ms bar; the Session Z 0.3 was
+   honest but single-run). 32-face stretch re-measured the honest
+   way — every clone independently driven: **4.3 ms** (the old
+   2.42 ms had 24 statues sharing one face). The wall is still
+   nowhere near a plaza.
+
+Your hero_closeup + PS_BENCH=300 GPU-path re-measure stands as the
+adoption closer — with today's numbers the enable hitch objection is
+gone before it was filed.
+
+**Four questions on hair, since you're in that code this week** (none
+blocking; answers shape what we build next, not whether your current
+path works):
+
+1. **Alpha modes across the hair library:** is card hair BLEND
+   everywhere (converted by `fix_card_hair()` to M_none +
+   AlphaTestAttrib), or do any owned/planned packs author MASK or
+   M_binary natively? If BLEND-authored is universal, your rewrite
+   stays per-pack policy and our detection nets are already complete;
+   if anything ships MASK/M_binary, `apply_alpha_masks` catches it
+   with NO rewrite — worth knowing which world we're in.
+2. **The 0.35 cutoff:** eyeballed or measured against the pack's
+   alpha histograms? (Engine detail: geom-level AlphaTestAttrib keeps
+   YOUR threshold per geom — 0.35 is honored, we're just curious
+   whether it was chosen or defaulted.)
+3. **Fringe quality:** at Talk-distance close-ups, does hard cutout
+   read acceptably on fine strands, or are you seeing steppy edges
+   where BLEND used to feather? If the latter, alpha-to-coverage
+   under MSAA is the engine lever we'd evaluate (order-independent,
+   no sorting, plays with the deferred-ish HDR chain) — we will NOT
+   build it speculatively, but a screenshot of steppy fringe would be
+   its field evidence.
+4. **Hair vs morphs:** confirm hair parts never carry shape keys
+   (your dead-key prune should structurally guarantee the hairline is
+   bone-driven, not morph-driven) — if any pack ever keys hair to
+   follow brow/jaw morphs, the one-variant-per-geom limit (morphs vs
+   alpha-mask on the SAME geom) becomes real and we'd need a combined
+   variant. One line in your bake log ("hair kept 0/52 keys") is a
+   sufficient answer, forever.
+
+---
+
 # 2026-07-20 — GPU morph prototype inputs: re-export was DELIVERED yesterday; counts, pruning, perf gate (character dev)
 
 Answering the engine desk's four questions, in their order. Short

@@ -1370,19 +1370,22 @@ path — no CPU valve, faces animate at crowd scale. Pure Python/GLSL;
 runs unchanged on stock 1.10 (fact #19).
 
 **Data path.** At enable, every Geom whose vertex data carries a
-slider table gets: (1) a per-vdata RGB32F **delta texture** — width =
-vertex rows, height = 2×targets, position delta at row 2t, NORMAL
-delta at row 2t+1 (the loader ships `normal.morph.<slider>` columns;
-lighting morphs correctly, not just silhouettes), stamped with the
-ER-003 `data_texture()` contract, nearest-filtered, extracted from the
-morph columns by raw array-byte slicing; (2) a float32 `morph_index`
-column (its own array) carrying each vertex's row id — the ONE
-addressing mechanism that works on both GLSL baselines (120 has no
-gl_VertexID); (3) a GPU_MORPHS compile of the PBR shader composed onto
-its geom state exactly like the alpha-mask seam (root inputs + flags
-still compose through; per-geom inputs: u_morph_tex, u_morph_texel).
-Ram conventions were measured before building: row 0 = v=0,
-set_ram_image_as('RGB') keeps float order.
+slider table gets: (1) a per-vdata RGB32F **delta texture** —
+VERTEX-MAJOR since Session AB: width = 2×targets (position delta at
+x=2t, NORMAL delta at x=2t+1 — the loader ships
+`normal.morph.<slider>` columns; lighting morphs correctly, not just
+silhouettes), height = vertex rows, stamped with the ER-003
+`data_texture()` contract, nearest-filtered. Vertex-major is the
+loader's OWN byte layout (one interleaved tight array per vdata), so
+the bake is zero-copy when column order matches the slider order —
+see the Session AB section for the bake ladder; (2) a float32
+`morph_index` column (its own array) carrying each vertex's row id —
+the ONE addressing mechanism that works on both GLSL baselines (120
+has no gl_VertexID); (3) a GPU_MORPHS compile of the PBR shader
+composed onto its geom state exactly like the alpha-mask seam (root
+inputs + flags still compose through; per-geom inputs: u_morph_tex,
+u_morph_texel). Ram conventions were measured before building:
+row 0 = v=0, set_ram_image_as('RGB') keeps float order.
 
 **Per-frame path.** `_step_gpu_morphs` (in `_update`) reads each
 registered Character's slider values and refills a compact 16-slot
@@ -1406,12 +1409,15 @@ lands on field evidence).
 
 **Measured (probe_gpu_morph_bench.py, hero_wren = worst-case
 14,684 verts × 52 targets, 512² offscreen):** 8 faces × 5 live
-sliders ≈ 0.3 ms/frame morph-attributable (acceptance bar ≤0.5 ms);
-CPU valve same scene 63.5 ms; 32 faces 2.42 ms total; Python push
-0.03 ms; enable cost 1.17 s + 18.3 MB per face (one-time, at load).
-Bench trap on record: `apply_freeze_scalar` without `force_update()`
-dirties nothing — an A/B without a playing clip silently measures an
-idle scene.
+sliders ≈ 0.3 ms/frame morph-attributable (acceptance bar ≤0.5 ms;
+re-measured 0.19 ms Session AB, interleaved min-of-5); CPU valve same
+scene 63.5 ms; 32 faces 2.42 ms total (superseded by the Session AB
+all-driven leg: 4.3 ms with every clone independent); Python push
+0.03 ms; enable cost 1.17 s + 18.3 MB per face at Session Z —
+**bake now 0.07–0.08 s (Session AB zero-copy path)**, texture size
+unchanged. Bench trap on record: `apply_freeze_scalar` without
+`force_update()` dirties nothing — an A/B without a playing clip
+silently measures an idle scene.
 
 ### Session AA — ER-007 height blend + hex anchor, ER-009 cutout alpha (LANDED)
 
@@ -1476,6 +1482,57 @@ nothing rides on it. Gate: test_alpha_mask `binary_*` (per-baseline
 split, both detection shapes, compat bit-identity rms 0.0) +
 `instanced_*` (trap 0/4 → fix 4/4, byte-exact opt-outs; info-skip on
 stock 1.10).
+
+### Session AB — GPU morph crowds: zero-copy bake, independent clone faces (LANDED)
+
+Two upgrades to the Session Z path, driven by the shipped three-hero
+roster (kade/wren/juno) and the crowd scenario. No API additions —
+`set_gpu_morphs` just got cheaper and clone-aware.
+
+**Bake ladder (enable cost 1.17 s → 0.07–0.08 s per production
+face).** The delta texture is vertex-major (see the amended Session Z
+data path) — the loader's own interleaved morph array IS the texture
+when a vdata's column order matches the character slider order:
+1. **Zero-copy** (order matches, tight, one array): raw array bytes →
+   `set_ram_image_as`. wren/juno: 5/7 vdatas, ~95% of rows.
+2. **numpy column gather** (any order/spread; numpy ships with
+   panda3d-gltf so it is present wherever glTF morphs are): ~104
+   C-speed column moves. kade's pack orders 5/6 prims
+   non-canonically — 0.34 s pure-Python → 0.08 s.
+3. **Pure-Python per-row loop** (no numpy): the Session Z path,
+   correctness floor.
+All three produce byte-identical textures — gate check
+`bake_fast_matches_reorder` compares them AND asserts the fast path
+stays available on loader output, so a future loader layout change
+fails loudly instead of silently regressing enable cost. Class flags
+`_MORPH_FAST_BAKE` / `_MORPH_NUMPY_REORDER` are test hooks, not user
+knobs. `morph_index` fill is bulk (`array('f')` → handle.set_data).
+
+**Clone contract (the synchronized-face defect).** `copy_to` on a
+Character pointer-shares RenderStates + textures but DEEP-COPIES the
+vdata (fact #20 — Session Z's "copies share vdata" was a wrapper-id
+artifact). A clone of an enabled template therefore arrives
+converted-but-puppeted: variant states + shared delta textures came
+with the copy, and it renders the TEMPLATE's face through the
+inherited `u_morphs` block. `set_gpu_morphs(clone)` detects the
+per-geom `u_morph_tex` input, skips the bake entirely (zero new
+textures — pointer-verified in-gate), and registers the clone's own
+CharacterSliders + PTA (the clone root's input overrides the
+inherited one). Clone opt-out parks a ZEROED block instead of
+clearing — the as-copied geom states still carry the variant shader,
+and a missing declared input asserts at draw (the gate caught this) —
+and never touches the template. The bake cache inside one enable call
+is keyed by `vdata.this` (id() is unstable across wrapper lookups and
+can false-hit after collection — fact #20).
+
+**Measured (three heroes + crowd):** bake wren 0.07 / kade 0.08 /
+juno 0.08 s per face; 24 clones copy+register 0.25–0.49 s, zero
+re-bake; 8-face morph-attributable 0.19 ms (interleaved min-of-5 —
+single-run deltas drifted 0.4–0.8 ms under background load, so
+cross-run A/Bs are not trusted for sub-ms attribution); 32 faces ALL
+independently driven 4.3 ms. Clone RAM: ~the morph-column bytes per
+clone (deep-copied vdata, ~18 MB on a production head) — a
+strip-columns lever exists on paper, unbuilt pending evidence.
 
 ---
 

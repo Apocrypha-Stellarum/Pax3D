@@ -25,6 +25,12 @@ What this row guards, permanently:
   5. A real exporter-authored weights animation drives the sliders
      through Actor (structural clip pick — Blender 5 ACTIVE_ACTIONS
      merges under the exporter-default name 'Animation').
+  6. Session AB crowd/bake contract: the zero-copy fast bake and the
+     per-column reorder bake produce byte-identical delta textures
+     (and the loader still ships the interleaved-in-slider-order
+     array that makes the fast path available); a copy_to clone
+     registers with ZERO new textures, drives its OWN face, ignores
+     the template's sliders, and detaches cleanly on opt-out.
 
 Only meaningful for pax3d_render (needs the per-node skinning API).
 """
@@ -210,6 +216,147 @@ def main():
         h.report.check('gpu_sparse_compose_matches_cpu', rms_two < 0.02,
                        f'blink=0.6 + brow_raise=1 image, GPU vs CPU: '
                        f'rms {rms_two:.4f}')
+
+        # --- Session AB: fast bake == reorder bake, byte-level -------
+        def bake_blobs():
+            entry = next(e for e in pipeline._gpu_morph_entries
+                         if e['np'] == skinned)
+            seen = {}
+            for _g, _i, _s, t, _tx in entry['geoms']:
+                seen[t.this] = t
+            return sorted(bytes(t.get_ram_image())
+                          for t in seen.values())
+
+        # the fast path must be AVAILABLE on loader output (the
+        # interleaved-in-slider-order array is what makes production
+        # bakes zero-copy — a loader layout change should fail loudly
+        # here, not silently fall back to the slow path)
+        snames = [n for _r, n, _s
+                  in pipeline._character_sliders(skinned)]
+        want = []
+        for n in snames:
+            want += ['vertex.morph.' + n, 'normal.morph.' + n]
+        fast_avail = False
+        for g in skinned.find_all_matches('**/+GeomNode'):
+            for i in range(g.node().get_num_geoms()):
+                vd = g.node().get_geom(i).get_vertex_data()
+                if vd.get_slider_table() is None:
+                    continue
+                fmt = vd.get_format()
+                for ai in range(fmt.get_num_arrays()):
+                    arrf = fmt.get_array(ai)
+                    if (arrf.get_num_columns() == len(want)
+                            and arrf.get_stride() == 12 * len(want)
+                            and [str(arrf.get_column(ci).get_name())
+                                 for ci in range(len(want))] == want):
+                        fast_avail = True
+
+        pipeline.set_gpu_morphs(skinned)
+        blobs_fast = bake_blobs()
+        pipeline.set_gpu_morphs(skinned, False)
+        pcls = type(pipeline)
+        try:
+            import numpy  # noqa: F401
+            have_numpy = True
+        except ImportError:
+            have_numpy = False
+        try:
+            pcls._MORPH_FAST_BAKE = False
+            pipeline.set_gpu_morphs(skinned)
+            blobs_np = bake_blobs()      # numpy gather (if importable)
+            pipeline.set_gpu_morphs(skinned, False)
+            pcls._MORPH_NUMPY_REORDER = False
+            pipeline.set_gpu_morphs(skinned)
+            blobs_py = bake_blobs()      # pure-Python fallback
+            pipeline.set_gpu_morphs(skinned, False)
+        finally:
+            pcls._MORPH_FAST_BAKE = True
+            pcls._MORPH_NUMPY_REORDER = True
+        same = blobs_fast == blobs_np == blobs_py
+        h.report.check('bake_fast_matches_reorder',
+                       fast_avail and same,
+                       f'fast path available on loader output='
+                       f'{fast_avail}; zero-copy vs reorder(numpy='
+                       f'{have_numpy}) vs reorder(pure-py) texture '
+                       f'bytes identical={same} ({len(blobs_fast)} '
+                       f'texture(s), '
+                       f'{sum(len(b) for b in blobs_fast)} bytes)')
+
+        # --- Session AB: copy_to clone = independent face, no bake ---
+        pipeline.set_gpu_morphs(skinned)
+        entry_t = next(e for e in pipeline._gpu_morph_entries
+                       if e['np'] == skinned)
+        ptrs_t = {t.this for _g, _i, _s, t, _tx in entry_t['geoms']}
+        tmpl_jaw = capture_at({'jaw_open': 1.0})
+
+        clone = skinned.copy_to(base.render)
+        skinned.detach_node()   # clone sits at the same transform
+        n_clone = pipeline.set_gpu_morphs(clone)
+        entry_c = next(e for e in pipeline._gpu_morph_entries
+                       if e['np'] == clone)
+        ptrs_c = {t.this for _g, _i, _s, t, _tx in entry_c['geoms']}
+        h.report.check('copy_reuses_textures',
+                       n_clone == 1 and ptrs_c == ptrs_t,
+                       f'set_gpu_morphs(clone): {n_clone} geom(s), '
+                       f'delta textures pointer-shared with template='
+                       f'{ptrs_c == ptrs_t} (zero re-bake)')
+
+        cchar_np = clone.find('**/+Character')
+        _, csliders = find_sliders(cchar_np)
+
+        def capture_clone(values):
+            for name, v in values.items():
+                set_slider(cchar_np, csliders[name], v)
+            h.step(4)
+            img = h.capture()
+            for name in values:
+                set_slider(cchar_np, csliders[name], 0.0)
+            h.step(1)
+            return img
+
+        img_c_rest = capture_clone({})
+        img_c_jaw = capture_clone({'jaw_open': 1.0})
+        rms_moves = common.image_rms_diff(img_c_jaw, img_c_rest,
+                                          step=1)
+        rms_same = common.image_rms_diff(img_c_jaw, tmpl_jaw, step=1)
+        h.report.check('copy_drives_own_face',
+                       rms_moves > 0.002 and rms_same < 0.02,
+                       f'clone jaw_open=1 via the CLONE\'s sliders: '
+                       f'moves (rms {rms_moves:.5f} vs rest), matches '
+                       f'the template\'s own jaw image (rms '
+                       f'{rms_same:.4f})')
+
+        # the synchronized-face defect: the template's sliders must
+        # NOT reach a registered clone (pre-AB, the inherited uniform
+        # block made every clone wear the template's face)
+        set_slider(char_np, sliders['jaw_open'], 1.0)
+        h.step(4)
+        img_c_follow = h.capture()
+        set_slider(char_np, sliders['jaw_open'], 0.0)
+        h.step(1)
+        rms_follow = common.image_rms_diff(img_c_follow, img_c_rest,
+                                           step=1)
+        h.report.check('copy_ignores_template_sliders',
+                       rms_follow < 1e-6,
+                       f'template jaw_open=1 while clone rests: clone '
+                       f'image rms vs rest {rms_follow:.6f}')
+
+        # opt-out on the clone stops driving it; template unaffected
+        pipeline.set_gpu_morphs(clone, False)
+        img_c_dead = capture_clone({'jaw_open': 1.0})
+        rms_dead = common.image_rms_diff(img_c_dead, img_c_rest,
+                                         step=1)
+        clone.remove_node()
+        skinned.reparent_to(base.render)
+        img_t_again = capture_at({'jaw_open': 1.0})
+        rms_t_again = common.image_rms_diff(img_t_again, tmpl_jaw,
+                                            step=1)
+        h.report.check('copy_optout_isolated',
+                       rms_dead < 1e-6 and rms_t_again < 1e-6,
+                       f'disabled clone ignores its sliders (rms '
+                       f'{rms_dead:.6f}); template still drives (rms '
+                       f'{rms_t_again:.6f} vs its earlier jaw image)')
+        pipeline.set_gpu_morphs(skinned, False)
     skinned.detach_node()
 
     # --- static (joint-less) variant: delivery only (render behavior

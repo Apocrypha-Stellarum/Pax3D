@@ -3445,6 +3445,20 @@ class Pipeline:
                              # 52 addressable, <=16 driven; ARKit viseme
                              # ceiling). Overflow keeps the largest |w|.
     _MORPH_EPS = 1e-4        # slider magnitude below this is "at rest"
+    _MORPH_FAST_BAKE = True  # zero-copy bake when the loader's morph
+                             # array already matches the texture layout
+                             # (Session AB). The gate byte-compares the
+                             # fast and reorder paths; False forces the
+                             # reorder path (test hook, not a user knob).
+    _MORPH_NUMPY_REORDER = True  # reorder path uses numpy's column
+                             # gather when importable (it ships with
+                             # panda3d-gltf, so it is present wherever
+                             # glTF morphs are; kade's pack orders
+                             # columns non-canonically on 5/6 prims —
+                             # measured 0.34 s/face pure-Python vs
+                             # ~0.1 s with the gather). Pure-Python
+                             # fallback stays; all three bake variants
+                             # are byte-compared in-gate.
 
     def _get_gpu_morph_shader(self):
         """The GPU_MORPHS PBR variant for the CURRENT pipeline defines
@@ -3459,10 +3473,9 @@ class Pipeline:
         return self._gpu_morph_shader
 
     @staticmethod
-    def _extract_morph_col3(vdata, name):
-        """Tightly-packed float32x3 bytes of one morph column (rows *
-        12 bytes), or None if the column is absent. Reads the array's
-        raw bytes and slices per row — no per-vertex Panda calls."""
+    def _locate_morph_col(vdata, name):
+        """(array index, byte start, byte stride) of one float32x3
+        morph column, or None if the column is absent."""
         iname = p3d.InternalName.make(name)
         fmt = vdata.get_format()
         ai = fmt.get_array_with(iname)
@@ -3476,60 +3489,110 @@ class Pipeline:
                 f'morph column {name} is not float32x3 '
                 f'(type {col.get_numeric_type()}, '
                 f'{col.get_num_components()} comps)')
-        start = col.get_start()
-        stride = arrf.get_stride()
-        raw = bytes(vdata.get_array(ai).get_handle().get_data())
-        n = vdata.get_num_rows()
-        out = bytearray(12 * n)
-        for r in range(n):
-            o = r * stride + start
-            out[12 * r:12 * r + 12] = raw[o:o + 12]
-        return bytes(out)
+        return ai, col.get_start(), arrf.get_stride()
 
     @classmethod
     def _bake_morph_texture(cls, vdata, slider_names):
-        """RGB32F delta texture for one vdata: width = vertex rows,
-        height = 2 * len(slider_names) — position delta at row 2t,
-        normal delta at row 2t+1, rows keyed by the CHARACTER-level
-        slider order so every vdata under one character agrees on
-        target indices. Missing columns bake as zero rows (a slider
-        that does not touch this vdata is a no-op there, same as the
-        CPU path). Returns (texture, texel_size) or None if the vdata
-        carries no morph columns for any of the names.
+        """RGB32F delta texture for one vdata, VERTEX-MAJOR (Session
+        AB): width = 2 * len(slider_names) texels — position delta at
+        x = 2t, normal delta at x = 2t + 1, t keyed by the CHARACTER-
+        level slider order so every vdata under one character agrees
+        on target indices — height = vertex rows.
+
+        Vertex-major is not a style choice: it is byte-for-byte the
+        layout the loader already stores morph columns in (ONE
+        interleaved array, [vertex.morph.s, normal.morph.s, ...]
+        tightly packed per vertex — measured on production heads,
+        Session AB). When a vdata's column order matches the slider
+        order (wren: head/torso/lash prims, ~95% of rows) the bake is
+        a ZERO-COPY upload of the array's raw bytes; vdatas whose
+        column order differs (wren's eye prims) or that carry a
+        subset take a per-column reorder pass, and missing columns
+        stay zero texels (a slider that does not touch this vdata is
+        a no-op there, same as the CPU path). The two paths are
+        byte-compared in-gate.
 
         Ram row 0 = texcoord v=0 and set_ram_image_as('RGB') keeps
         float component order — both MEASURED (TexturePeeker probe,
         Session Z) and re-proven end-to-end by the gate's GPU-vs-CPU
         image check. data_texture() pins the ER-003 contract; nearest
-        filtering + texel-center UVs make every fetch exact."""
+        filtering + texel-center UVs make every fetch exact. Returns
+        (texture, texel_size) or None if the vdata carries no morph
+        columns for any of the names."""
         n = vdata.get_num_rows()
-        zeros = None
-        rows = []
-        found = False
-        for name in slider_names:
-            pos = cls._extract_morph_col3(vdata, 'vertex.morph.' + name)
-            nrm = cls._extract_morph_col3(vdata, 'normal.morph.' + name)
-            if pos is not None or nrm is not None:
-                found = True
-            if pos is None or nrm is None:
-                if zeros is None:
-                    zeros = bytes(12 * n)
-                pos = pos if pos is not None else zeros
-                nrm = nrm if nrm is not None else zeros
-            rows.append(pos)
-            rows.append(nrm)
-        if not found:
-            return None
+        ncols = 2 * len(slider_names)
+        rowbytes = 12 * ncols
+        fmt = vdata.get_format()
+
+        image = None
+        if cls._MORPH_FAST_BAKE:
+            want = []
+            for name in slider_names:
+                want.append('vertex.morph.' + name)
+                want.append('normal.morph.' + name)
+            for ai in range(fmt.get_num_arrays()):
+                arrf = fmt.get_array(ai)
+                if (arrf.get_num_columns() != ncols
+                        or arrf.get_stride() != rowbytes):
+                    continue
+                if all(str(arrf.get_column(ci).get_name()) == want[ci]
+                       and arrf.get_column(ci).get_start() == 12 * ci
+                       and (arrf.get_column(ci).get_numeric_type()
+                            == p3d.Geom.NT_float32)
+                       and arrf.get_column(ci).get_num_components() == 3
+                       for ci in range(ncols)):
+                    image = vdata.get_array(ai).get_handle().get_data()
+                    break
+        if image is None:
+            cols = []   # (dest column, src array, byte start, stride)
+            for t, name in enumerate(slider_names):
+                for k, prefix in enumerate(('vertex.morph.',
+                                            'normal.morph.')):
+                    loc = cls._locate_morph_col(vdata, prefix + name)
+                    if loc is not None:
+                        cols.append((2 * t + k,) + loc)
+            if not cols:
+                return None
+            raws = {ai: bytes(vdata.get_array(ai).get_handle()
+                              .get_data())
+                    for ai in {c[1] for c in cols}}
+            numpy = None
+            if cls._MORPH_NUMPY_REORDER:
+                try:
+                    import numpy
+                except ImportError:
+                    numpy = None
+            if numpy is not None:
+                views = {
+                    ai: numpy.frombuffer(raw, numpy.uint8).reshape(
+                        n, fmt.get_array(ai).get_stride())
+                    for ai, raw in raws.items()}
+                arr = numpy.zeros((n, rowbytes), numpy.uint8)
+                for c, ai, start, _stride in cols:
+                    arr[:, 12 * c:12 * c + 12] = (
+                        views[ai][:, start:start + 12])
+                image = arr.tobytes()
+            else:
+                out = bytearray(rowbytes * n)
+                for c, ai, start, stride in cols:
+                    raw = raws[ai]
+                    o = start
+                    d = 12 * c
+                    for _r in range(n):
+                        out[d:d + 12] = raw[o:o + 12]
+                        o += stride
+                        d += rowbytes
+                image = bytes(out)
         tex = p3d.Texture('pax3d_morph_deltas')
-        tex.setup_2d_texture(n, len(rows), p3d.Texture.T_float,
+        tex.setup_2d_texture(ncols, n, p3d.Texture.T_float,
                              p3d.Texture.F_rgb32)
         tex.set_minfilter(p3d.SamplerState.FT_nearest)
         tex.set_magfilter(p3d.SamplerState.FT_nearest)
         tex.set_wrap_u(p3d.SamplerState.WM_clamp)
         tex.set_wrap_v(p3d.SamplerState.WM_clamp)
-        tex.set_ram_image_as(b''.join(rows), 'RGB')
+        tex.set_ram_image_as(image, 'RGB')
         data_texture(tex)
-        return tex, p3d.LVecBase2(1.0 / n, 1.0 / len(rows))
+        return tex, p3d.LVecBase2(1.0 / ncols, 1.0 / n)
 
     @staticmethod
     def _character_sliders(model_np):
@@ -3584,6 +3647,19 @@ class Pipeline:
         (the added inert vertex column stays — no shader reads it
         without the GPU_MORPHS attribute binding).
 
+        Crowds (Session AB): a `copy_to` clone of an ENABLED template
+        arrives with the variant states and the SHARED delta textures
+        already on its geoms (states and textures are pointer-shared
+        by the copy; the vdata is deep-copied by the Character, but it
+        is already converted) — yet it renders the TEMPLATE's face,
+        because it inherits the template's slider uniform block.
+        Call set_gpu_morphs(clone) to give it its OWN face: the call
+        detects the variant states, skips the bake entirely (no new
+        textures, milliseconds), and registers the clone's own
+        CharacterSliders + uniform block. Disable on a clone stops
+        driving it (its geoms keep the as-copied variant states, its
+        sliders read as zero) and leaves the template untouched.
+
         Known limits (documented, field-evidence-gated like the
         alpha-mask depth caveat): the shadow depth pass renders the
         UNMORPHED silhouette; tangents keep base values (the loader
@@ -3598,7 +3674,18 @@ class Pipeline:
             entry = self._gpu_morph_entries.pop(idx)
             for gnode, geom_i, orig_state, _tex, _texel in entry['geoms']:
                 gnode.set_geom_state(geom_i, orig_state)
-            model_np.clear_shader_input('u_morphs')
+            if entry.get('reused'):
+                # A clone's "original" geom states arrived already
+                # converted with the copy, so restoring them keeps the
+                # GPU_MORPHS shader active — clearing the input would
+                # assert at draw ("u_morphs is not present"). Park a
+                # zeroed block instead: the clone renders at rest.
+                pta = entry['pta']
+                for i in range(self._MORPH_LIVE_SLOTS):
+                    pta.set_element(i, p3d.LVecBase2f(0.0, 0.0))
+                model_np.set_shader_input('u_morphs', pta)
+            else:
+                model_np.clear_shader_input('u_morphs')
             return len(entry['geoms'])
         if idx is not None:
             return len(self._gpu_morph_entries[idx]['geoms'])
@@ -3609,7 +3696,15 @@ class Pipeline:
         names = [name for _row, name, _s in sliders]
 
         geoms = []
-        baked = {}   # id(original vdata) -> (new vdata, tex, texel)
+        # source vdata C++ pointer -> (source wrapper, new vdata, tex,
+        # texel). Keyed by .this, NOT id(): the Python wrapper is not
+        # stable across get_vertex_data() calls, so id() never hits for
+        # shared vdatas and a collected wrapper's id can be REUSED by a
+        # different vdata (false hit -> wrong texture). The source
+        # wrapper in the value keeps the pointer alive for the call.
+        baked = {}
+        any_reused = False
+        iname_tex = p3d.InternalName.make('u_morph_tex')
         gnode_paths = list(model_np.find_all_matches('**/+GeomNode'))
         if isinstance(model_np.node(), p3d.GeomNode):
             gnode_paths.insert(0, model_np)
@@ -3620,7 +3715,21 @@ class Pipeline:
                 if vdata.get_slider_table() is None:
                     continue
                 orig_state = gnode.get_geom_state(i)
-                cached = baked.get(id(vdata))
+                # A copy_to clone of a converted template: the variant
+                # state + shared delta texture came with the copy —
+                # reuse them, zero re-bake (Session AB crowd contract).
+                sa = orig_state.get_attrib(p3d.ShaderAttrib)
+                if sa is not None:
+                    reuse = sa.get_shader_input(iname_tex).get_texture()
+                    if reuse is not None:
+                        texel = p3d.LVecBase2(
+                            1.0 / reuse.get_x_size(),
+                            1.0 / reuse.get_y_size())
+                        geoms.append((gnode, i, orig_state, reuse,
+                                      texel))
+                        any_reused = True
+                        continue
+                cached = baked.get(vdata.this)
                 if cached is None:
                     result = self._bake_morph_texture(vdata, names)
                     if result is None:
@@ -3628,9 +3737,9 @@ class Pipeline:
                     tex, texel = result
                     new_vdata = self._add_morph_index_column(
                         gnode, i, vdata)
-                    baked[id(vdata)] = (new_vdata, tex, texel)
+                    baked[vdata.this] = (vdata, new_vdata, tex, texel)
                 else:
-                    new_vdata, tex, texel = cached
+                    _src, new_vdata, tex, texel = cached
                     gnode.modify_geom(i).set_vertex_data(new_vdata)
                 geoms.append((gnode, i, orig_state, tex, texel))
         if not geoms:
@@ -3642,7 +3751,8 @@ class Pipeline:
         model_np.set_shader_input('u_morphs', pta)
 
         entry = {'np': model_np, 'geoms': geoms, 'sliders': sliders,
-                 'pta': pta, 'last': None, 'warned': False}
+                 'pta': pta, 'last': None, 'warned': False,
+                 'reused': any_reused}
         self._gpu_morph_entries.append(entry)
         for gnode, geom_i, orig_state, tex, texel in geoms:
             self._apply_gpu_morph_state(gnode, geom_i, orig_state,
@@ -3652,18 +3762,27 @@ class Pipeline:
     @staticmethod
     def _add_morph_index_column(gnode, geom_i, vdata):
         """Append a float32 'morph_index' column (its own array) filled
-        with each vertex's row id, in place on this geom's vdata.
-        Returns the (possibly new) vdata for cache sharing."""
+        with each vertex's row id, in place on this geom's vdata. No-op
+        if the column is already present (a re-enable after disable, or
+        a shared-vdata sibling geom). Returns the (possibly new) vdata
+        for cache sharing."""
+        iname = p3d.InternalName.make('morph_index')
+        if vdata.get_format().get_array_with(iname) >= 0:
+            return vdata
         new_vdata = gnode.modify_geom(geom_i).modify_vertex_data()
         fmt = p3d.GeomVertexFormat(new_vdata.get_format())
         arr = p3d.GeomVertexArrayFormat()
-        arr.add_column(p3d.InternalName.make('morph_index'), 1,
-                       p3d.Geom.NT_float32, p3d.Geom.C_other)
+        arr.add_column(iname, 1, p3d.Geom.NT_float32, p3d.Geom.C_other)
         fmt.add_array(arr)
         new_vdata.set_format(p3d.GeomVertexFormat.register_format(fmt))
-        writer = p3d.GeomVertexWriter(new_vdata, 'morph_index')
-        for r in range(new_vdata.get_num_rows()):
-            writer.set_data1(float(r))
+        # bulk fill: array('f') is C-speed and 4-byte on every platform
+        # we ship (asserted); the row id sequence IS the byte image.
+        import array as stdarray
+        buf = stdarray.array('f', range(new_vdata.get_num_rows()))
+        assert buf.itemsize == 4
+        ai = new_vdata.get_format().get_array_with(iname)
+        new_vdata.modify_array(ai).modify_handle().set_data(
+            buf.tobytes())
         return new_vdata
 
     def _apply_gpu_morph_state(self, gnode, geom_i, orig_state, tex,

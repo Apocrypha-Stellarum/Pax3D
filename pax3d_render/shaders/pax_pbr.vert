@@ -53,12 +53,14 @@ attribute vec4 transform_index;
 #ifdef GPU_MORPHS
 // Session Z: morph targets on the GPU (fact #15's missing half — the
 // hardware-skinning path used to drop sliders). Deltas live in a
-// per-vdata RGB32F data texture: width = vertex rows, height =
-// 2 * targets, position delta at row 2t, normal delta at row 2t+1.
-// morph_index is a plain float32 column (the vertex's own row id) —
-// one addressing mechanism on BOTH GLSL baselines instead of
-// gl_VertexID, which 120 does not have. Nearest filtering + texel
-// centers make every fetch exact (the ER-003 data-texture pattern).
+// per-vdata RGB32F data texture, VERTEX-MAJOR since Session AB:
+// width = 2 * targets (position delta at x = 2t, normal delta at
+// x = 2t + 1), height = vertex rows — byte-identical to the loader's
+// own interleaved morph array, so the bake is zero-copy when column
+// order matches. morph_index is a plain float32 column (the vertex's
+// own row id) — one addressing mechanism on BOTH GLSL baselines
+// instead of gl_VertexID, which 120 does not have. Nearest filtering
+// + texel centers make every fetch exact (the ER-003 pattern).
 #ifndef MORPH_LIVE
     #define MORPH_LIVE 16
 #endif
@@ -105,16 +107,16 @@ void main() {
     // (measured: vertex.morph.* + normal.morph.* only). base_normal
     // stays unnormalized here exactly like the CPU path's column sum;
     // the normalize() calls below handle both paths identically.
-    float morph_u = (morph_index + 0.5) * u_morph_texel.x;
+    float morph_v = (morph_index + 0.5) * u_morph_texel.y;
     for (int i = 0; i < MORPH_LIVE; ++i) {
         float w = u_morphs[i].y;
         if (w == 0.0) break;   // slots are compact by contract
-        float v_pos = (u_morphs[i].x * 2.0 + 0.5) * u_morph_texel.y;
+        float u_pos = (u_morphs[i].x * 2.0 + 0.5) * u_morph_texel.x;
         base_vertex.xyz += w * texture2D(u_morph_tex,
-                                         vec2(morph_u, v_pos)).xyz;
+                                         vec2(u_pos, morph_v)).xyz;
         base_normal += w * texture2D(u_morph_tex,
-                                     vec2(morph_u,
-                                          v_pos + u_morph_texel.y)).xyz;
+                                     vec2(u_pos + u_morph_texel.x,
+                                          morph_v)).xyz;
     }
 #endif
 #ifdef ENABLE_SKINNING
