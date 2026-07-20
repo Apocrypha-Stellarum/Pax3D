@@ -113,7 +113,7 @@ post pass). A structural change (`enable_bloom`, `bloom_levels`,
 | `ENABLE_ATMOSPHERE` | `enable_atmosphere` | **R5.1**: aerial perspective / height haze (§9) — planetside, off for space |
 | `GLASS` | `set_glass(np)` — per-NODE variant, never in the render-root compile | **Session K**: specular-preserving glass (§9) — alpha attenuates transmission terms only, premultiplied output |
 | `DOUBLE_SIDED_LIGHTING` | `double_sided_lighting` | **Session K**: backfaces shade with the inverted normal (glTF doubleSided semantic, §9) — front faces bit-identical |
-| `ALPHA_MASK` (+`ALPHA_MASK_CUTOFF`) | `apply_alpha_masks(model_np)` — per-GEOM variant, never in the render-root compile | **Session W**: glTF alphaMode MASK in-shader discard (§9) — core profile ignores the loader's AlphaTestAttrib (fact #17); cutoff baked per distinct value |
+| `ALPHA_MASK` (+`ALPHA_MASK_CUTOFF`) | `apply_alpha_masks(model_np, instanced=)` — per-GEOM variant, never in the render-root compile | **Session W**: glTF alphaMode MASK in-shader discard (§9) — core profile ignores the loader's AlphaTestAttrib (fact #17); cutoff baked per distinct value. **Session AA (ER-009)**: also detects TransparencyAttrib M_binary (cutoff 0.5, the cull semantic); `instanced=True` composes INSTANCING into the variant (shaders cached per (cutoff, instanced)) |
 
 Notable shader features already present (inherited from the game's fork):
 geometric specular anti-aliasing (Kaplanyan-Hill), Eddington limb darkening
@@ -1112,7 +1112,8 @@ material inputs: 4 layers from 2D texture arrays weighted by an RGBA
 splat map (renormalized in-shader), per-layer uv_scale, splat-UV window,
 macro brightness variation, detail-normal distance fade, analytic world
 TBN (u→+world_x, v→+world_y — chunks carry no tangents). The layer-weight
-function is the ratified v2 seam (hex-tiling LANDED there Session Y —
+function is the ratified v2 seam (hex-tiling LANDED there Session Y,
+height-blend sharpening + hex world-anchor Session AA —
 TERRAIN_HEX_TILING, see the Session Y section; height-blend sharpening
 still slots in the same way). sampler2DArray works on the 120 path via
 GL_EXT_texture_array (measured). Gate: test_terrain_splat — 12 exact
@@ -1411,6 +1412,70 @@ CPU valve same scene 63.5 ms; 32 faces 2.42 ms total; Python push
 Bench trap on record: `apply_freeze_scalar` without `force_update()`
 dirties nothing — an A/B without a playing clip silently measures an
 idle scene.
+
+### Session AA — ER-007 height blend + hex anchor, ER-009 cutout alpha (LANDED)
+
+**Height-blend sharpening (`set_terrain_splat(..., height_blend=True,
+height_sharpness=8.0)`):** the ER-007 rider, unblocked by the terrain
+dev's height8-in-albedo.a intake (albedo.a == height16 >> 8, linear —
+the game binds F_srgb_alpha so sRGB touches RGB only; heightless
+layers ship flat 128). TERRAIN_HEIGHT_BLEND resharpens the splat
+weights per fragment by a height softmax — `w_i · 2^(k · h_i)`,
+renormalized — so the taller material's texels win the transition and
+blend borders follow the height texture instead of crossfading. The
+FORM is the contract: equal heights cancel as a common factor, so an
+all-flat palette (Deep Desert) degenerates to plain splat weights BY
+CONSTRUCTION (gate: rms 2.6e-06, one-hot texels exact) and a flat-128
+slice competes at its constant middle (beach-sand; k=8 vs h=1.0 →
+0.9406/0.0594, analytic-exact in-gate). Sharpened weights feed albedo,
+ORM and detail normals — material coherence. Sampling: per-layer
+albedo is pulled up front through `terrain_layer_sample` (the hex
+3-tap when TERRAIN_HEX_TILING is on, plain wrap tap otherwise — the
+height stays coherent with the rendered motif); plain path costs 4
+extra array taps, hex path reuses its taps. `height_sharpness` 0 is
+an exact no-op; useful range ~4–16 (at k=8 a 0.25 height advantage
+outweighs a 4× splat-weight deficit).
+
+**Hex world-anchor (`hex_offset=(u, v)`):** the Session-647 adoption
+observation — chunk-local base UVs restart per chunk, so the hex cell
+HASH reseeds along borders (whole-repeat uv_scales keep the texture
+PHASE continuous; the hash input is what jumps). `u_terrain_hex_off`
+is added to base UV before the per-layer uv_scales in the hex path
+only: chunks passing their world offset (in base-UV units) get
+world-anchored cell ids and a border-seamless motif. Default (0,0) is
+an exact no-op (x+0.0); the pinned hex numbers did not move. Gate:
+UV-window equivalence — mesh UVs shifted by δ with offset 0 == mesh
+UVs 0..1 with offset δ (rms 0.0005) — plus reseed-live and
+mean-preservation checks.
+
+**ER-009 — cutout alpha (`apply_alpha_masks` widened):** the grass-
+understory ask. Two gaps, not a missing discard:
+- **Detection:** `TransparencyAttrib M_binary` (the scatter `_proto`
+  BLEND→binary rewrite) is cull-implemented as
+  `AlphaTestAttrib(M_greater_equal, 0.5)` at max priority
+  (`cullResult.cxx get_binary_state`) — fixed-function-only, so
+  @modern it is silently ignored exactly like the loader's MASK
+  attrib (fact #17's class). `_find_alpha_mask_geoms` now scans the
+  subtree-COMPOSED state (geom-level or node-level M_binary both
+  count) and applies M_binary's own predicate a ≥ 0.5, so compat's
+  live fixed-function test and the in-shader discard cannot disagree
+  (bit-identity gated).
+- **Instancing:** the mask shader is a GEOM-level ShaderAttrib — on a
+  `set_instanced` node it replaces the INSTANCING variant and the
+  inherited F_hardware_instancing flag collapses every instance onto
+  the origin (the measured pairing trap). `apply_alpha_masks(np,
+  instanced=True)` compiles the mask variant WITH the instancing
+  path; re-calling with a different flag reconfigures in place.
+  Shaders cache per (cutoff, instanced).
+Depth pass: unchanged — fact #17's caveat stands (@modern casts the
+unmasked silhouette; compat cuts via the fixed-function test on the
+depth pass's output alpha). The ER's "shadow.frag already discards"
+premise was reviewed and corrected: no discard exists in any depth
+path; planetside's scatter shadow-excludes all but boulder tier, so
+nothing rides on it. Gate: test_alpha_mask `binary_*` (per-baseline
+split, both detection shapes, compat bit-identity rms 0.0) +
+`instanced_*` (trap 0/4 → fix 4/4, byte-exact opt-outs; info-skip on
+stock 1.10).
 
 ---
 

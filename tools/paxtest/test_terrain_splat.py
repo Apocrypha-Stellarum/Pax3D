@@ -44,6 +44,29 @@ Checks, in order:
      the sampled tangent-space normal is live).
  12. Hex opt-out: clear_terrain_splat() after hex restores the
      untouched capture byte-identically.
+ 13. RGBA albedo array carry (the height8-in-albedo.a intake,
+     2026-07-21): WITHOUT height_blend, alpha in the array changes
+     nothing — the quadrant analytics reproduce exactly (the terrain
+     dev's selftest result, engine-gated).
+ 14. THE all-flat contract (ER-007 height rider): every slice at flat
+     alpha 128 + height_blend=True renders the plain splat weights —
+     equal heights cancel as a common factor of the softmax renorm, so
+     an all-flat palette (Deep Desert) is a visual no-op by
+     construction, not by tuning.
+ 15. Softmax analytics: two layers at 50/50 splat with h=1.0 vs h=0.0
+     at k=4 render exactly the 2^4:1 reweighted blend; sharpness=0 is
+     inert (plain 50/50); a flat-128 slice against h=1.0 at k=8
+     competes at its constant middle height (the beach-sand case).
+ 16. Height blend composes with hex tiling: solid slices with distinct
+     constant alphas reproduce the same softmax analytic through the
+     3-tap hex path (terrain_layer_sample's hex branch).
+ 17. hex_offset world-anchor (the chunk-border motif seam): a nonzero
+     offset reseeds the lattice (image changes), and shifting the MESH
+     UV window by delta equals shifting hex_offset by delta — cell ids
+     depend only on base_uv + hex_offset, so chunks passing their
+     world offset get a border-seamless motif.
+ 18. Height/offset opt-out: clear_terrain_splat() restores the
+     untouched capture byte-identically (the new uniforms clear).
 
 The directional-sun variant run (run.py) re-runs the quadrant checks
 with sun_light_mode='directional' — proving the variant compiles and
@@ -87,6 +110,31 @@ def make_albedo_array(layer_colors, name):
     tex.set_minfilter(p3d.SamplerState.FT_nearest)
     tex.set_magfilter(p3d.SamplerState.FT_nearest)
     return tex
+
+
+def make_rgba_array(layer_colors, alphas, name):
+    """RGBA8 array: solid color slices with per-layer constant alpha
+    (the height8-in-albedo.a intake shape; alpha bytes stay exact)."""
+    tex = p3d.Texture(name)
+    tex.setup_2d_texture_array(4, 4, len(layer_colors),
+                               p3d.Texture.T_unsigned_byte,
+                               p3d.Texture.F_rgba8)
+    for z, (rgb, a) in enumerate(zip(layer_colors, alphas)):
+        img = p3d.PNMImage(4, 4, 4)
+        img.fill(*rgb)
+        img.alpha_fill(a)
+        tex.load(img, z, 0)
+    tex.set_minfilter(p3d.SamplerState.FT_nearest)
+    tex.set_magfilter(p3d.SamplerState.FT_nearest)
+    return tex
+
+
+def softmax_pair(w0, w1, h0, h1, k):
+    """The shader's height softmax for a two-layer blend: w_i * 2^(k*h_i),
+    renormalized."""
+    f0 = w0 * 2.0 ** (k * h0)
+    f1 = w1 * 2.0 ** (k * h1)
+    return f0 / (f0 + f1), f1 / (f0 + f1)
 
 
 def make_splat(texels, name, filt=p3d.SamplerState.FT_linear):
@@ -463,6 +511,182 @@ def main():
     h.report.check('hex_opt_out_restores', rms == 0.0,
                    f'clear after hex: rms vs untouched baseline = '
                    f'{rms:.2e} (byte-identical opt-out)')
+
+    # ==== ER-007 rider: height-blend sharpening + hex_offset ============
+    FLAT128 = 128.0 / 255.0
+
+    # --- Phase 13: RGBA array carry (no kwarg = alpha inert) ------------
+    # Distinct per-layer alphas, height_blend OFF: the render must
+    # reproduce phase 1's quadrant analytics exactly — alpha is carried
+    # by the array without disturbing RGB (the intake's F_srgb_alpha
+    # upload contract measured engine-side).
+    rgba_varied = make_rgba_array(
+        LAYERS, (1.0, 0.0, FLAT128, 1.0), 'albedo_rgba_varied')
+    pipeline.set_terrain_splat(card, rgba_varied, splat_quad)
+    h.step(5)
+    img = h.capture()
+    for tag, ((fx, fy), rgb) in QUADS.items():
+        x, y = px(fx, fy)
+        got = common.avg_lum(img, x, y)
+        want = expected_lum(rgb)
+        h.report.check(f'rgba_{tag}', abs(got - want) < 0.02,
+                       f'lum={got:.3f} expected {want:.3f} '
+                       f'(RGBA array, height_blend off: alpha inert)')
+
+    # --- Phase 14: THE all-flat contract --------------------------------
+    # Every slice flat 128 (the Deep Desert census): height_blend=True
+    # must be a visual no-op — the softmax factors are a COMMON FACTOR
+    # of the renormalization. One-hot splat texels cancel exactly
+    # (w*f/f == w in IEEE); blend zones can wiggle by an 8-bit LSB at
+    # most, so the whole-image rms is pinned tiny.
+    rgba_flat = make_rgba_array(
+        LAYERS, (FLAT128,) * 4, 'albedo_rgba_flat')
+    pipeline.set_terrain_splat(card, rgba_flat, splat_quad)
+    h.step(5)
+    img_flat_off = h.capture()
+    pipeline.set_terrain_splat(card, rgba_flat, splat_quad,
+                               height_blend=True, height_sharpness=8.0)
+    h.step(5)
+    img_flat_on = h.capture()
+    rms = common.image_rms_diff(img_flat_off, img_flat_on, step=1)
+    h.report.check('height_allflat_noop', rms < 1e-3,
+                   f'all-flat palette, k=8 on vs off: rms={rms:.2e} '
+                   f'(equal heights cancel — dune cannot shift)')
+    x, y = px(-0.5, 0.5)
+    d_quad = abs(common.avg_lum(img_flat_on, x, y)
+                 - common.avg_lum(img_flat_off, x, y))
+    h.report.check('height_allflat_onehot_exact', d_quad < 0.005,
+                   f'one-hot quadrant delta={d_quad:.4f} '
+                   f'(w*f/f == w exactly)')
+
+    # --- Phase 15: softmax analytics ------------------------------------
+    # Layer 0 h=1.0 vs layer 1 h=0.0 at a 50/50 splat (the renorm
+    # texture): k=4 reweights 2^4:1 -> (0.9412, 0.0588).
+    rgba_steep = make_rgba_array(
+        LAYERS, (1.0, 0.0, 0.0, 0.0), 'albedo_rgba_steep')
+    k = 4.0
+    w0p, w1p = softmax_pair(0.5, 0.5, 1.0, 0.0, k)
+    pipeline.set_terrain_splat(card, rgba_steep, splat_dim,
+                               height_blend=True, height_sharpness=k)
+    h.step(5)
+    img = h.capture()
+    h.save_capture(img, 'height_softmax')
+    got = common.avg_lum(img, cx, cy)
+    mix_rgb = [w0p * C0[i] + w1p * C1[i] for i in range(3)]
+    want = expected_lum(mix_rgb)
+    h.report.check('height_softmax_analytic', abs(got - want) < 0.02,
+                   f'k={k:g}, h=1 vs h=0 at 50/50: lum={got:.3f} '
+                   f'expected {want:.3f} (weights {w0p:.4f}/{w1p:.4f})')
+
+    pipeline.set_terrain_splat(card, rgba_steep, splat_dim,
+                               height_blend=True, height_sharpness=0.0)
+    h.step(5)
+    got = common.avg_lum(h.capture(), cx, cy)
+    half_rgb = [(C0[i] + C1[i]) / 2.0 for i in range(3)]
+    want = expected_lum(half_rgb)
+    h.report.check('height_sharp0_inert', abs(got - want) < 0.02,
+                   f'sharpness=0: lum={got:.3f} expected {want:.3f} '
+                   f'(kwarg live, softmax inert)')
+
+    # The beach-sand case: flat-128 slice against a real h=1.0 layer at
+    # k=8 — the flat slice competes at its constant 0.5, it does not
+    # vanish (h=0 would give weight 1/257; 0.5 gives ~1/17).
+    rgba_beach = make_rgba_array(
+        LAYERS, (1.0, FLAT128, 0.0, 0.0), 'albedo_rgba_beach')
+    kb = 8.0
+    w0b, w1b = softmax_pair(0.5, 0.5, 1.0, FLAT128, kb)
+    pipeline.set_terrain_splat(card, rgba_beach, splat_dim,
+                               height_blend=True, height_sharpness=kb)
+    h.step(5)
+    got = common.avg_lum(h.capture(), cx, cy)
+    mix_rgb = [w0b * C0[i] + w1b * C1[i] for i in range(3)]
+    want = expected_lum(mix_rgb)
+    h.report.check('height_flat128_competes', abs(got - want) < 0.02,
+                   f'k={kb:g}, h=1 vs flat-128 at 50/50: lum={got:.3f} '
+                   f'expected {want:.3f} (weights {w0b:.4f}/{w1b:.4f})')
+
+    # --- Phase 16: height blend through the hex path --------------------
+    # Solid slices: every hex tap reads the same texel, so the 3-tap
+    # per-layer sample (terrain_layer_sample's hex branch) must land on
+    # the same softmax analytic as the plain path.
+    pipeline.set_terrain_splat(card, rgba_steep, splat_dim,
+                               hex_tiling=True, hex_cell_size=2.0,
+                               height_blend=True, height_sharpness=k)
+    h.step(5)
+    got = common.avg_lum(h.capture(), cx, cy)
+    mix_rgb = [w0p * C0[i] + w1p * C1[i] for i in range(3)]
+    want = expected_lum(mix_rgb)
+    h.report.check('height_hex_uniform_analytic', abs(got - want) < 0.02,
+                   f'hex + height, k={k:g}: lum={got:.3f} expected '
+                   f'{want:.3f} (uniform slices: hex == plain)')
+
+    # --- Phase 17: hex_offset (chunk-border world anchor) ---------------
+    # (a) A nonzero offset reseeds the cell hash: the motif changes.
+    pipeline.set_terrain_splat(card, pat_array, splat_l0,
+                               uv_scales=(16, 1, 1, 1),
+                               hex_tiling=True, hex_cell_size=2.0)
+    h.step(5)
+    img_off0 = h.capture()
+    pipeline.set_terrain_splat(card, pat_array, splat_l0,
+                               uv_scales=(16, 1, 1, 1),
+                               hex_tiling=True, hex_cell_size=2.0,
+                               hex_offset=(5.0, 3.0))
+    h.step(5)
+    img_off53 = h.capture()
+    rms = common.image_rms_diff(img_off0, img_off53, step=1)
+    h.report.check('hexoff_reseeds_lattice', rms > 0.02,
+                   f'hex_offset (5,3) vs (0,0): rms={rms:.4f} '
+                   f'(hash input moved — the seam mechanism is live)')
+    m0, m53 = mean_lum(img_off0), mean_lum(img_off53)
+    h.report.check('hexoff_preserves_mean', abs(m0 - m53) < 0.03,
+                   f'mean lum {m0:.3f} vs {m53:.3f} (same stochastic '
+                   f'resample statistics)')
+
+    # (b) THE anchor contract: shifting the MESH UV window by delta ==
+    # shifting hex_offset by delta. Card B carries base UVs 1.37..2.37
+    # with offset (0,0); card A carries 0..1 with offset (1.37, 0) —
+    # identical images up to varying-interpolation ulps (nearest-filter
+    # texel flips on isolated pixels), so a chunk grid passing its
+    # world offset renders one continuous world-anchored motif.
+    DELTA = 1.37
+    pipeline.set_terrain_splat(card, pat_array, splat_l0,
+                               uv_scales=(16, 1, 1, 1),
+                               hex_tiling=True, hex_cell_size=2.0,
+                               hex_offset=(DELTA, 0.0))
+    h.step(5)
+    img_a = h.capture()
+    pipeline.clear_terrain_splat(card)
+    card.stash()
+    cmb = p3d.CardMaker('terrain_card_b')
+    cmb.set_frame(-1, 1, -1, 1)
+    cmb.set_uv_range(p3d.LTexCoord(DELTA, 0.0),
+                     p3d.LTexCoord(DELTA + 1.0, 1.0))
+    card_b = base.render.attach_new_node(cmb.generate())
+    card_b.set_two_sided(True)
+    card_b.set_material(mat_metal, 1)
+    pipeline.set_terrain_splat(card_b, pat_array, splat_l0,
+                               uv_scales=(16, 1, 1, 1),
+                               hex_tiling=True, hex_cell_size=2.0)
+    h.step(5)
+    img_b = h.capture()
+    h.save_capture(img_b, 'hexoff_anchor')
+    rms = common.image_rms_diff(img_a, img_b, step=1)
+    h.report.check('hexoff_world_anchor', rms < 0.01,
+                   f'UV window +{DELTA} w/ offset 0 vs UV 0..1 w/ '
+                   f'offset {DELTA}: rms={rms:.4f} (cell ids anchor to '
+                   f'base_uv + hex_offset — chunk borders seamless)')
+    pipeline.clear_terrain_splat(card_b)
+    card_b.remove_node()
+    card.unstash()
+
+    # --- Phase 18: height/offset opt-out --------------------------------
+    pipeline.clear_terrain_splat(card)
+    h.step(5)
+    img_restored = h.capture()
+    rms = common.image_rms_diff(img_bare, img_restored, step=1)
+    h.report.check('height_opt_out_restores', rms == 0.0,
+                   f'clear after height+hex_offset: rms vs untouched '
+                   f'baseline = {rms:.2e} (byte-identical opt-out)')
 
     h.report.finish()
 

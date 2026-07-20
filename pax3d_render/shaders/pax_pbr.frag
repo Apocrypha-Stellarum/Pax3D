@@ -161,9 +161,12 @@ uniform float u_terrain_macro_strength; // 0 = exact no-op
 #endif
 
 // THE v2 SEAM (user-ratified with the terrain dev, 2026-07-19): layer
-// weights come from here and ONLY here. Hex-tiling (Mikkelsen JCGT
-// 2022) and height-blend sharpening land later as new defines swapping
-// this function's body — nothing else in the variant restructures.
+// weights come from here and ONLY here — plus, when their defines are
+// on, the seam riders that landed exactly as promised: hex-tiling
+// (TERRAIN_HEX_TILING, ER-007) swaps the detail SAMPLING, and
+// height-blend sharpening (TERRAIN_HEIGHT_BLEND, the ER-007 rider)
+// resharpens these weights in main() before any consumer reads them.
+// Nothing else in the variant restructures.
 vec4 terrain_layer_weights(vec2 base_uv) {
     vec2 suv = base_uv * u_terrain_splat_transform.zw
              + u_terrain_splat_transform.xy;
@@ -199,6 +202,15 @@ uniform vec2 u_terrain_hex;      // x = cell size in detail-UV repeats,
                                  // y = contrast (weight-sharpen exp)
 uniform vec4 u_terrain_hex_rot;  // per-layer random-rotation range as
                                  // a fraction of +-180 deg (0 = off)
+// Per-chunk detail-UV offset in BASE-UV units, added before the layer
+// uv_scales (ER-007 adoption follow-up): chunk-local base UVs restart
+// every chunk, so without it the hex cell HASH reseeds along chunk
+// borders (plain tiling hid this because whole-repeat uv_scales keep
+// the PHASE continuous — the hash input is what jumps). Passing each
+// chunk's world offset here makes cell ids world-anchored and the
+// motif seamless across borders. Default (0,0) = exact no-op
+// (IEEE x+0.0 == x).
+uniform vec2 u_terrain_hex_off;
 
 // Per-cell hash (Hoskins fract-mix): no sin(), so it stays well
 // distributed at the large lattice ids planetary detail UVs produce
@@ -255,7 +267,7 @@ vec2 hex_tap_uv(vec2 duv, vec2 id, float rot_range, out vec2 cs) {
 vec4 hex_blend_array(sampler2DArray layers, vec4 w, vec2 base_uv) {
     vec4 acc = vec4(0.0);
     for (int i = 0; i < 4; ++i) {
-        vec2 duv = base_uv * u_terrain_uv_scales[i];
+        vec2 duv = (base_uv + u_terrain_hex_off) * u_terrain_uv_scales[i];
         vec2 id0, id1, id2;
         vec3 hw;
         hex_grid(duv / u_terrain_hex.x, id0, id1, id2, hw);
@@ -272,6 +284,48 @@ vec4 hex_blend_array(sampler2DArray layers, vec4 w, vec2 base_uv) {
     return acc;
 }
 #endif  // TERRAIN_HEX_TILING
+
+#ifdef TERRAIN_HEIGHT_BLEND
+// ---- Height-blend sharpening (ER-007 rider; height8 in albedo.a) ----
+// The intake packs each layer's height into the albedo array's ALPHA
+// (albedo.a == height16 >> 8, linear — the game binds F_srgb_alpha so
+// the sRGB transfer touches RGB only; heightless layers ship flat
+// 128). Splat weights are resharpened per fragment by a height
+// softmax:
+//     w_i' = w_i * 2^(sharpness * h_i)      (then renormalized)
+// so at a blend boundary the texel whose material stands TALLER wins:
+// the transition follows the height texture (grass blades interlock
+// with dirt) instead of a smooth crossfade. CONTRACT (ER-007,
+// 2026-07-21): equal heights cancel as a COMMON FACTOR of the
+// renormalization, so an all-flat palette (Deep Desert ships no
+// height maps) degenerates to the plain splat weights — dune's look
+// cannot shift when the kwarg lands. A flat-128 slice inside a
+// height-rich palette (beach-sand) competes at its constant 0.5.
+uniform float u_terrain_height_sharp;   // sharpness k; 0 = exact no-op
+
+// One layer's detail sample through the SAME path the blend uses (hex
+// 3-tap when TERRAIN_HEX_TILING is on, plain wrap tap otherwise) — the
+// height in .a stays coherent with the motif actually rendered.
+vec4 terrain_layer_sample(sampler2DArray layers, int i, vec2 base_uv) {
+#ifdef TERRAIN_HEX_TILING
+    vec2 duv = (base_uv + u_terrain_hex_off) * u_terrain_uv_scales[i];
+    vec2 id0, id1, id2;
+    vec3 hw;
+    hex_grid(duv / u_terrain_hex.x, id0, id1, id2, hw);
+    float rot = u_terrain_hex_rot[i];
+    vec2 cs;
+    return hw.x * texture2DArray(layers,
+               vec3(hex_tap_uv(duv, id0, rot, cs), float(i)))
+         + hw.y * texture2DArray(layers,
+               vec3(hex_tap_uv(duv, id1, rot, cs), float(i)))
+         + hw.z * texture2DArray(layers,
+               vec3(hex_tap_uv(duv, id2, rot, cs), float(i)));
+#else
+    return texture2DArray(layers,
+        vec3(base_uv * u_terrain_uv_scales[i], float(i)));
+#endif
+}
+#endif  // TERRAIN_HEIGHT_BLEND
 #endif
 
 uniform sampler2D p3d_TextureBaseColor;
@@ -474,6 +528,23 @@ void main() {
 #else
     #define TERRAIN_SAMPLE terrain_blend_array
 #endif
+#ifdef TERRAIN_HEIGHT_BLEND
+    // Per-layer albedo (height in .a) sampled up front; the sharpened
+    // weights drive EVERY splat consumer below (albedo, ORM, detail
+    // normals), so the material stays coherent. Each softmax factor is
+    // >= 1 for h in [0,1], k >= 0, so the renormalization sum is >= the
+    // (already-normalized) weight sum — no epsilon needed.
+    vec4 t_alb[4];
+    for (int i = 0; i < 4; ++i) {
+        t_alb[i] = terrain_layer_sample(terrain_albedo, i, v_texcoord);
+    }
+    vec4 t_hw = terrain_w * vec4(
+        exp2(u_terrain_height_sharp * t_alb[0].a),
+        exp2(u_terrain_height_sharp * t_alb[1].a),
+        exp2(u_terrain_height_sharp * t_alb[2].a),
+        exp2(u_terrain_height_sharp * t_alb[3].a));
+    terrain_w = t_hw / (t_hw.x + t_hw.y + t_hw.z + t_hw.w);
+#endif
 #ifdef TERRAIN_SPLAT_ORM
     vec4 metal_rough = TERRAIN_SAMPLE(terrain_orm, terrain_w, v_texcoord);
 #else
@@ -482,8 +553,17 @@ void main() {
     float metallic = clamp(p3d_Material.metallic * metal_rough.b, 0.0, 1.0);
     float perceptual_roughness = clamp(p3d_Material.roughness * metal_rough.g,  0.0, 1.0);
     float alpha_roughness = perceptual_roughness * perceptual_roughness;
+#ifdef TERRAIN_HEIGHT_BLEND
+    // Reuse the up-front per-layer taps (same accumulate order as the
+    // blend functions).
+    vec4 terrain_albedo_px = terrain_w.x * t_alb[0]
+                           + terrain_w.y * t_alb[1]
+                           + terrain_w.z * t_alb[2]
+                           + terrain_w.w * t_alb[3];
+#else
     vec4 terrain_albedo_px = TERRAIN_SAMPLE(terrain_albedo, terrain_w,
                                             v_texcoord);
+#endif
 #ifdef TERRAIN_SPLAT_MACRO
     // Macro variation: brightness modulation at 100-500 m scale kills
     // the wallpaper effect. A 0.5 macro texel is an EXACT no-op
@@ -514,7 +594,8 @@ void main() {
         // space xy rotated BACK by the tap rotation so the normal
         // follows the rotated motif.
         for (int i = 0; i < 4; ++i) {
-            vec2 duv = v_texcoord * u_terrain_uv_scales[i];
+            vec2 duv = (v_texcoord + u_terrain_hex_off)
+                       * u_terrain_uv_scales[i];
             vec2 id0, id1, id2;
             vec3 hw;
             hex_grid(duv / u_terrain_hex.x, id0, id1, id2, hw);

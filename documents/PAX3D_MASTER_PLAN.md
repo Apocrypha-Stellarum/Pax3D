@@ -90,7 +90,7 @@ Each was established mechanically; each has a permanent guard.
 | 14 | The openworld direction-gated "vanishing shadows" (P0 addendum) are **grazing-angle self-shadow acne**: at low sun one shadow-map texel spans a large receiver depth, so a CONSTANT bias sized for normal incidence self-shadows the open ground into terracing bands (error ∝ 1/tan(alt) — the exact western-low-sun signature); the acne drops ground luminance so real cast shadows lose contrast and read as "gone." Byte-identical on stock 1.10.16 and Pax3D (GLSL, not C++). Fix = **slope-scaled bias** (`shadow_normal_bias_world`, opt-in, 0=off): adds bias ∝ tan(θ) only where the receiver grazes, so it clears acne without peter-panning the large-gap real shadows a bigger constant bias would erase. Proven on the real village GLB at az 240 (terracing gone, building/tree shadows kept) | Session I; test_shadow_grazing + probe_openworld_scale `--normal-bias` |
 | 15 | **Vertex morphs (egg Dxyz sliders) are silently dropped by the hardware-skinning render path** — the loader creates the CharacterSlider and the CPU path (`animate_vertices`) applies the morph exactly, but under GPU skinning the rendered vertices never move (identical stock + Pax3D = upstream behavior, not a fork artifact). **CLOSED OPT-IN Session Z (2026-07-20): `set_gpu_morphs(np)` renders sliders ON the hardware-skinning path** (delta texture + GPU_MORPHS variant, §4.12); the DEFAULT path still drops them (byte-identical shipped behavior, hw_drops_morphs stays the guard) and `set_hardware_skinning(np, False)` remains the no-flags fallback. The bone-palette ceiling is now a knob (`max_skinning_bones`, default 100; [200] measured inert for small rigs — identity padding) | Session S; probe_morph.py + test_skinning `bone_palette_*`; Session Z test_morph_gltf `gpu_*` |
 | 16 | **panda3d-gltf (pip 1.3.0) cannot load a real Blender morph export — three loader defects, all fixed by `pax3d_render.gltf_compat.install()`**: (a) sparse accessors (Blender's DEFAULT shape-key encoding; `bufferView` is legally optional) crash with `KeyError: 'bufferView'` (upstream Moguri#103, open); (b) an anim channel whose keys end before the clip's global end (legal, normal) crashes `get_next_time_index`; (c) `get_lerp_factor` clamps with `max(t,1)` instead of `min(t,1)`, so every LINEAR sample between keys snaps to the NEXT key's value — joints and morphs alike. All three are masked by dense per-frame bakes, which is why upstream ships them. With the shim, glTF morph delivery is CORRECT end-to-end: sliders + slider tables + morph columns arrive, CPU truth matches the Blender ground-truth manifest to 4 decimals, and a real weights channel drives sliders exactly (proven by byte-patching known values into the GLB — LINEAR lerp analytic to 0.001, short-channel hold exact). Fact #15 extends to glTF and to JOINT-LESS meshes: the scene-wide `F_hardware_skinning` flag drops morphs on static geometry too (image rms 0.000000); the per-node CPU opt-out renders them (~+0.1 ms/frame per 2240-vert head). Instrument trap: cached bams bypass the loader entirely — disable `BamCache` when measuring loader behavior | Session T; probe_morph_gltf.py (SK_SFM_Head1 + manifest, 26 facts, identical both engines) |
-| 17 | **glTF alphaMode MASK only works in the compat profile** — panda3d-gltf expresses MASK as a geom-level `AlphaTestAttrib`, and the GL backend implements that attrib solely via fixed-function `GL_ALPHA_TEST` (`do_issue_alpha_test` sits behind `has_fixed_function_pipeline()`); under `gl-version 3 2` it is silently ignored and ALL MASK content renders opaque (a factor-only mask = a solid shell — the character dev's field report; cutout foliage = solid cards). Identical on stock 1.10.16 — upstream behavior, not fork damage. Fix: `pipeline.apply_alpha_masks(model_np)` composes an ALPHA_MASK PBR variant onto exactly the stamped geoms (in-shader discard, same predicate ⇒ compat bit-identical, measured rms 0.0). Depth-pass caveat: compat gets cutout shadows from the fixed-function test, modern casts the unmasked silhouette — `exclude_from_shadows()` is the valve; a cutout-shadow depth path lands only on field evidence | Session W; test_alpha_mask (both engines × both baselines) |
+| 17 | **glTF alphaMode MASK only works in the compat profile** — panda3d-gltf expresses MASK as a geom-level `AlphaTestAttrib`, and the GL backend implements that attrib solely via fixed-function `GL_ALPHA_TEST` (`do_issue_alpha_test` sits behind `has_fixed_function_pipeline()`); under `gl-version 3 2` it is silently ignored and ALL MASK content renders opaque (a factor-only mask = a solid shell — the character dev's field report; cutout foliage = solid cards). Identical on stock 1.10.16 — upstream behavior, not fork damage. Fix: `pipeline.apply_alpha_masks(model_np)` composes an ALPHA_MASK PBR variant onto exactly the stamped geoms (in-shader discard, same predicate ⇒ compat bit-identical, measured rms 0.0). **Extended Session AA (ER-009):** `TransparencyAttrib M_binary` is the SAME class of defect — cull composes `AlphaTestAttrib(GE, 0.5)` at max priority (`cullResult.cxx`), fixed-function-only, so M_binary foliage also renders solid @modern; detection now catches it (geom- or node-level), and `apply_alpha_masks(np, instanced=True)` keeps the mask variant paired with INSTANCING under set_instanced (the default variant collapses instances onto the origin — gate-measured). Depth-pass caveat: compat gets cutout shadows from the fixed-function test, modern casts the unmasked silhouette — `exclude_from_shadows()` is the valve; a cutout-shadow depth path lands only on field evidence | Session W; test_alpha_mask (both engines × both baselines); Session AA `binary_*`/`instanced_*` checks |
 | 18 | **Every offscreen frame on the 1.11 fork raises one GL_INVALID_OPERATION — and it was never about characters.** The FPS-lane field attribution ("playing characters") measured wrong: an EMPTY offscreen scene errors identically (probe matrix: fork offscreen 1/frame both baselines; fork real window 0; stock 1.10.16 0 everywhere; the Window-1 wheel reproduces → predates all R6 surgery). Root cause: upstream `bd4dc8a379` (2024-10, a **DX9** wdxGraphicsBuffer copy fix, before our divergence point) commented out the single-buffered branch of `FrameBufferProperties::get_buffer_mask()`, so `prepare_display_region` issues `glDrawBuffer(GL_BACK)` on the single-buffered wgl pbuffer. Consequence: the once-per-second error sweep reaches `gl-max-errors` (default 20) after ~20 s of offscreen wall time and **panic-deactivates the GSG — frozen framebuffer, silently stale screenshots** (every paxtest process runs under this deadline; the runner never surfaced the stderr noise). Sibling defect: `gl-max-errors -1` (documented "no limit") deactivates on the FIRST error — bare `>=` at glGraphicsStateGuardian_src.cxx:4817 (`report_errors_loop` honors -1 correctly). One-line C++ fixes **LANDED (Session X part 2 mini-window, 2026-07-19)**: `PATCH_QUEUE_GL_OFFSCREEN.md` — probe now 0 errors/frame everywhere (was ~60/phase); the `gl-max-errors 1000000` workarounds can come out of game harnesses. Technique worth keeping: pin the global clock to dt>1 s so the 1/sec sweep runs every frame — per-frame GL-error attribution on a release build | Session X; probe_gl_errors.py + test_gl_clean (now the permanent zero-GL-errors guard, both engines) |
 | 19 | **The GPU morph path needs NO engine change and NO gl_VertexID — it runs on stock 1.10 too.** Morph deltas ride a per-vdata RGB32F data texture (width = vertex rows, height = 2×targets: position row 2t, normal row 2t+1) addressed by a plain float32 `morph_index` column — one mechanism on BOTH GLSL baselines. Two conventions MEASURED before building (TexturePeeker probe): Texture ram row 0 = texcoord v=0, and `set_ram_image_as(data,'RGB')` preserves float component order. Panda ships normal deltas alongside positions (`normal.morph.<slider>` columns — the GPU path is lighting-correct, not position-only). Instrument trap the bench exposed: `apply_freeze_scalar` alone does NOT dirty the bundle — without `force_update()` (or a playing clip) the CPU path re-animates nothing and a perf A/B silently measures an idle scene (the +0.01 ms tell) | Session Z; probe_ram_order (scratchpad), test_morph_gltf `gpu_*` (12/12 both engines × both baselines), probe_gpu_morph_bench.py |
 
@@ -336,7 +336,8 @@ palettes become drop-in). Sequencing agreed with the terrain dev:
    world TBN (chunks need no tangent column; u→+world_x, v→+world_y
    convention). The layer-weight function is the isolated v2 define
    seam (hex-tiling LANDED there Session Y — §4.11; height-blend
-   sharpening still pending a height source). Gate: test_terrain_splat
+   sharpening LANDED Session AA — §4.13 — after the terrain dev
+   delivered the height8-in-albedo.a source). Gate: test_terrain_splat
    — 12 EXACT analytic checks (quadrants, bilinear blend, renorm,
    macro, uv_scale, normal tilt+fade, byte-identical opt-out) + a
    directional-sun variant row; green both engines × both baselines.
@@ -540,6 +541,81 @@ A/B re-measures the 185→133 datapoint on the GPU path); texture-
 palette skinning + 8-influence option still queued separately (§2 of
 the build-window queue) and unblocked by this in one direction —
 the GPU morph shader is where a palette texture would also land.
+
+### 4.13 Session AA (2026-07-21) — ER-007 height blend + hex world-anchor, ER-009 cutout alpha
+
+Both arrivals the desk was watching for came in together (terrain dev,
+sessions 651/652): the ER-007 height-source answer (height8 authored
+into albedo.a library-wide, contract pinned) and a new HIGH ask,
+ER-009 (cutout foliage renders solid in the main pass — the grass
+understory is pulled from the palettes behind it). Both landed
+same-day, pure Python/GLSL, everything opt-in/default-exact-no-op:
+
+1. **ER-007 rider — height-blend sharpening. IMPLEMENTED + GATED.**
+   `set_terrain_splat(..., height_blend=True, height_sharpness=8.0)`
+   — TERRAIN_HEIGHT_BLEND at the ratified v2 seam. Splat weights are
+   resharpened per fragment by a height softmax
+   (`w_i · 2^(k · albedo_i.a)`, renormalized): the texel whose
+   material stands taller wins the transition, so blend borders follow
+   the height texture (grass interlocks with dirt) instead of
+   crossfading. The FORM is the contract: equal heights cancel as a
+   common factor, so the terrain dev's pinned requirement — an
+   ALL-FLAT palette (Deep Desert ships no height maps) must be a
+   visual no-op — holds by construction (measured rms 2.6e-06,
+   one-hot texels exact); a flat-128 slice inside a height-rich
+   palette (beach-sand) competes at its constant middle. Sharpened
+   weights drive albedo, ORM AND detail normals (material coherence);
+   on the hex path the per-layer taps ARE the blend taps (no extra
+   samples), on the plain path it costs 4 extra array taps.
+2. **ER-007 adoption follow-up — chunk-border motif seam. FIXED.**
+   `set_terrain_splat(..., hex_offset=(u, v))` — per-chunk detail-UV
+   offset in base-UV units added before the hex hash, exactly the fix
+   shape the terrain dev proposed: cell ids become world-anchored, so
+   the per-chunk hash reseam (their `dune_hex_after2.png` x=0 line)
+   vanishes when each chunk passes its world offset. Gated by a UV-
+   window equivalence check: mesh UVs shifted by δ with offset 0 ==
+   mesh UVs 0..1 with offset δ (rms 0.0005).
+3. **ER-009 — cutout alpha (grass understory). IMPLEMENTED + GATED.**
+   Two engine-side gaps closed in `apply_alpha_masks` (the fact-#17
+   seam — the main-pass discard was never missing, its NET was):
+   (a) detection now also catches `TransparencyAttrib M_binary`
+   (geom-level — the scatter `_proto` rewrite shape — or node-level
+   anywhere in the subtree), at M_binary's own engine semantic
+   a ≥ 0.5 (cull composes `AlphaTestAttrib(GE, 0.5)` at max priority,
+   `cullResult.cxx get_binary_state` — read first, then measured);
+   (b) `apply_alpha_masks(np, instanced=True)` compiles the mask
+   variant WITH the INSTANCING path — the default variant on a
+   set_instanced node hits the measured flag/shader pairing trap and
+   collapses every instance onto the origin (now itself a gate
+   check). Compat stays bit-identical (same predicate as the cull-
+   composed test, rms 0.0). The ER's "shadow pass already discards"
+   claim did NOT survive mechanism review: no discard exists in any
+   depth path (engine or game shaders grepped), fact #17's depth-pass
+   caveat stands (@modern casts the unmasked silhouette), and their
+   scatter shadow-excludes everything but boulder tier anyway — the
+   observation was likely made against compat content; corrected in
+   the ER response rather than silently accepted.
+4. **Gate:** test_terrain_splat +14 checks (RGBA-array carry, the
+   all-flat contract, softmax analytics k=4 exact 0.9412/0.0588,
+   sharpness-0 inert, flat-128-competes k=8 exact 0.9406/0.0594, hex
+   compose, hex_offset reseed + world-anchor, opt-outs) — the 24
+   pre-existing checks keep their exact pinned numbers (shift-rms
+   0.2296, anisotropy 0.19/1.14: the new uniform is byte-neutral.)
+   test_alpha_mask +10 checks (M_binary per-baseline split, geom- and
+   node-level detection, both-baseline cutout, compat bit-identity,
+   the instanced collapse trap measured 0/4→4/4, byte-exact
+   opt-outs; instanced phase info-skips on stock 1.10). Full gate:
+   totals IDENTICAL to Session Y/Z on all four configs (rows grew
+   internally) — @game 71/6/106 Pax3D · 69/6/108 stock; @modern
+   70/7/106 · 68/7/108; FAIL sets unchanged. Logs `gate_aa_*.log`.
+
+Remaining: game-side adoption of both (terrain dev: height_blend +
+hex_offset kwargs from `splat_dress_fns`, re-enable the pulled
+understory classes in `scatter_palettes.json` with
+`apply_alpha_masks(proto, instanced=True)` after the M_binary
+rewrite). ER statuses updated in place; the "related observation"
+(instanced nodes under a state-less parent) stays open pending their
+game-side repro — not reproduced in the harness idiom, offer stands.
 
 ---
 

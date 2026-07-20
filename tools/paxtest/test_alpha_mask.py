@@ -44,6 +44,22 @@ Checks:
   8. Opt-out restores the pre-API capture byte-identically — including
      restoring the DEFECT on @modern (the contract is exact restore).
 
+ER-009 phases (2026-07-21, scatter-foliage lane):
+  9. TransparencyAttrib M_binary — cull-implemented as
+     AlphaTestAttrib(GE, 0.5) at max priority (cullResult.cxx), so it
+     is fixed-function-only exactly like the loader attrib. Geom-level
+     M_binary (the scatter_render._proto rewrite shape) is detected
+     (cutoff 0.5); compat masks before the API and stays bit-identical
+     after; @modern renders the solid-quad defect before and cuts out
+     after. Node-level set_transparency(M_binary) is detected too.
+ 10. Instanced masks: the measured flag/shader pairing trap — a
+     default (non-INSTANCING) mask variant on a set_instanced node
+     collapses every instance onto the origin on BOTH baselines;
+     apply_alpha_masks(np, instanced=True) reconfigures in place and
+     every instance renders its cutout at its own transform. Opt-out
+     restores the pre-mask instanced render byte-identically.
+     (Skipped on engines without InstancedNode — stock 1.10.)
+
 Only meaningful for pipelines exposing apply_alpha_masks (pax3d_render
 and the routed pax_pbr adapter).
 """
@@ -399,6 +415,223 @@ def main():
                    f'apply_alpha_masks(False) -> {n_off}, rms vs pre-API '
                    f'= {rms:.2e} (on @modern this restores the DEFECT — '
                    f'exact restore is the contract)')
+
+    # ==== ER-009: TransparencyAttrib M_binary + instanced masks =========
+    model.stash()
+
+    def make_mat(name, rgb):
+        mat = p3d.Material(name)
+        mat.set_base_color(p3d.LColor(rgb[0], rgb[1], rgb[2], 1))
+        mat.set_metallic(0.0)
+        mat.set_roughness(ROUGH)
+        return mat
+
+    # The half-alpha texture again, in-memory (left half kept).
+    mask_img = p3d.PNMImage(8, 8)
+    mask_img.add_alpha()
+    mask_img.fill(1.0, 1.0, 1.0)
+    for yy in range(8):
+        for xx in range(8):
+            mask_img.set_alpha(xx, yy, 1.0 if xx < 4 else 0.0)
+    mask_tex = p3d.Texture('binary_mask_tex')
+    mask_tex.load(mask_img)
+    mask_tex.set_minfilter(p3d.SamplerState.FT_nearest)
+    mask_tex.set_magfilter(p3d.SamplerState.FT_nearest)
+    mask_tex.set_wrap_u(p3d.SamplerState.WM_clamp)
+    mask_tex.set_wrap_v(p3d.SamplerState.WM_clamp)
+
+    def set_geom_binary(np_):
+        """The scatter_render._proto rewrite shape: M_binary stamped on
+        the GEOM state, not the node."""
+        gnode = np_.node()
+        for i in range(gnode.get_num_geoms()):
+            gnode.set_geom_state(i, gnode.get_geom_state(i).set_attrib(
+                p3d.TransparencyAttrib.make(
+                    p3d.TransparencyAttrib.M_binary)))
+
+    back_cm = p3d.CardMaker('bin_back')
+    back_cm.set_frame(-7.0, 7.0, -7.0, 7.0)
+    bin_back = base.render.attach_new_node(back_cm.generate())
+    bin_back.set_y(2.0)
+    bin_back.set_material(make_mat('bin_back_mat', (1, 1, 1)), 1)
+
+    bin_cm = p3d.CardMaker('bin_cutout')
+    bin_cm.set_frame(0.5, 7.0, -7.0, 7.0)
+    bin_card = base.render.attach_new_node(bin_cm.generate())
+    bin_card.set_material(make_mat('bin_mat', (1, 0, 0)), 1)
+    bin_card.set_texture(mask_tex)
+    set_geom_binary(bin_card)
+
+    # Anchor: back card only at the two sample columns.
+    bin_card.stash()
+    h.step(5)
+    img_banchor = h.capture()
+    b_anchor_kept = avg_rgb(img_banchor, *P_KEPT)
+    b_anchor_cut = avg_rgb(img_banchor, *P_CUT)
+    bin_card.unstash()
+
+    # Pre-API: per-baseline split, same mechanism as the loader attrib.
+    h.step(5)
+    img_bpre = h.capture()
+    pre_kept = avg_rgb(img_bpre, *P_KEPT)
+    pre_cut = avg_rgb(img_bpre, *P_CUT)
+    if modern:
+        h.report.check(
+            'binary_modern_prefix_defect', b_anchor_cut[1] - pre_cut[1] > 0.1,
+            f'gl 3 2, M_binary, no API: cut-half g={pre_cut[1]:.3f} vs '
+            f'anchor {b_anchor_cut[1]:.3f} — the attrib is cull-'
+            f'implemented as a fixed-function alpha test, silently '
+            f'ignored (the solid grass-card field case)')
+    else:
+        h.report.check(
+            'binary_compat_prefix_masks',
+            abs(pre_cut[1] - b_anchor_cut[1]) < 0.02
+            and pre_kept[0] - pre_kept[1] > 0.08,
+            f'compat, M_binary, no API: cut-half g={pre_cut[1]:.3f} vs '
+            f'anchor {b_anchor_cut[1]:.3f}, kept half r-g='
+            f'{pre_kept[0] - pre_kept[1]:.3f} (fixed-function test '
+            f'already cuts)')
+
+    # Detection: geom-level M_binary found at M_binary's own cutoff.
+    found = pipeline._find_alpha_mask_geoms(bin_card)
+    h.report.check(
+        'binary_geomlevel_detected',
+        len(found) == 1 and abs(found[0][3] - 0.5) < 1e-6,
+        f'{len(found)} geom(s), cutoff='
+        f'{found[0][3] if found else None} (want 1 @ 0.5 — the '
+        f'get_binary_state semantic)')
+
+    # Detection: node-level set_transparency(M_binary) counts too.
+    nl_cm = p3d.CardMaker('bin_nodelevel')
+    nl_cm.set_frame(-1, 1, -1, 1)
+    nl_card = p3d.NodePath(nl_cm.generate())
+    nl_card.set_transparency(p3d.TransparencyAttrib.M_binary)
+    found_nl = pipeline._find_alpha_mask_geoms(nl_card)
+    h.report.check(
+        'binary_nodelevel_detected', len(found_nl) == 1,
+        f'{len(found_nl)} geom(s) under a set_transparency(M_binary) '
+        f'root (the subtree-composed state is scanned)')
+
+    # The API: both baselines cut out; compat cannot change a pixel.
+    n_bin = pipeline.apply_alpha_masks(bin_card)
+    h.step(5)
+    img_bpost = h.capture()
+    h.save_capture(img_bpost, 'binary_post')
+    post_kept = avg_rgb(img_bpost, *P_KEPT)
+    post_cut = avg_rgb(img_bpost, *P_CUT)
+    h.report.check(
+        'binary_masks_both_baselines',
+        n_bin == 1
+        and abs(post_cut[0] - b_anchor_cut[0]) < 0.02
+        and abs(post_cut[1] - b_anchor_cut[1]) < 0.02
+        and post_kept[0] - post_kept[1] > 0.08,
+        f'apply_alpha_masks -> {n_bin}; cut half rgb=({post_cut[0]:.3f}, '
+        f'{post_cut[1]:.3f}, {post_cut[2]:.3f}) vs anchor '
+        f'({b_anchor_cut[0]:.3f}, {b_anchor_cut[1]:.3f}, '
+        f'{b_anchor_cut[2]:.3f}); kept half red-dominant')
+    if not modern:
+        rms = common.image_rms_diff(img_bpre, img_bpost, step=1)
+        h.report.check('binary_compat_bit_identical', rms == 0.0,
+                       f'compat pre vs post: rms={rms:.2e} (same '
+                       f'predicate as the cull-composed test)')
+
+    # Opt-out restores the pre-API state (the defect, on @modern).
+    n_boff = pipeline.apply_alpha_masks(bin_card, False)
+    h.step(5)
+    rms = common.image_rms_diff(img_bpre, h.capture(), step=1)
+    h.report.check('binary_optout_restores', n_boff == 1 and rms == 0.0,
+                   f'apply_alpha_masks(False) -> {n_boff}, rms vs '
+                   f'pre-API = {rms:.2e}')
+    bin_card.stash()
+
+    # --- 10. Instanced masks (ER-009: scatter foliage is instanced) -----
+    if not hasattr(p3d, 'InstancedNode'):
+        h.report.info(
+            'instanced_mask_phase',
+            'skipped: engine has no InstancedNode (stock 1.10)')
+    elif not hasattr(pipeline, 'set_instanced'):
+        h.report.info(
+            'instanced_mask_phase',
+            'skipped: pipeline has no set_instanced')
+    else:
+        INST_POS = [(-3.5, 3.5), (3.5, 3.5), (-3.5, -3.5), (3.5, -3.5)]
+        proto_cm = p3d.CardMaker('inst_proto')
+        proto_cm.set_frame(-1.5, 1.5, -1.5, 1.5)
+        inode = p3d.InstancedNode('bin_instances')
+        inp = base.render.attach_new_node(inode)
+        inp.attach_new_node(proto_cm.generate())
+        inp.set_material(make_mat('inst_mat', (1, 0, 0)), 1)
+        inp.set_texture(mask_tex)
+        for gn in inp.find_all_matches('**/+GeomNode'):
+            set_geom_binary(gn)
+        ilist = inode.instances
+        ilist.reserve(len(INST_POS))
+        for wx, wz in INST_POS:
+            ilist.append(p3d.LPoint3(wx, 0, wz), p3d.LVecBase3(0, 0, 0),
+                         p3d.LVecBase3(1, 1, 1))
+        pipeline.set_instanced(inp)
+        h.step(5)
+        img_ipre = h.capture()   # instanced, no mask API (defect @modern)
+
+        # The measured trap: default (non-INSTANCING) mask variant under
+        # F_hardware_instancing collapses every instance to the origin.
+        n_inst = pipeline.apply_alpha_masks(inp)
+        h.step(5)
+        img_trap = h.capture()
+        away = sum(1 for wx, wz in INST_POS
+                   if avg_rgb(img_trap, px(wx - 0.75), py(wz))[0]
+                   - avg_rgb(img_trap, px(wx - 0.75), py(wz))[1] > 0.08)
+        origin_kept = avg_rgb(img_trap, px(-0.75), py(0))
+        h.report.check(
+            'instanced_default_mask_collapses',
+            n_inst == 1 and away == 0
+            and origin_kept[0] - origin_kept[1] > 0.08,
+            f'instanced=False mask on a set_instanced node: '
+            f'{away}/4 instances still render, origin kept-half r-g='
+            f'{origin_kept[0] - origin_kept[1]:.3f} — the flag/shader '
+            f'pairing trap, measured (why the kwarg exists)')
+
+        # instanced=True reconfigures in place: every instance renders
+        # its cutout at its own transform.
+        n_inst2 = pipeline.apply_alpha_masks(inp, instanced=True)
+        h.step(5)
+        img_ipost = h.capture()
+        h.save_capture(img_ipost, 'instanced_masked')
+        kept_ok = cut_ok = 0
+        for wx, wz in INST_POS:
+            kc = avg_rgb(img_ipost, px(wx - 0.75), py(wz))
+            cc = avg_rgb(img_ipost, px(wx + 0.75), py(wz))
+            bc = avg_rgb(img_banchor, px(wx + 0.75), py(wz))
+            if kc[0] - kc[1] > 0.08:
+                kept_ok += 1
+            if (abs(cc[0] - bc[0]) < 0.02 and abs(cc[1] - bc[1]) < 0.02):
+                cut_ok += 1
+        origin_kept = avg_rgb(img_ipost, px(-0.75), py(0))
+        origin_anchor = avg_rgb(img_banchor, px(-0.75), py(0))
+        h.report.check(
+            'instanced_mask_renders_all',
+            n_inst2 == 1 and kept_ok == 4
+            and abs(origin_kept[1] - origin_anchor[1]) < 0.02,
+            f'instanced=True: {kept_ok}/4 kept halves red at their '
+            f'instance transforms, origin back to backdrop '
+            f'(g={origin_kept[1]:.3f} vs anchor {origin_anchor[1]:.3f})')
+        h.report.check(
+            'instanced_mask_cutout_discards', cut_ok == 4,
+            f'{cut_ok}/4 discarded halves show the backdrop — cutout '
+            f'grass cards render per-instance (the ER-009 understory '
+            f'case)')
+
+        # Opt-out: back to the pre-mask instanced render, byte-exact.
+        n_ioff = pipeline.apply_alpha_masks(inp, False)
+        h.step(5)
+        rms = common.image_rms_diff(img_ipre, h.capture(), step=1)
+        h.report.check(
+            'instanced_mask_optout_restores',
+            n_ioff == 1 and rms == 0.0,
+            f'apply_alpha_masks(False) -> {n_ioff}, rms vs pre-mask '
+            f'instanced render = {rms:.2e}')
+        pipeline.set_instanced(inp, False)
+        inp.remove_node()
 
     h.report.finish()
 

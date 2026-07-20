@@ -499,14 +499,16 @@ class Pipeline:
         self._glass_shader = None
 
         # Alpha-mask geoms (apply_alpha_masks): per-geom ALPHA_MASK PBR
-        # variant honoring the loader's AlphaTestAttrib in-shader. Core
-        # profile has no fixed-function alpha test, so glTF alphaMode
-        # MASK otherwise renders opaque under gl-version 3 2. Entries
-        # are (model_np, [(gnode, geom_index, original geom RenderState,
-        # cutoff)]) so opt-out restores the geom states exactly; shaders
-        # cached per distinct cutoff and invalidated on every pipeline
-        # recompile (the glass discipline). Empty list = the shipped
-        # pipeline exactly (paxtest test_alpha_mask opt-out check).
+        # variant honoring the loader's AlphaTestAttrib — and, ER-009,
+        # TransparencyAttrib M_binary — in-shader. Core profile has no
+        # fixed-function alpha test, so both otherwise render opaque
+        # under gl-version 3 2. Entries are (model_np, [(gnode,
+        # geom_index, original geom RenderState, cutoff)], instanced)
+        # so opt-out restores the geom states exactly; shaders cached
+        # per distinct (cutoff, instanced) and invalidated on every
+        # pipeline recompile (the glass discipline). Empty list = the
+        # shipped pipeline exactly (paxtest test_alpha_mask opt-out
+        # check).
         self._alpha_mask_entries = []
         self._alpha_mask_shaders = {}
 
@@ -2841,62 +2843,103 @@ class Pipeline:
     # glTF alphaMode MASK (alpha-cutoff materials)
     # ------------------------------------------------------------------
 
-    def _get_alpha_mask_shader(self, cutoff):
+    def _get_alpha_mask_shader(self, cutoff, instanced=False):
         """The ALPHA_MASK PBR variant for this cutoff (compiled lazily
-        per distinct cutoff — content overwhelmingly uses the glTF
-        default 0.5 — invalidated by _recompile_pbr, the glass
-        discipline). The cutoff is baked as a #define: it is constant
-        per material, and a define avoids per-geom ShaderInput
-        plumbing."""
-        shader = self._alpha_mask_shaders.get(cutoff)
+        per distinct (cutoff, instanced) combo — content overwhelmingly
+        uses the glTF default 0.5 — invalidated by _recompile_pbr, the
+        glass discipline). The cutoff is baked as a #define: it is
+        constant per material, and a define avoids per-geom ShaderInput
+        plumbing. instanced=True adds INSTANCING so the variant keeps
+        reading p3d_InstanceMatrix under set_instanced (ER-009)."""
+        key = (cutoff, bool(instanced))
+        shader = self._alpha_mask_shaders.get(key)
         if shader is None:
             defines = self._get_pbr_defines()
             defines['ALPHA_MASK'] = True
             defines['ALPHA_MASK_CUTOFF'] = repr(float(cutoff))
+            name = f'pax_pbr_alpha_mask_{cutoff:g}'
+            if instanced:
+                defines['INSTANCING'] = True
+                name += '_inst'
             shader = shaderutils.make_shader(
-                f'pax_pbr_alpha_mask_{cutoff:g}',
-                'pax_pbr.vert', 'pax_pbr.frag', defines)
-            self._alpha_mask_shaders[cutoff] = shader
+                name, 'pax_pbr.vert', 'pax_pbr.frag', defines)
+            self._alpha_mask_shaders[key] = shader
         return shader
+
+    # M_binary's exact engine semantic: cull composes
+    # AlphaTestAttrib(M_greater_equal, 0.5) at max priority
+    # (panda/src/pgraph/cullResult.cxx, get_binary_state) — the shader
+    # predicate must match it so compat's live fixed-function test and
+    # the in-shader discard cannot disagree by a single pixel.
+    _BINARY_CUTOFF = 0.5
 
     @staticmethod
     def _find_alpha_mask_geoms(model_np):
         """(gnode, geom_index, geom RenderState, cutoff) for every Geom
-        in the subtree whose state carries a keep-if-greater alpha test
-        — the attrib panda3d-gltf stamps on alphaMode MASK materials
-        (geom-level, one per primitive). Cutoff 0 keeps everything, so
-        those geoms are left untouched."""
+        in the subtree that renders alpha-tested:
+
+        - a keep-if-greater AlphaTestAttrib on the geom state — what
+          panda3d-gltf stamps on alphaMode MASK materials (geom-level,
+          one per primitive); cutoff 0 keeps everything, so those geoms
+          are left untouched; OR
+        - TransparencyAttrib M_binary, geom-level or inherited from any
+          node at/below `model_np` (ER-009: the scatter foliage rewrite
+          stamps it per-geom; a plain set_transparency(M_binary) on the
+          model root is node-level — both count). M_binary is cull-
+          implemented as an alpha test at MAX priority, so when both
+          attribs are present M_binary's a >= 0.5 wins here exactly as
+          it does at cull.
+        """
         gnode_paths = list(model_np.find_all_matches('**/+GeomNode'))
         if isinstance(model_np.node(), p3d.GeomNode):
             gnode_paths.insert(0, model_np)
         found = []
         for np_ in gnode_paths:
             gnode = np_.node()
+            # State from model_np's own node down to this GeomNode
+            # (get_state(other) excludes other's own node state).
+            path_state = model_np.node().get_state().compose(
+                np_.get_state(model_np))
             for i in range(gnode.get_num_geoms()):
                 state = gnode.get_geom_state(i)
-                ata = state.get_attrib(p3d.AlphaTestAttrib)
-                if ata is None:
-                    continue
-                if ata.get_mode() not in (p3d.AlphaTestAttrib.M_greater_equal,
-                                          p3d.AlphaTestAttrib.M_greater):
-                    continue
-                cutoff = ata.get_reference_alpha()
-                if cutoff <= 0.0:
+                full = path_state.compose(state)
+                cutoff = None
+                ta = full.get_attrib(p3d.TransparencyAttrib)
+                if (ta is not None
+                        and ta.get_mode() == p3d.TransparencyAttrib.M_binary):
+                    cutoff = Pipeline._BINARY_CUTOFF
+                else:
+                    ata = full.get_attrib(p3d.AlphaTestAttrib)
+                    if (ata is not None
+                            and ata.get_mode() in
+                            (p3d.AlphaTestAttrib.M_greater_equal,
+                             p3d.AlphaTestAttrib.M_greater)
+                            and ata.get_reference_alpha() > 0.0):
+                        cutoff = ata.get_reference_alpha()
+                if cutoff is None:
                     continue
                 found.append((gnode, i, state, cutoff))
         return found
 
-    def apply_alpha_masks(self, model_np, enabled=True):
-        """Make a loaded model's glTF alphaMode MASK materials discard
-        below their cutoff on BOTH GL baselines. Returns the number of
-        masked geoms affected (0 = the model has none).
+    def apply_alpha_masks(self, model_np, enabled=True, instanced=False):
+        """Make a loaded model's cutout-alpha materials discard below
+        their cutoff on BOTH GL baselines. Returns the number of masked
+        geoms affected (0 = the model has none).
 
-        panda3d-gltf expresses MASK as an AlphaTestAttrib, which the GL
-        backend implements with fixed-function GL_ALPHA_TEST — a compat
-        -profile feature. Under gl-version 3 2 the attrib is silently
-        ignored, so MASK content renders OPAQUE: cutout foliage becomes
-        solid cards, and a factor-only mask (baseColorFactor alpha 0,
-        no texture) draws as a solid shell (field report 2026-07-19).
+        Detected cutout states (ER-009 widened the net beyond glTF):
+        - glTF alphaMode MASK — panda3d-gltf stamps a geom-level
+          AlphaTestAttrib (cutoff = the material's alphaCutoff);
+        - TransparencyAttrib M_binary, geom-level or set anywhere at/
+          below `model_np` (the scatter-foliage pattern: BLEND rewritten
+          to binary cutout at load). Cutoff is M_binary's own engine
+          semantic, a >= 0.5.
+
+        Both are cull/fixed-function mechanisms the GL backend only
+        implements via GL_ALPHA_TEST — a compat-profile feature. Under
+        gl-version 3 2 they are silently ignored, so cutout content
+        renders OPAQUE: foliage cards become solid atlas quads, and a
+        factor-only mask (baseColorFactor alpha 0, no texture) draws as
+        a solid shell (field reports 2026-07-19 / ER-009 2026-07-20).
 
         Mechanism: each masked Geom's state gets an ALPHA_MASK compile
         of the PBR shader (cutoff baked in) composed onto its existing
@@ -2909,36 +2952,62 @@ class Pipeline:
         baseline. `enabled=False` restores the saved geom states
         byte-identically (paxtest test_alpha_mask).
 
+        instanced: pass True when this model is (or will be) rendered
+        under set_instanced (ER-002 scatter). The geom-level mask
+        shader REPLACES the node-level INSTANCING variant for those
+        geoms, and a non-INSTANCING shader under F_hardware_instancing
+        collapses every instance onto the node origin (the measured
+        flag/shader pairing trap) — instanced=True compiles the mask
+        variant WITH the instancing path so flag and shader stay
+        paired. Re-calling with a different `instanced` reconfigures in
+        place. The same GeomNode cannot serve instanced and
+        non-instanced parents at once (geom states are shared) — use
+        separate prototype copies if you need both.
+
         Depth-pass caveat: the shadow shader has no per-geom alpha
         knowledge, so under gl-version 3 2 masked casters still cast
         their UNMASKED silhouette (compat gets cutout shadows from the
-        fixed-function test). A fully-invisible mask shell that must
-        not shadow should use exclude_from_shadows(); a cutout-shadow
-        depth path lands only on field evidence (see master plan).
+        fixed-function test acting on the depth pass's output alpha). A
+        fully-invisible mask shell that must not shadow should use
+        exclude_from_shadows(); a cutout-shadow depth path lands only
+        on field evidence (see master plan).
         """
+        instanced = bool(instanced)
         idx = next((i for i, e in enumerate(self._alpha_mask_entries)
                     if e[0] == model_np), None)
         if not enabled:
             if idx is None:
                 return 0
-            _np, entries = self._alpha_mask_entries.pop(idx)
+            _np, entries, _inst = self._alpha_mask_entries.pop(idx)
             for gnode, geom_i, orig_state, _cutoff in entries:
                 gnode.set_geom_state(geom_i, orig_state)
             return len(entries)
         if idx is not None:
-            return len(self._alpha_mask_entries[idx][1])
+            _np, entries, prev_inst = self._alpha_mask_entries[idx]
+            if prev_inst != instanced:
+                for gnode, geom_i, orig_state, cutoff in entries:
+                    self._apply_alpha_mask_state(gnode, geom_i,
+                                                 orig_state, cutoff,
+                                                 instanced)
+                self._alpha_mask_entries[idx] = (model_np, entries,
+                                                 instanced)
+            return len(entries)
         entries = self._find_alpha_mask_geoms(model_np)
         for gnode, geom_i, state, cutoff in entries:
-            self._apply_alpha_mask_state(gnode, geom_i, state, cutoff)
+            self._apply_alpha_mask_state(gnode, geom_i, state, cutoff,
+                                         instanced)
         if entries:
-            self._alpha_mask_entries.append((model_np, entries))
+            self._alpha_mask_entries.append((model_np, entries,
+                                             instanced))
         return len(entries)
 
-    def _apply_alpha_mask_state(self, gnode, geom_i, orig_state, cutoff):
+    def _apply_alpha_mask_state(self, gnode, geom_i, orig_state, cutoff,
+                                instanced=False):
         """Compose the mask variant onto ONE geom's original state."""
         prev = orig_state.get_attrib(p3d.ShaderAttrib)
         sattr = prev if prev is not None else p3d.ShaderAttrib.make()
-        sattr = sattr.set_shader(self._get_alpha_mask_shader(cutoff))
+        sattr = sattr.set_shader(
+            self._get_alpha_mask_shader(cutoff, instanced))
         gnode.set_geom_state(geom_i, orig_state.set_attrib(sattr))
 
     def _reapply_alpha_masks(self):
@@ -2946,10 +3015,10 @@ class Pipeline:
         registered geom after a pipeline shader recompile."""
         self._alpha_mask_entries = [e for e in self._alpha_mask_entries
                                     if not e[0].is_empty()]
-        for _np, entries in self._alpha_mask_entries:
+        for _np, entries, instanced in self._alpha_mask_entries:
             for gnode, geom_i, orig_state, cutoff in entries:
                 self._apply_alpha_mask_state(gnode, geom_i, orig_state,
-                                             cutoff)
+                                             cutoff, instanced)
 
     # ------------------------------------------------------------------
     # Terrain layer splatting (ER-001)
@@ -2962,7 +3031,8 @@ class Pipeline:
         key = (config['normal_array'] is not None,
                config['orm_array'] is not None,
                config['macro_map'] is not None,
-               config['hex_tiling'])
+               config['hex_tiling'],
+               config['height_blend'])
         shader = self._terrain_shaders.get(key)
         if shader is None:
             defines = self._get_pbr_defines()
@@ -2975,6 +3045,8 @@ class Pipeline:
                 defines['TERRAIN_SPLAT_MACRO'] = True
             if key[3]:
                 defines['TERRAIN_HEX_TILING'] = True
+            if key[4]:
+                defines['TERRAIN_HEIGHT_BLEND'] = True
             shader = shaderutils.make_shader(
                 'pax_pbr_terrain', 'pax_pbr.vert', 'pax_pbr.frag', defines)
             self._terrain_shaders[key] = shader
@@ -3020,6 +3092,13 @@ class Pipeline:
             nodepath.set_shader_input(
                 'u_terrain_hex_rot',
                 p3d.LVecBase4(*config['hex_rotation']))
+            nodepath.set_shader_input(
+                'u_terrain_hex_off',
+                p3d.LVecBase2(*config['hex_offset']))
+        if config['height_blend']:
+            nodepath.set_shader_input(
+                'u_terrain_height_sharp',
+                float(config['height_sharpness']))
 
     def _reapply_terrain_splat(self):
         """Re-push (freshly invalidated) terrain variants onto every
@@ -3037,7 +3116,9 @@ class Pipeline:
                           macro_strength=0.15,
                           normal_fade=(200.0, 400.0),
                           hex_tiling=False, hex_cell_size=4.0,
-                          hex_rotation=1.0, hex_contrast=6.0):
+                          hex_rotation=1.0, hex_contrast=6.0,
+                          hex_offset=(0.0, 0.0),
+                          height_blend=False, height_sharpness=8.0):
         """Give `nodepath` (a terrain chunk subtree) a splat-blended
         layer material (ER-001): up to 4 PBR layers weighted per-
         fragment by an RGBA splat map, composing with sun/shadows/fog/
@@ -3102,14 +3183,47 @@ class Pipeline:
                 blending). Higher = narrower blend seams, more of each
                 cell shown pure; 1.0 = plain barycentric (washed-out
                 seams).
+            hex_offset: per-chunk detail-UV offset in BASE-UV units,
+                added before the per-layer uv_scales in the HEX path
+                only (ER-007 adoption follow-up: the chunk-border motif
+                seam). Chunk-local base UVs restart every chunk, so the
+                hex cell HASH reseeds along borders (whole-repeat
+                uv_scales keep the texture PHASE continuous — the hash
+                input is what jumps). Pass each chunk's world offset in
+                base-UV units and cell ids become world-anchored: the
+                motif is seamless across chunk borders. Default (0,0)
+                is an exact no-op.
+            height_blend: enable height-blend sharpening (the ER-007
+                rider, unblocked by the height8-in-albedo.a intake
+                contract 2026-07-21): splat weights are resharpened per
+                fragment by w_i * 2^(height_sharpness * albedo_i.a),
+                renormalized, so at a blend boundary the texel whose
+                material stands TALLER wins — transitions follow the
+                height texture (grass interlocks with dirt) instead of
+                a smooth crossfade. The sharpened weights drive albedo,
+                ORM AND detail normals (material coherence). CONTRACT:
+                equal heights cancel exactly (common factor), so an
+                all-flat palette (Deep Desert: every slice flat-128) is
+                a visual no-op — plain splat weights; a flat-128 slice
+                inside a height-rich palette (beach-sand) competes at
+                its constant 0.5. Costs 4 extra albedo array taps on
+                the plain path; on the hex path the up-front taps ARE
+                the blend taps (no extra samples).
+            height_sharpness: the softmax exponent k. 0 = exact no-op
+                (kwarg live but inert); useful range ~4-16: at k=8 a
+                0.25 height advantage outweighs a 4x splat-weight
+                deficit (2^2 = 4). Raise it if transitions still read
+                as crossfades, lower it if blend borders turn to hard
+                jigsaw edges.
 
         Layer-weight computation lives in ONE shader function
         (terrain_layer_weights) — the ratified v2 seam. Hex-tiling
-        landed there as TERRAIN_HEX_TILING (ER-007); height-blend
-        sharpening still lands as a future define without
-        restructuring. Re-calling with new arguments reconfigures in
-        place; clear_terrain_splat() restores the node byte-identically
-        (paxtest test_terrain_splat).
+        landed there as TERRAIN_HEX_TILING (ER-007) and height-blend
+        sharpening as TERRAIN_HEIGHT_BLEND (the ER-007 rider) — both
+        exactly at the seam, nothing else restructured. Re-calling with
+        new arguments reconfigures in place; clear_terrain_splat()
+        restores the node byte-identically (paxtest
+        test_terrain_splat).
         """
         try:
             hex_rot = tuple(float(r) for r in hex_rotation)
@@ -3118,6 +3232,10 @@ class Pipeline:
         if len(hex_rot) != 4:
             raise ValueError('hex_rotation must be a scalar or a '
                              '4-sequence (one value per layer)')
+        hex_off = tuple(float(o) for o in hex_offset)
+        if len(hex_off) != 2:
+            raise ValueError('hex_offset must be a 2-sequence '
+                             '(base-UV units)')
         config = {
             'albedo_array': albedo_array,
             'splat_map': splat_map,
@@ -3133,6 +3251,9 @@ class Pipeline:
             'hex_cell_size': float(hex_cell_size),
             'hex_rotation': hex_rot,
             'hex_contrast': float(hex_contrast),
+            'hex_offset': hex_off,
+            'height_blend': bool(height_blend),
+            'height_sharpness': float(height_sharpness),
         }
         idx = next((i for i, e in enumerate(self._terrain_nodes)
                     if e[0] == nodepath), None)
@@ -3157,7 +3278,8 @@ class Pipeline:
                      'u_terrain_uv_scales', 'u_terrain_splat_transform',
                      'u_terrain_normal_fade', 'u_terrain_macro_scale',
                      'u_terrain_macro_strength', 'u_terrain_hex',
-                     'u_terrain_hex_rot'):
+                     'u_terrain_hex_rot', 'u_terrain_hex_off',
+                     'u_terrain_height_sharp'):
             nodepath.clear_shader_input(name)
 
     # ------------------------------------------------------------------
