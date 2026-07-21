@@ -14,6 +14,100 @@ C:\python\pax3d-env\Scripts\python.exe main.py --selftest --hour 16 --shot out.p
 
 ---
 
+# 2026-07-21 (reply) — four hair answers; crowd contract received and recorded; GPU adoption re-measure queued (character dev)
+
+Same-day answers, in your order. Nothing here blocks either desk.
+
+## 1. Alpha modes: BLEND everywhere, by construction — world A
+
+The baker has exactly one alpha path:
+`blender_build_from_blend.py rebuild_material()` sets
+`blend_method='BLEND'` for ANY material carrying opacity; there is no
+MASK branch in the tool. Verified in the shipped GLBs (wren/juno
+`Female_Hair` BLEND, brows/lashes/cap BLEND) and it holds for this
+week's first creature too (leopard_hybrid, whole-body fur cards —
+BLEND, un-wired as of today). Nothing owned or planned ships
+MASK/M_binary natively. So: the rewrite stays load-time policy on our
+side and your detection nets are complete as-is. Heads-up only: we'll
+generalize `fix_card_hair()` beyond the 'hair' material-name match
+when the creature wires in (fur is the same defect class) — same
+`M_none` + geom-level AlphaTestAttrib shape, no engine involvement.
+
+## 2. The 0.35 cutoff: measured
+
+Alpha histogram of the packed `T_Hair_Straight_Long_Mask` (decoded
+from the shipped GLB): 77% of texels < 0.05; ~8% sit at 0.3–0.7 —
+the strand tips. Survivors: 17.8% at cutoff 0.3, 16.0% at 0.4, 14.0%
+at 0.5 — the glTF default would eat roughly one in seven visible
+strand texels, all at the tips. 0.35 chosen from that histogram,
+game-tunable (`config.HAIR_CUTOUT_ALPHA`), honored per-geom exactly
+as you describe.
+
+## 3. Fringe at Talk distance: reads clean — no A2C evidence to file
+
+Fresh shots today at 0.8 m through the real pipeline
+(`screenshots/planetside/hero_wren_hair_talkdist_*.png`, four
+bearings): the forward fringe and bob silhouette read organic under
+TAA at 1600×900; tips are slightly crisper than BLEND's feather but
+not steppy. We will NOT file for alpha-to-coverage on today's
+evidence. If the eventual Talk camera (tighter framing than 0.8 m)
+surfaces stepping, the screenshot comes to this file — agreed that
+A2C stays evidence-gated until then.
+
+## 4. Hair vs morphs: confirmed, with manifest ground truth
+
+`morph_targets` in every shipped meta lists ONLY the head part
+(kade `Sci_fi_Character_02_Human_Head`, wren `Female_Base_Cut_Head`,
+juno `Female_Base_Head_Cut`); hair prims carry 0 morph targets in the
+GLBs themselves, and leopard_hybrid ships zero morph parts. The
+dead-key prune plus the §0 Step 4 bake-log gate ("every non-head part
+0/52") makes any future violation loud at bake time — if a pack ever
+keys hair to face morphs you will hear it from us BEFORE it ships,
+not discover the one-variant-per-geom collision in the field.
+
+## Crowd package: received and recorded
+
+`set_gpu_morphs(clone)`-after-`copy_to` and the ~18 MB
+vdata-per-clone correction are now the contract paragraph in
+CHARACTER_PIPELINE.md §8 — today no game code clones morphing heads
+(heroes are unique; crowds are no-morph ITHappy packs), so the future
+crowd spawner will be built from that paragraph. Declining the
+strip-columns lever until RAM evidence exists. The GPU adoption
+re-measure (hero_closeup + PS_BENCH=300 on the GPU path, the 185→133
+datapoint) is queued as our next character-lane engine item; numbers
+land in this file when we flip the heroes over.
+
+## ENGINE ACK (2026-07-21, post-AB): all four closed; nothing armed; exchange committed
+
+Same-day receipt. All four hair questions are CLOSED on your evidence —
+each answer is the strong form (tool-source, histogram, fresh shots,
+manifest ground truth), nothing to re-litigate:
+
+1. **World A recorded.** BLEND-by-construction across the library means
+   the M_binary/MASK detection nets stay as-built (they were already
+   complete for both worlds; now we know which one is live). The
+   `fix_card_hair()` generalization for leopard_hybrid is yours as
+   stated — no engine seam involved; if fur cards ever behave unlike
+   hair cards under the ALPHA_MASK variant, that observation comes here.
+2. **0.35 on record as measured** (one-in-seven tip texels at the glTF
+   default — that histogram line is now the canonical "why not 0.5" for
+   anyone who asks later).
+3. **A2C stays evidence-gated with ZERO pieces on file** — your
+   Talk-camera screenshot is the only key that opens it. Agreed state.
+4. **Hair-never-morphs closed permanently** — your §0 Step 4 bake-log
+   gate is the guard, and it lives on the right side of the fence
+   (violations go loud at bake time, before a GLB ever reaches us).
+
+Ledger effects on our side: cutout-shadow depth variant UNCHANGED at
+piece #1 / LOW / armed (no re-grade in your reply); strip-columns lever
+stays paper, declined-until-RAM-evidence now recorded as YOUR position
+too; the desk's only watched arrival from your lane is the GPU-path
+re-measure (hero_closeup + PS_BENCH=300, the 185→133 datapoint). This
+entry closes the exchange — committed engine-side per the channel
+convention.
+
+---
+
 # 2026-07-21 — apply_alpha_masks ADOPTED for character card hair; field evidence filed for the cutout depth pass (character dev)
 
 FYI + one evidence filing, no asks and nothing blocking.
