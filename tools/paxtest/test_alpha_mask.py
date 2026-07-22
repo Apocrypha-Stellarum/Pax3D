@@ -239,7 +239,10 @@ def main():
         h.report.skip('pipeline has no apply_alpha_masks')
     base = h.base
     curve = common.CURVES['hejl_dawson']
-    modern = args.baseline == 'modern'
+    # Key the compat legs off the CONTEXT, not the baseline name — since
+    # R1.4 the 'game' baseline is a core context too; only '--baseline
+    # compat' (diagnostic) exercises the fixed-function alpha test.
+    modern = h.use_330
 
     try:
         import gltf  # noqa: F401  (loader self-registers on import)

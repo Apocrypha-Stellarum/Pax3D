@@ -36,7 +36,7 @@ Files:
 |---|---|
 | `__init__.py` | Exports (`init = Pipeline`), `configure_prc()`, `make_base_color_textures_srgb()` |
 | `pipeline.py` | The Pipeline class — everything below |
-| `shaderutils.py` | Loads `shaders/*` from disk, injects `#define`s, mechanical GLSL 120→330 upgrade |
+| `shaderutils.py` | Loads `shaders/*` from disk, injects `#define`s (sources are native GLSL 330 since R1.4, 2026-07-23 — the 120→330 transform is deleted) |
 | `shaders/pax_pbr.vert/.frag` | The PBR scene shader (metal-rough, IBL hooks, debug modes) |
 | `shaders/tonemap.frag` | 4 operators + bloom composite + dither |
 | `shaders/bloom_extract/downsample/upsample.frag` | Jimenez-style bloom chain (F3 fixed Session D — §9) |
@@ -104,7 +104,7 @@ post pass). A structural change (`enable_bloom`, `bloom_levels`,
 | `ENABLE_SHADOWS` | `enable_shadows` | Shadow-map sampling + per-light `v_shadow_pos` |
 | `ENABLE_FOG` | `enable_fog` | Exponential fog |
 | `USE_OCCLUSION_MAP` | `use_occlusion_maps` | AO from metal-rough texture R channel |
-| `USE_330` | gl-version ≥ 3.2 | Mechanical 120→330 shader upgrade |
+| ~~`USE_330`~~ | — | REMOVED (R1.4, 2026-07-23): sources are native GLSL 330; a compat context warns and still works (diagnostic only) |
 | `ENABLE_SKINNING` | `enable_hardware_skinning` | GPU skinning |
 | `MAX_SKINNING_BONES` | `max_skinning_bones` | **Session S**: joint-palette size (`p3d_TransformTable[N]`, scene + shadow pass; default 100 — the ceiling that forced the character pipeline's 352→81 cuts, now a knob) |
 | `CALC_NORMAL_Z` | `calculate_normalmap_blue` | Reconstruct normal-map Z |
@@ -308,8 +308,9 @@ alone changes nothing; nodes cast by default. Proven by
 ### 5.5 Skinned casters — proven working (Session E)
 
 The depth pass renders skinned Characters correctly: hardware AND CPU
-skinning, egg- and glTF-loaded (`panda3d-gltf` + `Actor`), GLSL 120 and
-330, including posed joints (the shadow follows `control_joint`, not
+skinning, egg- and glTF-loaded (`panda3d-gltf` + `Actor`) — verified on
+both GLSL baselines while the 120 path existed (native 330 only since
+R1.4) — including posed joints (the shadow follows `control_joint`, not
 the bind pose). `StandardMunger` converts blend tables to the hardware
 path per-state (the shadow attrib carries `F_hardware_skinning`), and
 the GL layer pads short/missing transform tables with identity — so the
@@ -627,7 +628,8 @@ depth resolution at 2500 IEU goes from ~1.9 IEU linear to ~0.003 IEU).
 Acceptance: `paxtest test_scale --log-depth` (the runner's
 `scale/pax3d_render @logdepth` row) — a 6-step sub-resolution sweep that
 must order two surfaces 1 IEU apart at 2500 IEU at every step. Verified
-under GLSL 120 + 330, stock + Pax3D engines.
+under both GLSL baselines while the 120 path existed (native 330 only
+since R1.4), stock + Pax3D engines.
 
 Notes:
 - Fragment-level (not vertex-level) so long triangles interpolate
@@ -965,7 +967,7 @@ frame at the shell's near surface: an extinction pass (blend
 `dst *= src.rgb` — per-channel transmittance over whatever is behind,
 planet or space) then an additive inscatter pass. Depth-tested but not
 depth-written, `fixed`-bin after the opaque scene; own shader
-(`orbital_atmo.vert/frag`) whose USE_330/LOG_DEPTH defines track
+(`orbital_atmo.vert/frag`) whose LOG_DEPTH define tracks
 pipeline recompiles under the glass rule, including log-space
 `gl_FragDepth`. Quads ride reserved draw-mask bit 30
 (`ORBITAL_HIDE_BIT`) which the sun shadow camera always clears — a

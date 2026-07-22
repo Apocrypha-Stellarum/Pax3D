@@ -46,7 +46,7 @@ FRAMES = 30
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--baseline', default='game',
-                        choices=['game', 'modern'])
+                        choices=['game', 'modern', 'compat'])
     parser.add_argument('--gl-debug', action='store_true')
     parser.add_argument('--show', action='store_true')
     parser.add_argument('--hw-skinning', action='store_true',
@@ -65,7 +65,7 @@ def main():
     ]
     if not args.show:
         prc.append('window-type offscreen')
-    if args.baseline == 'modern':
+    if args.baseline != 'compat':
         prc.append('gl-version 3 2')
     if args.gl_debug:
         prc.append('gl-debug 1')

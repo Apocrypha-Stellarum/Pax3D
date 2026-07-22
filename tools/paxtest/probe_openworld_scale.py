@@ -97,7 +97,8 @@ def main():
     ap.add_argument('--village-no-cast', action='store_true',
                     help='village visible but excluded from the depth map')
     ap.add_argument('--baseline-game', action='store_true',
-                    help='GLSL-120 game baseline instead of gl 3 2 / 330')
+                    help='game baseline (now also gl 3 2 / 330 — R1.4 '
+                         'deleted the GLSL-120 path; kept for arg compat)')
     ap.add_argument('--strip-broken', action='store_true',
                     help='remove the three malformed no-material meshes '
                          'the loader warns about (Mesh.385/9098/9147)')

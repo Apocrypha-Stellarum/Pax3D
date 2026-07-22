@@ -17,7 +17,7 @@ C:/python/stock-panda-env/Scripts/python.exe tools/paxtest/test_bloom.py --pipel
 
 # Subset / options:
 python tools/paxtest/run.py --tests gamma,bloom --pipelines pax_pbr
-python tools/paxtest/run.py --baseline modern     # adds gl-version 3 2
+python tools/paxtest/run.py --baseline compat     # diagnostic: compat context
 ```
 
 Exit codes: 0 pass, 1 fail, 77 skip. Each test prints per-check lines and a
@@ -35,8 +35,13 @@ pictures when a check fails.
 | `pax_pbr` | The game's local pipeline, imported from `C:/python/sfb2`. |
 | `pax3d_render` | **The unified R1 pipeline in this repo** — the successor both of the above merge into. |
 
-`--baseline game` (default) mimics sfb2/plan.py PRC (no `gl-version` →
-GLSL 120). `--baseline modern` sets `gl-version 3 2` — the R1 target.
+`--baseline game` (default) mimics sfb2 PRC: `gl-version 3 2` (the game
+sets it in every entry point since 2026-07-23; the GLSL-120 dual path
+was deleted the same day, R1.4). `modern` is a legacy alias of `game`.
+`compat` is DIAGNOSTIC ONLY (no `gl-version` → compat context; the
+pipeline still emits GLSL 330 and warns) — not part of the standard
+gate, kept for fixed-function-interplay archaeology (fact #17 class).
+The standard gate is now both engines × the ONE `game` baseline.
 
 ## Tests
 

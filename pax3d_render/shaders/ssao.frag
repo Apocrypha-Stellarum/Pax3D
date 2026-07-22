@@ -1,4 +1,4 @@
-#version 120
+#version 330
 // Pax3D SSAO — first slice (Session S).
 //
 // Alchemy/SAO-style screen-space ambient obscurance from the DEPTH
@@ -22,9 +22,6 @@
 // gl_FragDepth = log2(1 + w) * u_log_depth_coef, inverted here.
 // Background (cleared depth == 1.0) always yields AO 1.
 
-#ifdef USE_330
-    #define texture2D texture
-#endif
 
 uniform sampler2D depth_tex;
 uniform vec2 u_proj_tan;        // tan(fov_x/2), tan(fov_y/2)
@@ -35,11 +32,9 @@ uniform float u_ao_intensity;   // obscurance strength (0 = exact no-op)
 uniform float u_ao_bias;        // depth-proportional self-occlusion bias
 uniform vec2 u_texel;           // 1/width, 1/height of the depth buffer
 
-varying vec2 v_texcoord;
+in vec2 v_texcoord;
 
-#ifdef USE_330
 out vec4 o_color;
-#endif
 
 #ifndef AO_SAMPLES
 #define AO_SAMPLES 12
@@ -60,7 +55,7 @@ float linear_depth(float d) {
 }
 
 vec3 view_pos(vec2 uv) {
-    float z = linear_depth(texture2D(depth_tex, uv).x);
+    float z = linear_depth(texture(depth_tex, uv).x);
     vec2 ndc = uv * 2.0 - 1.0;
     return vec3(ndc * u_proj_tan * z, z);
 }
@@ -72,7 +67,7 @@ float ign(vec2 p) {
 }
 
 void main() {
-    float d0 = texture2D(depth_tex, v_texcoord).x;
+    float d0 = texture(depth_tex, v_texcoord).x;
     vec3 P = view_pos(v_texcoord);
     // Face-the-camera normal from depth derivatives (computed BEFORE any
     // branch — derivatives are undefined in non-uniform control flow)
@@ -103,9 +98,5 @@ void main() {
     ao = mix(ao, 1.0, step(0.9999999, d0));
 
     vec4 result = vec4(ao, ao, ao, 1.0);
-#ifdef USE_330
     o_color = result;
-#else
-    gl_FragColor = result;
-#endif
 }

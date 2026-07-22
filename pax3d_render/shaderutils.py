@@ -3,11 +3,9 @@
 Loads GLSL shaders from the package's shaders/ directory, injects #define
 directives, and compiles into Panda3D Shader objects.
 
-Shader sources are written in GLSL 120 with a mechanical upgrade to GLSL 330
-when a modern context is configured (gl-version 3 2). The legacy 120 path
-exists only to keep rendering byte-identical with the game's previous
-pipeline during the R1 transition — it is scheduled for removal once the
-game runs on gl-version 3 2 (see PAX3D_MASTER_PLAN.md R1.4).
+Shader sources are native GLSL 330 (R1.4, 2026-07-23: the GLSL-120 dual
+path was removed after the game moved to `gl-version 3 2` everywhere;
+sources were baked from the transformed 330 output, gate-verified).
 """
 import os
 
@@ -59,30 +57,7 @@ def _load_shader_str(shaderpath, defines=None):
     defines['p3d_TextureBaseColor'] = 'p3d_TextureModulate'
     defines['p3d_TextureMetalRoughness'] = 'p3d_TextureSelector'
 
-    shaderstr = _add_shader_defines(shaderstr, defines)
-
-    use_330 = defines.get('USE_330', False)
-    use_webgl = defines.get('IS_WEBGL', False)
-
-    if use_330:
-        if use_webgl:
-            shaderstr = shaderstr.replace(
-                '#version 120',
-                '#version 300 es\nprecision highp float;\n'
-            )
-        shaderstr = shaderstr.replace('#version 120', '#version 330')
-        if shaderpath.endswith('vert'):
-            shaderstr = shaderstr.replace('varying ', 'out ')
-            shaderstr = shaderstr.replace('attribute ', 'in ')
-        else:
-            shaderstr = shaderstr.replace('varying ', 'in ')
-    elif use_webgl:
-        shaderstr = shaderstr.replace(
-            '#version 120',
-            '#version 100\nprecision highp float;\n'
-        )
-
-    return shaderstr
+    return _add_shader_defines(shaderstr, defines)
 
 
 def make_shader(name, vertex, fragment, defines):

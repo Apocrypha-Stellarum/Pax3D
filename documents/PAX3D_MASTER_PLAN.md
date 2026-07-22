@@ -36,9 +36,9 @@ Identical paxtest results on both engines = the defect is Python/GLSL, not C++.
 
 | Phase | What | Status (evidence) |
 |---|---|---|
-| R0 harness | `tools/paxtest/` — 32 test files, 5 pipelines, 2 GL baselines, analytic checks + instruments | **DONE**; gates everything (Session A; grown every session since — Session Y totals: @game 71 PASS / 6 documented FAIL / 106 SKIP Pax3D · 69/6/108 stock; @modern 70/7/106 · 68/7/108; the FAIL set is the same six documented rows everywhere, +lighting/none @modern) |
-| R1 unified renderer | `pax3d_render/` (pax_pbr ⊕ pax3d_simplepbr merge), color contract, `register_scene_camera()` | **Core done** (Sessions B, D — game flag flipped, boots clean). sRGB linearization experiment LANDED gated (Session R — `set_srgb_inputs`, test_srgb, ACES verdict on file). Open: in-game parity eyeball (user), sRGB default flip (game retune + sign-off), GLSL-120 path removal (needs game `gl-version 3 2`) |
-| R2 directional sun + shadows | Pipeline-owned DirectionalLight, HPR-driven; shadows with world-space extent center; **hardened Session E**: world-unit bias, 3×3 PCF, no-cast API, skinned casters proven; **hardened Session G**: glTF caster darkening is a hard assertion, glTF caster+receiver test (angled sun), per-node `set_hardware_skinning()` opt-out; **Session I**: slope-scaled bias (`shadow_normal_bias_world`, opt-in) kills grazing-angle acne (fact 14) | **Core done + hardened** (test_shadows 13+13, test_shadow_quality 9, test_shadows_gltf 6, test_shadow_grazing 6, test_skinning 12). Open: in-game validation — set `shadow_bias_world` (~0.5 IEU) first; openworld dev A/Bs `shadow_normal_bias_world` at az 240 low sun |
+| R0 harness | `tools/paxtest/` — 32 test files, 5 pipelines, analytic checks + instruments | **DONE**; gates everything (Session A; grown every session since). **Gate matrix redefined Session AC (R1.4, 2026-07-23): the standard gate is both engines × the ONE `game` baseline (= `gl-version 3 2`, mimicking the game); `modern` is a legacy alias; `compat` (no gl-version) is DIAGNOSTIC ONLY.** Canonical totals: **Pax3D 70/7/106 · stock 68/7/108** — identical to the historical @modern column (the bake-equivalence proof); FAIL set = the six documented rows + lighting/none. (Historical 2-baseline totals through Session AB: @game 71/6/106 · 69/6/108, @modern 70/7/106 · 68/7/108) |
+| R1 unified renderer | `pax3d_render/` (pax_pbr ⊕ pax3d_simplepbr merge), color contract, `register_scene_camera()` | **Core done** (Sessions B, D — game flag flipped, boots clean). sRGB linearization experiment LANDED gated (Session R — `set_srgb_inputs`, test_srgb, ACES verdict on file). **sRGB flip USER-APPROVED 2026-07-23** (testbed A/B: toggle mechanically verified live — 1 eligible texture = the planet, rms 0.092 over 27.7% of pixels; ACES-vs-Hejl judged subtle-not-worse; parity implicitly signed off same session) and **WIRED game-side same day**: `srgb_inputs` settings key (ON) + init pass-through + boot re-walk after `_load_initial_planet` (set_srgb_inputs converts only current content — late spawns need the idempotent re-call; sfb2 edits uncommitted per convention). **Core flip LANDED same day** (census found plan.py booting COMPAT; `gl-version 3 2` now set in plan.py, main.py — covers launcher modes 2–7 — test3d.py, test3d_ftl.py, and test3d_pax.py where modern is now the DEFAULT with `--compat` escape; planetside already had it; PlanetApp offscreen boot smoke green). **"core signed off" received + R1.4 EXECUTED same day (Session AC): the GLSL-120 dual path is DELETED** — all 16 shader sources baked to native GLSL 330 (nesting-aware conditional resolver, legacy builtins renamed), the shaderutils 120→330 transform + dead IS_WEBGL machinery removed, pipeline emits 330 unconditionally (compat contexts warn loudly and still work — measured), paxtest gate redefined to ONE core baseline + `compat` diagnostic. Gate: **Pax3D 70/7/106 · stock 68/7/108 — identical to the historical @modern column, FAIL sets unchanged** (the bake-equivalence proof). One test fix: test_alpha_mask keyed its compat legs on the baseline NAME, not the context (`use_330`) — compat legs now run only under `--baseline compat`, where all four PASS bit-identical (rms 0.0) with the baked shaders. **R1 IS CLOSED — no remaining items** |
+| R2 directional sun + shadows | Pipeline-owned DirectionalLight, HPR-driven; shadows with world-space extent center; **hardened Session E**: world-unit bias, 3×3 PCF, no-cast API, skinned casters proven; **hardened Session G**: glTF caster darkening is a hard assertion, glTF caster+receiver test (angled sun), per-node `set_hardware_skinning()` opt-out; **Session I**: slope-scaled bias (`shadow_normal_bias_world`, opt-in) kills grazing-angle acne (fact 14) | **DONE — USER SIGN-OFF 2026-07-23** ("directional signed off"; the game has run directional+shadows in settings since the planetside era; testbed N-toggle A/B + normal play validated). Harness: test_shadows 13+13, test_shadow_quality 9, test_shadows_gltf 6, test_shadow_grazing 6, test_skinning 12. WATCH ITEM (not blocking, user-flagged at sign-off): shadow STRIPES at certain angles previously reported in planetside, not reproducible in the testbed — when it recurs, capture sun az/el + camera pos; first levers are `shadow_normal_bias_world` (fact 14, grazing-angle acne) and the testbed shadow instruments (keys 10–16) |
 | R3 bloom + HDR | F3 root-caused (8-bit intermediate FBOs) and fixed; float fbprops everywhere | **Core done** (Session D; test_bloom green both sizes). Open: content retune, light units, auto-exposure stretch |
 | R4 space scale | R4.0 acceptance tests; R4.1 log depth opt-in (`enable_log_depth`, @logdepth row green); R4.2 camera-relative DECIDED (game-side; parent-cancel trap measured); doubles wheel **built + verified 2026-07-17**: precision 0.000e+00 at Neptune offsets, `test3d_ftl --selftest` green, but stock simplepbr crashes on it (stays quarantined in `pax3d-double-env`) | **Engine side essentially done.** Open: game-side R4.2 implementation, frustum flip, then sky-camera retirement; doubles perf A/B + user flight |
 | R5 atmosphere + signature look | Scattering, SH-from-skybox ambient, height fog, lens polish | **Planetside slice LANDED opt-in (Session J, user-directed):** R5.1 aerial perspective/height haze (`enable_atmosphere`, analytic exponential-height medium + sunward scatter tint), R5.2 env ambient via the existing SH path (`set_hemisphere_ambient`/`set_ambient_sh`, `sh_from_cubemap` experimental), plus backlog shadow texel snapping (`shadow_texel_snap`). All default-off = byte-identical; gated by test_atmosphere/test_ambient_sh/test_shadow_snap, green both engines × both baselines. **Session M: R5.3 specular IBL first slice landed** (`set_env_map` + real BRDF LUT, test_env_map analytics exact). **Session Q: R5.4 GGX prefilter tool landed** (`tools/gen_env_prefilter.py`, test_env_map end-to-end) + sh_from_cubemap face table pinned incl. file-loaded skyboxes (test_ambient_sh 6-8) — the skybox → ambient + reflections chain is now proven and correct end to end. Open: field tuning in openworld Mars colony (`PLANETSIDE_LOOK_GUIDE.md`), orbital scattering + lens polish |
@@ -247,7 +247,7 @@ Evaluate ONLY when it can run the paxtest suite. No cadence; check when curious.
 | Clustered/tiled lights | shaders (+ maybe C++ culling) | Post-R5; openworld's Megacity wants it (781 lamps vs ~6 forward lights) |
 | `shaderAttrib.cxx:471` intermittent assert | engine | Needs a repro (fires when a shader reads an unbound input; the known recompile-wipe class is fixed) |
 | Planet analytic tangents | sfb2 `planet_factory.py` | When normal-mapped planets arrive |
-| GLSL-120 dual-path removal (R1.4) | pax3d_render | The game sets `gl-version 3 2` |
+| GLSL-120 dual-path removal (R1.4) | pax3d_render | (1) ~~flip every entry point to `gl-version 3 2`~~ **DONE 2026-07-23** (plan.py, main.py all modes, test3d.py, test3d_ftl.py, test3d_pax.py modern-by-default with `--compat` escape; boot smoke green, combine warning fired once = the known look-change content); **DONE 2026-07-23 (Session AC)** — entry-point flip + "core signed off" + deletion all landed the same day; 16 shader sources baked native 330, transform + IS_WEBGL deleted, gate redefined to one core `game` baseline (+`compat` diagnostic), totals = the historical @modern column exactly (70/7/106 · 68/7/108, FAIL sets unchanged). R1 closed |
 | R2.3 DirectionalLight C++ conveniences | engine | If ever — the pipeline owns orientation. Window-4 planning (2026-07-19) scoped it and found a DESIGN CONFLICT: the queued strip-translation `xform()` clashes with the pipeline's deliberate lighting-neutral `set_pos()` shadow-frustum centering (pipeline.py `_apply_shadow_center`, guarded by test_shadows `recenter_keeps_lighting`), and test_lighting's SunRig intentionally uses raw `set_direction()`. Needs its own design pass (DIRECTIONAL_LIGHTING_PLAN.md §4) before any window takes it |
 
 ### 4.8 Asset enablement — walkable ships (Session K+, user-directed)
@@ -680,6 +680,63 @@ Remaining: character-lane adoption (crowd pattern is now
 hero_closeup + PS_BENCH=300 GPU-path re-measure still stands). The
 clone-RAM lever (strip morph columns from render vdata, ~18 MB/clone)
 stays unbuilt pending evidence that clone RAM matters.
+
+### 4.15 Session AC (2026-07-23) — R1 CLOSED: sign-offs, one graphics reality, GLSL-120 deletion
+
+The program's oldest open phase closed in one day, in three user-gated
+steps:
+
+1. **Sign-offs.** "directional signed off" closed R2 (watch item on
+   file: planetside shadow stripes at certain angles, not reproducible
+   in the testbed — capture sun az/el on recurrence; levers =
+   `shadow_normal_bias_world` + testbed instrument keys 10–16). "sRGB
+   flip approved" closed R1.3 — the user's "G = no difference" was
+   mechanically checked before recording: the testbed scene has exactly
+   ONE sRGB-eligible texture (the planet; glTF base color is already
+   loader-flagged, flat materials carry none) and it shifted 27.7% of
+   pixels at rms 0.092 — real, subtle, approved. Wired game-side same
+   day: `srgb_inputs` settings key + init pass-through + boot re-walk
+   after `_load_initial_planet` (set_srgb_inputs converts only current
+   content; late spawns need the idempotent re-call — game-lane item).
+2. **One graphics reality.** Census: `plan.py` had NO gl-version — the
+   main game booted COMPAT daily (the Session-R warnings fired in its
+   boot). `gl-version 3 2` landed in every entry point: plan.py (covers
+   launcher mode 1), main.py (modes 2–7), test3d.py, test3d_ftl.py,
+   test3d_pax.py (modern now the DEFAULT; `--compat` escape hatch),
+   planetside already had it. PlanetApp offscreen boot smoke: 30 frames
+   green, no legacy warning, combine-mode warning fired exactly once
+   (the known look-change content). User played a session under core:
+   **"core signed off."**
+3. **R1.4 deletion.** All 16 shader sources baked to native GLSL 330
+   (nesting-aware `#ifdef USE_330` resolver keeps the modern branch;
+   legacy builtins renamed texture2D/textureCube/textureCubeLod/
+   texture2DArray→texture/textureLod; shadow2D→texture; the exact
+   blind varying/attribute swaps the runtime transform performed, so
+   compiled text is preprocessor-equivalent). shaderutils transform +
+   dead IS_WEBGL machinery deleted; pipeline emits 330 unconditionally
+   — a compat context warns loudly and still works (measured).
+   **Gate redefined: both engines × ONE `game` baseline (= gl 3 2);
+   `modern` = legacy alias; `compat` = diagnostic only.** Totals:
+   **Pax3D 70/7/106 · stock 68/7/108 — identical to the historical
+   @modern column, FAIL sets unchanged** (the bake-equivalence proof).
+   One latent test defect surfaced and fixed: test_alpha_mask keyed its
+   compat legs on the baseline NAME (`== 'modern'`) instead of the
+   context (`h.use_330`) — first gate run failed those legs under the
+   now-core game baseline; fixed, and under `--baseline compat` all
+   four compat legs PASS bit-identical (rms 0.0) with the baked
+   shaders, so the fixed-function archaeology remains live.
+
+Also this session, before the sign-offs landed: the terrain lane's
+state-less-parent repro run 4/4 PASS (their own run had only covered
+the 120 fallback — closed, see ER-009), and the flatten consult
+(B/C both zero engine changes). Renderer-convergence question from the
+game side answered: only mode 1 + planetside run pax3d_render; capital
+ship / FPS / diorama modes have NO PBR pipeline — convergence endorsed,
+game-side adoption, do it before building new mode content.
+
+Remaining R1 items: **none.** Program-wide: R3 content retune, R4
+game-side items, R5 content adoption, R6 Vulkan watch, ER adoption
+watches — all evidence- or game-side-gated.
 
 ---
 

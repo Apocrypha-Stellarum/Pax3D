@@ -1,9 +1,6 @@
-#version 120
+#version 330
 
-#ifdef USE_330
-    #define texture2D texture
     #define texture3D texture
-#endif
 
 uniform sampler2D tex;
 #ifdef ENABLE_BLOOM
@@ -31,11 +28,9 @@ uniform float radial_blur_strength;
 uniform float chroma_strength;
 uniform vec2 radial_blur_center;
 
-varying vec2 v_texcoord;
+in vec2 v_texcoord;
 
-#ifdef USE_330
 out vec4 o_color;
-#endif
 
 // ACES filmic tonemap (Stephen Hill's fitted approximation)
 vec3 aces_tonemap(vec3 x) {
@@ -83,7 +78,7 @@ float interleavedGradientNoise(vec2 p) {
 }
 
 void main() {
-    vec4 tex_color = texture2D(tex, v_texcoord);
+    vec4 tex_color = texture(tex, v_texcoord);
     vec3 color = tex_color.rgb;
 
     // FTL warp distortion: N-tap radial smear toward radial_blur_center
@@ -102,9 +97,9 @@ void main() {
         for (int i = 0; i < TAPS; i++) {
             float t = (float(i) / float(TAPS - 1) - 0.5) * amt;
             vec2 base_uv = v_texcoord - dir * t;
-            acc.r += texture2D(tex, base_uv - dir * ca).r;
-            acc.g += texture2D(tex, base_uv).g;
-            acc.b += texture2D(tex, base_uv + dir * ca).b;
+            acc.r += texture(tex, base_uv - dir * ca).r;
+            acc.g += texture(tex, base_uv).g;
+            acc.b += texture(tex, base_uv + dir * ca).b;
         }
         color = acc / float(TAPS);
     }
@@ -114,19 +109,19 @@ void main() {
     // curve. AO == 1.0 multiplies exactly — flat scenes stay
     // byte-identical (the paxtest plane gate).
 #ifdef ENABLE_SSAO
-    color *= texture2D(ao_tex, v_texcoord).r;
+    color *= texture(ao_tex, v_texcoord).r;
 #endif
 
     // Bloom composite (additive, before tonemapping for correct rolloff)
 #ifdef ENABLE_BLOOM
-    vec3 bloom = texture2D(bloom_tex, v_texcoord).rgb;
+    vec3 bloom = texture(bloom_tex, v_texcoord).rgb;
     color += bloom * bloom_intensity;
 #endif
 
     // Lens flare (Session S): additive in HDR like bloom. Strength 0.0
     // adds exactly 0 — an exact no-op knob.
 #ifdef ENABLE_LENS_FLARE
-    color += texture2D(flare_tex, v_texcoord).rgb * u_flare_strength;
+    color += texture(flare_tex, v_texcoord).rgb * u_flare_strength;
 #endif
 
     // Exposure
@@ -162,9 +157,5 @@ void main() {
     float ditherB = (interleavedGradientNoise(gl_FragCoord.xy + vec2(43.0, 59.0)) - 0.5) / 255.0;
     color += vec3(ditherR, ditherG, ditherB);
 
-#ifdef USE_330
     o_color = vec4(color, tex_color.a);
-#else
-    gl_FragColor = vec4(color, tex_color.a);
-#endif
 }

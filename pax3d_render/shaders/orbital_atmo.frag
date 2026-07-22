@@ -43,7 +43,7 @@
 // With density = 0: beta = 0, T = 1, L = 0 — both passes are exact
 // framebuffer no-ops (dst * 1.0 and dst + 0.0), the opt-out contract.
 
-#version 120
+#version 330
 
 #ifndef ORB_VIEW_STEPS
     #define ORB_VIEW_STEPS 24
@@ -64,14 +64,12 @@ uniform vec3 u_sun_dir_world;         // toward the sun
 uniform vec3 u_sun_color;             // linear RGB * intensity
 uniform vec3 camera_world_position;
 
-varying vec3 v_world_position;
+in vec3 v_world_position;
 #ifdef LOG_DEPTH
 uniform float u_log_depth_coef;
-varying float v_log_depth_w;
+in float v_log_depth_w;
 #endif
-#ifdef USE_330
 out vec4 o_color;
-#endif
 
 float orb_rho(vec3 p) {
     float h = max(length(p - u_orb_center) - u_orb_planet_radius, 0.0);
@@ -165,9 +163,5 @@ void main() {
     gl_FragDepth = log2(max(v_log_depth_w, 1e-6)) * u_log_depth_coef;
 #endif
 
-#ifdef USE_330
     o_color = color;
-#else
-    gl_FragColor = color;
-#endif
 }

@@ -1,19 +1,14 @@
-#version 120
+#version 330
 
-#ifdef USE_330
-    #define texture2D texture
-#endif
 
 uniform sampler2D src_tex;         // same-res downsample (this mip's detail)
 uniform sampler2D bloom_accum_tex; // coarser accumulated result (half res)
 uniform vec2 texel_size;           // one texel of bloom_accum_tex
 uniform vec3 mip_tint;
 
-varying vec2 v_texcoord;
+in vec2 v_texcoord;
 
-#ifdef USE_330
 out vec4 o_color;
-#endif
 
 void main() {
     vec2 uv = v_texcoord;
@@ -24,27 +19,23 @@ void main() {
     // bilinear tap here is what produced the blocky halo (F3); Jimenez
     // tents the coarser mip on the way up.
     vec3 accum = vec3(0.0);
-    accum += texture2D(bloom_accum_tex, uv + vec2(-ts.x, -ts.y)).rgb * 1.0;
-    accum += texture2D(bloom_accum_tex, uv + vec2(  0.0, -ts.y)).rgb * 2.0;
-    accum += texture2D(bloom_accum_tex, uv + vec2( ts.x, -ts.y)).rgb * 1.0;
-    accum += texture2D(bloom_accum_tex, uv + vec2(-ts.x,   0.0)).rgb * 2.0;
-    accum += texture2D(bloom_accum_tex, uv                      ).rgb * 4.0;
-    accum += texture2D(bloom_accum_tex, uv + vec2( ts.x,   0.0)).rgb * 2.0;
-    accum += texture2D(bloom_accum_tex, uv + vec2(-ts.x,  ts.y)).rgb * 1.0;
-    accum += texture2D(bloom_accum_tex, uv + vec2(  0.0,  ts.y)).rgb * 2.0;
-    accum += texture2D(bloom_accum_tex, uv + vec2( ts.x,  ts.y)).rgb * 1.0;
+    accum += texture(bloom_accum_tex, uv + vec2(-ts.x, -ts.y)).rgb * 1.0;
+    accum += texture(bloom_accum_tex, uv + vec2(  0.0, -ts.y)).rgb * 2.0;
+    accum += texture(bloom_accum_tex, uv + vec2( ts.x, -ts.y)).rgb * 1.0;
+    accum += texture(bloom_accum_tex, uv + vec2(-ts.x,   0.0)).rgb * 2.0;
+    accum += texture(bloom_accum_tex, uv                      ).rgb * 4.0;
+    accum += texture(bloom_accum_tex, uv + vec2( ts.x,   0.0)).rgb * 2.0;
+    accum += texture(bloom_accum_tex, uv + vec2(-ts.x,  ts.y)).rgb * 1.0;
+    accum += texture(bloom_accum_tex, uv + vec2(  0.0,  ts.y)).rgb * 2.0;
+    accum += texture(bloom_accum_tex, uv + vec2( ts.x,  ts.y)).rgb * 1.0;
     accum /= 16.0;
 
     // This mip's detail, same resolution as the target — one tap is exact.
     // Per-mip color tint (artistic warm-cool bloom fringe) stays on this
     // contribution, matching the pre-fix tint semantics.
-    vec3 s = texture2D(src_tex, uv).rgb * mip_tint;
+    vec3 s = texture(src_tex, uv).rgb * mip_tint;
 
     vec3 result = s + accum;
 
-#ifdef USE_330
     o_color = vec4(result, 1.0);
-#else
-    gl_FragColor = vec4(result, 1.0);
-#endif
 }

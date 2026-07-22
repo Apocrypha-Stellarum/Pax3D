@@ -7,16 +7,16 @@
 // shader's convention or the quads would depth-test wrongly against
 // planet geometry).
 
-#version 120
+#version 330
 
 uniform mat4 p3d_ModelViewProjectionMatrix;
 uniform mat4 p3d_ModelMatrix;
 
-attribute vec4 p3d_Vertex;
+in vec4 p3d_Vertex;
 
-varying vec3 v_world_position;
+out vec3 v_world_position;
 #ifdef LOG_DEPTH
-varying float v_log_depth_w;
+out float v_log_depth_w;
 #endif
 
 void main() {

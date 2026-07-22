@@ -8,24 +8,12 @@
 //    in the same coordinate space — no CS conversion applied to either.
 // Point/spot lights still use p3d_LightSource in view space (correct path).
 
-#version 120
+#version 330
 
 #ifndef MAX_LIGHTS
     #define MAX_LIGHTS 8
 #endif
 
-#ifdef USE_330
-    #define texture2D texture
-    #define textureCube texture
-    #define textureCubeLod textureLod
-    #define texture2DArray texture
-#else
-    #extension GL_ARB_shader_texture_lod : require
-#ifdef TERRAIN_SPLAT
-    // sampler2DArray on the legacy path (GLSL 330 has it in core)
-    #extension GL_EXT_texture_array : require
-#endif
-#endif
 
 uniform struct p3d_MaterialParameters {
     vec4 baseColor;
@@ -170,7 +158,7 @@ uniform float u_terrain_macro_strength; // 0 = exact no-op
 vec4 terrain_layer_weights(vec2 base_uv) {
     vec2 suv = base_uv * u_terrain_splat_transform.zw
              + u_terrain_splat_transform.xy;
-    vec4 w = texture2D(terrain_splat, suv);
+    vec4 w = texture(terrain_splat, suv);
     float total = w.x + w.y + w.z + w.w;
     // Renormalize (8-bit splat maps rarely sum to exactly 1); an empty
     // texel falls back to layer 0 rather than rendering black.
@@ -180,7 +168,7 @@ vec4 terrain_layer_weights(vec2 base_uv) {
 vec4 terrain_blend_array(sampler2DArray layers, vec4 w, vec2 base_uv) {
     vec4 acc = vec4(0.0);
     for (int i = 0; i < 4; ++i) {
-        acc += w[i] * texture2DArray(layers,
+        acc += w[i] * texture(layers,
             vec3(base_uv * u_terrain_uv_scales[i], float(i)));
     }
     return acc;
@@ -273,11 +261,11 @@ vec4 hex_blend_array(sampler2DArray layers, vec4 w, vec2 base_uv) {
         hex_grid(duv / u_terrain_hex.x, id0, id1, id2, hw);
         float rot = u_terrain_hex_rot[i];
         vec2 cs;
-        vec4 s = hw.x * texture2DArray(layers,
+        vec4 s = hw.x * texture(layers,
                      vec3(hex_tap_uv(duv, id0, rot, cs), float(i)))
-               + hw.y * texture2DArray(layers,
+               + hw.y * texture(layers,
                      vec3(hex_tap_uv(duv, id1, rot, cs), float(i)))
-               + hw.z * texture2DArray(layers,
+               + hw.z * texture(layers,
                      vec3(hex_tap_uv(duv, id2, rot, cs), float(i)));
         acc += w[i] * s;
     }
@@ -314,14 +302,14 @@ vec4 terrain_layer_sample(sampler2DArray layers, int i, vec2 base_uv) {
     hex_grid(duv / u_terrain_hex.x, id0, id1, id2, hw);
     float rot = u_terrain_hex_rot[i];
     vec2 cs;
-    return hw.x * texture2DArray(layers,
+    return hw.x * texture(layers,
                vec3(hex_tap_uv(duv, id0, rot, cs), float(i)))
-         + hw.y * texture2DArray(layers,
+         + hw.y * texture(layers,
                vec3(hex_tap_uv(duv, id1, rot, cs), float(i)))
-         + hw.z * texture2DArray(layers,
+         + hw.z * texture(layers,
                vec3(hex_tap_uv(duv, id2, rot, cs), float(i)));
 #else
-    return texture2DArray(layers,
+    return texture(layers,
         vec3(base_uv * u_terrain_uv_scales[i], float(i)));
 #endif
 }
@@ -378,26 +366,24 @@ const float PI = 3.141592653589793;
 const float SPOTSMOOTH = 0.001;
 const float LIGHT_CUTOFF = 0.001;
 
-varying vec3 v_view_position;
-varying vec3 v_world_position;
-varying vec4 v_color;
-varying vec2 v_texcoord;
-varying mat3 v_view_tbn;
-varying mat3 v_world_tbn;
-varying vec3 v_world_normal;
+in vec3 v_view_position;
+in vec3 v_world_position;
+in vec4 v_color;
+in vec2 v_texcoord;
+in mat3 v_view_tbn;
+in mat3 v_world_tbn;
+in vec3 v_world_normal;
 #ifdef ENABLE_SHADOWS
-varying vec4 v_shadow_pos[MAX_LIGHTS];
+in vec4 v_shadow_pos[MAX_LIGHTS];
 #endif
 #ifdef LOG_DEPTH
 // Logarithmic depth (R4.1): u_log_depth_coef = 1.0 / log2(1.0 + far),
 // kept in sync with the camera lens by the pipeline's per-frame update.
 uniform float u_log_depth_coef;
-varying float v_log_depth_w;
+in float v_log_depth_w;
 #endif
 
-#ifdef USE_330
 out vec4 o_color;
-#endif
 
 
 // Schlick's Fresnel approximation with Spherical Gaussian approximation
@@ -470,20 +456,12 @@ float shadow_caster_contrib_biased(sampler2DShadow shadowmap, vec4 shadowpos,
             vec3 tap = light_space_coords
                      + vec3(float(dx) * u_shadow_texel,
                             float(dy) * u_shadow_texel, 0.0);
-#ifdef USE_330
             shadow += texture(shadowmap, tap);
-#else
-            shadow += shadow2D(shadowmap, tap).r;
-#endif
         }
     }
     return shadow / 9.0;
 #else
-#ifdef USE_330
     float shadow = texture(shadowmap, light_space_coords);
-#else
-    float shadow = shadow2D(shadowmap, light_space_coords).r;
-#endif
     return shadow;
 #endif
 }
@@ -491,14 +469,14 @@ float shadow_caster_contrib_biased(sampler2DShadow shadowmap, vec4 shadowpos,
 
 vec3 get_normalmap_data(vec2 uv) {
 #ifdef CALC_NORMAL_Z
-    vec2 normalXY = 2.0 * texture2D(p3d_TextureNormal, uv).rg - 1.0;
+    vec2 normalXY = 2.0 * texture(p3d_TextureNormal, uv).rg - 1.0;
     float normalZ = sqrt(clamp(1.0 - dot(normalXY, normalXY), 0.0, 1.0));
     return vec3(
         normalXY,
         normalZ
     );
 #else
-    return 2.0 * texture2D(p3d_TextureNormal, uv).rgb - 1.0;
+    return 2.0 * texture(p3d_TextureNormal, uv).rgb - 1.0;
 #endif
 }
 
@@ -568,7 +546,7 @@ void main() {
     // Macro variation: brightness modulation at 100-500 m scale kills
     // the wallpaper effect. A 0.5 macro texel is an EXACT no-op
     // (mix(1, 1, s) == 1), any strength.
-    float terrain_macro_px = texture2D(terrain_macro,
+    float terrain_macro_px = texture(terrain_macro,
         v_texcoord * u_terrain_macro_scale).r;
     terrain_albedo_px.rgb *= mix(1.0, 2.0 * terrain_macro_px,
                                  u_terrain_macro_strength);
@@ -603,15 +581,15 @@ void main() {
             vec2 cs;
             vec3 s;
             vec3 acc = vec3(0.0);
-            s = 2.0 * texture2DArray(terrain_normal,
+            s = 2.0 * texture(terrain_normal,
                 vec3(hex_tap_uv(duv, id0, rot, cs), float(i))).rgb - 1.0;
             acc += hw.x * vec3(cs.x * s.x + cs.y * s.y,
                                -cs.y * s.x + cs.x * s.y, s.z);
-            s = 2.0 * texture2DArray(terrain_normal,
+            s = 2.0 * texture(terrain_normal,
                 vec3(hex_tap_uv(duv, id1, rot, cs), float(i))).rgb - 1.0;
             acc += hw.y * vec3(cs.x * s.x + cs.y * s.y,
                                -cs.y * s.x + cs.x * s.y, s.z);
-            s = 2.0 * texture2DArray(terrain_normal,
+            s = 2.0 * texture(terrain_normal,
                 vec3(hex_tap_uv(duv, id2, rot, cs), float(i))).rgb - 1.0;
             acc += hw.z * vec3(cs.x * s.x + cs.y * s.y,
                                -cs.y * s.x + cs.x * s.y, s.z);
@@ -619,7 +597,7 @@ void main() {
         }
 #else
         for (int i = 0; i < 4; ++i) {
-            n_ts += terrain_w[i] * (2.0 * texture2DArray(terrain_normal,
+            n_ts += terrain_w[i] * (2.0 * texture(terrain_normal,
                 vec3(v_texcoord * u_terrain_uv_scales[i], float(i))).rgb - 1.0);
         }
 #endif
@@ -635,11 +613,11 @@ void main() {
 #endif
     vec3 n = normalize(mat3(p3d_ViewMatrix) * world_normal);
 #else
-    vec4 metal_rough = texture2D(p3d_TextureMetalRoughness, mat_uv);
+    vec4 metal_rough = texture(p3d_TextureMetalRoughness, mat_uv);
     float metallic = clamp(p3d_Material.metallic * metal_rough.b, 0.0, 1.0);
     float perceptual_roughness = clamp(p3d_Material.roughness * metal_rough.g,  0.0, 1.0);
     float alpha_roughness = perceptual_roughness * perceptual_roughness;
-    vec4 base_color = p3d_Material.baseColor * v_color * p3d_ColorScale * (texture2D(p3d_TextureBaseColor, mat_uv) + p3d_TexAlphaOnly);
+    vec4 base_color = p3d_Material.baseColor * v_color * p3d_ColorScale * (texture(p3d_TextureBaseColor, mat_uv) + p3d_TexAlphaOnly);
     vec3 diffuse_color = (base_color.rgb * (vec3(1.0) - F0)) * (1.0 - metallic);
     vec3 spec_color = mix(F0, base_color.rgb, metallic);
 #ifdef USE_NORMAL_MAP
@@ -709,7 +687,7 @@ void main() {
 #ifdef USE_EMISSION_MAP
     // u_emission_factor: per-node power/tint control (ER-005); root
     // default (1,1,1) is an exact no-op.
-    vec3 emission = p3d_Material.emission.rgb * u_emission_factor * texture2D(p3d_TextureEmission, mat_uv).rgb;
+    vec3 emission = p3d_Material.emission.rgb * u_emission_factor * texture(p3d_TextureEmission, mat_uv).rgb;
 #else
     vec3 emission = vec3(0.0);
 #endif
@@ -840,8 +818,8 @@ void main() {
     ibl_r = vec3(u_env_yaw.x * ibl_r.x - u_env_yaw.y * ibl_r.y,
                  u_env_yaw.y * ibl_r.x + u_env_yaw.x * ibl_r.y,
                  ibl_r.z);
-    vec2 env_brdf = texture2D(brdf_lut, vec2(n_dot_v, perceptual_roughness)).rg;
-    vec3 ibl_spec_color = textureCubeLod(filtered_env_map, ibl_r, perceptual_roughness * max_reflection_lod).rgb;
+    vec2 env_brdf = texture(brdf_lut, vec2(n_dot_v, perceptual_roughness)).rg;
+    vec3 ibl_spec_color = textureLod(filtered_env_map, ibl_r, perceptual_roughness * max_reflection_lod).rgb;
     vec3 ibl_spec = ibl_spec_color * (ibl_f * env_brdf.x + env_brdf.y)
                     * (u_env_scale * u_env_intensity);
 #ifdef GLASS
@@ -1020,7 +998,7 @@ void main() {
     } else if (u_debug_lighting > 12.5 && u_debug_lighting < 13.5) {
         // Mode 13: shadow term of light 0 via the RECOMPUTED coord (the
         // candidate fix path). Compare with mode 11: if 13 is correct
-        // where 11 is corrupted, the varying interpolation is the defect.
+        // where 11 is corrupted, the in interpolation is the defect.
         // Same slope-scaled bias as mode 11 / the lit pass.
         vec3 l0 = normalize(p3d_LightSource[0].position.xyz
                             - v_view_position * p3d_LightSource[0].position.w);
@@ -1036,30 +1014,18 @@ void main() {
         // readable even if RAM extraction disagrees with the GPU.
         vec3 lsc = v_shadow_pos[0].xyz / v_shadow_pos[0].w;
         float dm = 0.5 / 600.0;
-#ifdef USE_330
         float r = texture(p3d_LightSource[0].shadowMap,
                           vec3(lsc.xy, lsc.z - dm));
         float g = texture(p3d_LightSource[0].shadowMap, lsc);
         float b = texture(p3d_LightSource[0].shadowMap,
                           vec3(lsc.xy, lsc.z + dm));
-#else
-        float r = shadow2D(p3d_LightSource[0].shadowMap,
-                           vec3(lsc.xy, lsc.z - dm)).r;
-        float g = shadow2D(p3d_LightSource[0].shadowMap, lsc).r;
-        float b = shadow2D(p3d_LightSource[0].shadowMap,
-                           vec3(lsc.xy, lsc.z + dm)).r;
-#endif
         color = vec4(r, g, b, 1.0);
     } else if (u_debug_lighting > 14.5 && u_debug_lighting < 15.5) {
         // Mode 15: sample the shadow map at ONE fixed uniform-supplied
         // (u, v, ref) — identical for every fragment. A healthy frame is
         // one flat color; per-geom color differences mean the bound
         // texture or sampler state differs between draws.
-#ifdef USE_330
         float s = texture(p3d_LightSource[0].shadowMap, u_probe_uvref);
-#else
-        float s = shadow2D(p3d_LightSource[0].shadowMap, u_probe_uvref).r;
-#endif
         color = vec4(vec3(s), 1.0);
     } else if (u_debug_lighting > 15.5 && u_debug_lighting < 16.5) {
         // Mode 16: distance of THIS fragment's shadow coord (signed-w
@@ -1079,9 +1045,5 @@ void main() {
     gl_FragDepth = log2(max(v_log_depth_w, 1e-6)) * u_log_depth_coef;
 #endif
 
-#ifdef USE_330
     o_color = color;
-#else
-    gl_FragColor = color;
-#endif
 }

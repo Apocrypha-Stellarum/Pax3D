@@ -14,8 +14,9 @@ July 2026, plus the following R1 additions:
     automatically on every internal rebuild (bloom/TAA toggles). This
     replaces the fragile pattern of external code searching for the
     FilterManager buffer once at init (fixes failure F4).
-  * Legacy-GL warning — GLSL 120 mode still works but is deprecated;
-    the target baseline is `gl-version 3 2` (GLSL 330).
+  * GLSL 330 only (R1.4, 2026-07-23) — the GLSL-120 dual path was
+    deleted; every entry point sets `gl-version 3 2`. A compat context
+    still compiles the 330 shaders (measured) but warns loudly.
   * debug output controlled by PAX3D_RENDER_DEBUG env var or debug=True.
 
 Phase R2 (sun_light_mode): the sun can now be a REAL DirectionalLight.
@@ -610,20 +611,22 @@ class Pipeline:
         self._shadow_depth = 4000.0
         self._shadow_center = p3d.Vec3(0, 0, 0)
 
-        self._is_webgl = 'WebGL' in self.window.type.name
-
-        # Detect GLSL 330 capability
+        # R1.4 (2026-07-23): the GLSL-120 dual path is GONE — the
+        # pipeline emits native GLSL 330 unconditionally. A compat /
+        # unspecified-gl-version context still compiles 330 shaders on
+        # desktop drivers, but nothing ships that way; warn loudly so a
+        # tool that forgot the prc line cannot silently test the wrong
+        # context (the repro_instanced_stateless_parent lesson).
         cvar = p3d.ConfigVariableInt('gl-version')
         gl_version = [cvar.get_word(i) for i in range(cvar.get_num_words())]
-        self._use_330 = (
-            len(gl_version) >= 2
-            and gl_version[0] >= 3
-            and gl_version[1] >= 2
-        )
-        if not self._use_330:
-            print('[Pax3DRender] WARNING: running legacy GLSL 120 path '
-                  '(gl-version not set to 3 2+). This path is deprecated — '
-                  'see PAX3D_MASTER_PLAN.md R1.4.')
+        modern = (len(gl_version) >= 2
+                  and gl_version[0] >= 3
+                  and gl_version[1] >= 2)
+        if not modern:
+            print('[Pax3DRender] WARNING: gl-version not set to 3 2+ — '
+                  'compat contexts are unsupported for production (the '
+                  'GLSL-120 path was REMOVED, R1.4). The pipeline emits '
+                  'GLSL 330 regardless; add gl-version 3 2 to your PRC.')
 
         # Load BRDF LUT for IBL
         self._brdf_lut = _load_brdf_lut(self._debug)
@@ -745,8 +748,7 @@ class Pipeline:
                          f"levels={self.bloom_levels}"
                          if self.enable_bloom else "bloom=OFF")
             print(f"[Pax3DRender] Pipeline initialized ({bloom_str}, "
-                  f"tonemap={self.tonemap_operator}, "
-                  f"glsl={'330' if self._use_330 else '120'})")
+                  f"tonemap={self.tonemap_operator}, glsl=330)")
 
     def _get_pbr_defines(self):
         """Build the #define dict for the PBR shader."""
@@ -757,8 +759,6 @@ class Pipeline:
             'ENABLE_SHADOWS': self.enable_shadows,
             'ENABLE_FOG': self.enable_fog,
             'USE_OCCLUSION_MAP': self.use_occlusion_maps,
-            'USE_330': self._use_330,
-            'IS_WEBGL': self._is_webgl,
             'ENABLE_SKINNING': self.enable_hardware_skinning,
             'MAX_SKINNING_BONES': self.max_skinning_bones,
             'CALC_NORMAL_Z': self.calculate_normalmap_blue,
@@ -810,7 +810,7 @@ class Pipeline:
         self._gpu_morph_shader = None
         self._reapply_gpu_morphs()
         # Orbital-atmosphere quads carry their own shader pair whose
-        # USE_330/LOG_DEPTH defines must track the pipeline's (same
+        # LOG_DEPTH define must track the pipeline's (same
         # recompile-tracking rule as glass) — a log-depth toggle with
         # stale quad shaders would break their depth testing.
         self._orbital_shaders = None
@@ -1184,8 +1184,6 @@ class Pipeline:
             self._flare_warned = True
 
         defines = {
-            'USE_330': self._use_330,
-            'IS_WEBGL': self._is_webgl,
             'ENABLE_BLOOM': self.enable_bloom,
             'ENABLE_SSAO': self.enable_ssao,
             'ENABLE_LENS_FLARE': flare_active,
@@ -1198,8 +1196,6 @@ class Pipeline:
             win_x = self.window.get_x_size()
             win_y = self.window.get_y_size()
             ssao_defines = {
-                'USE_330': self._use_330,
-                'IS_WEBGL': self._is_webgl,
                 'LOG_DEPTH': self.enable_log_depth,
                 'AO_SAMPLES': self.ao_samples,
             }
@@ -1230,8 +1226,6 @@ class Pipeline:
             blur_quad = self._filtermgr.render_quad_into(colortex=ao_tex)
             blur_quad.set_shader(shaderutils.make_shader(
                 'ssao_blur', 'post.vert', 'ssao_blur.frag', {
-                    'USE_330': self._use_330,
-                    'IS_WEBGL': self._is_webgl,
                 }))
             blur_quad.set_shader_input('ao_tex', ao_raw_tex)
             blur_quad.set_shader_input('u_texel', texel)
@@ -1248,8 +1242,6 @@ class Pipeline:
             num_levels = self.bloom_levels
 
             bloom_defines = {
-                'USE_330': self._use_330,
-                'IS_WEBGL': self._is_webgl,
             }
 
             # Bloom buffers must be REAL float FBOs. Without explicit
@@ -1416,8 +1408,6 @@ class Pipeline:
             history_tex.set_magfilter(p3d.SamplerState.FT_linear)
 
             taa_defines = {
-                'USE_330': self._use_330,
-                'IS_WEBGL': self._is_webgl,
             }
 
             # TAA resolve pass
@@ -3628,8 +3618,9 @@ class Pipeline:
         gets (1) a per-vdata RGB32F delta texture (position + normal
         deltas per target, ER-003 data-texture contract), (2) a plain
         float32 'morph_index' vertex column carrying the row id — one
-        addressing mechanism on BOTH GLSL baselines, GLSL 120 has no
-        gl_VertexID — and (3) a GPU_MORPHS compile of the PBR shader
+        addressing mechanism everywhere (chosen when the GLSL-120 path
+        still existed; no gl_VertexID dependence, works on stock 1.10
+        unchanged) — and (3) a GPU_MORPHS compile of the PBR shader
         composed onto its geom state (the alpha-mask seam: root-level
         inputs and flags still compose through). Slider values are
         read from the Character each frame and pushed as a compact
@@ -4089,8 +4080,7 @@ class Pipeline:
         pipeline defines (compiled lazily, invalidated by _recompile_pbr
         — same tracking rule as the glass variant)."""
         if self._orbital_shaders is None:
-            base_defines = {'USE_330': self._use_330,
-                            'LOG_DEPTH': self.enable_log_depth}
+            base_defines = {                            'LOG_DEPTH': self.enable_log_depth}
             ext = shaderutils.make_shader(
                 'pax_orbital_ext', 'orbital_atmo.vert', 'orbital_atmo.frag',
                 dict(base_defines))
@@ -4621,8 +4611,6 @@ class Pipeline:
     def _create_shadow_shader_attrib(self):
         """Create a shader attrib for shadow-casting geometry."""
         defines = {
-            'USE_330': self._use_330,
-            'IS_WEBGL': self._is_webgl,
             'ENABLE_SKINNING': self.enable_hardware_skinning,
             'MAX_SKINNING_BONES': self.max_skinning_bones,
             # ER-002: with any instanced node registered, the depth pass

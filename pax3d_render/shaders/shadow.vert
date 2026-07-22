@@ -1,4 +1,4 @@
-#version 120
+#version 330
 
 uniform mat4 p3d_ModelViewProjectionMatrix;
 #ifdef ENABLE_SKINNING
@@ -10,24 +10,24 @@ uniform mat4 p3d_ModelViewProjectionMatrix;
 uniform mat4 p3d_TransformTable[MAX_SKINNING_BONES];
 #endif
 
-attribute vec4 p3d_Vertex;
-attribute vec4 p3d_Color;
-attribute vec2 p3d_MultiTexCoord0;
+in vec4 p3d_Vertex;
+in vec4 p3d_Color;
+in vec2 p3d_MultiTexCoord0;
 #ifdef ENABLE_SKINNING
-attribute vec4 transform_weight;
-attribute vec4 transform_index;
+in vec4 transform_weight;
+in vec4 transform_index;
 #endif
 #ifdef INSTANCING
 // Same instancing discipline as pax_pbr.vert (ER-002): the depth pass
 // must apply the same per-instance transform or instanced casters would
 // all shadow from the node origin. Non-instanced casters get the
 // identity fallback — behavior-identical to the pre-INSTANCING compile.
-attribute mat4x3 p3d_InstanceMatrix;
+in mat4x3 p3d_InstanceMatrix;
 #endif
 
 
-varying vec4 v_color;
-varying vec2 v_texcoord;
+out vec4 v_color;
+out vec2 v_texcoord;
 
 void main() {
 #ifdef ENABLE_SKINNING

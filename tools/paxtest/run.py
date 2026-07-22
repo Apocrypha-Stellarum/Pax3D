@@ -77,7 +77,7 @@ def main():
     parser.add_argument('--tests', default=','.join(ALL_TESTS))
     parser.add_argument('--pipelines', default=','.join(ALL_PIPELINES))
     parser.add_argument('--baseline', default='game',
-                        choices=['game', 'modern'])
+                        choices=['game', 'modern', 'compat'])
     parser.add_argument('--golden', action='store_true')
     parser.add_argument('--check-golden', action='store_true')
     args = parser.parse_args()

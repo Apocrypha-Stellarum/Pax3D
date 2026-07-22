@@ -1,12 +1,9 @@
-#version 120
+#version 330
 
 #ifndef MAX_LIGHTS
     #define MAX_LIGHTS 8
 #endif
 
-#ifdef USE_330
-    #define texture2D texture
-#endif
 
 #ifdef ENABLE_SHADOWS
 uniform struct p3d_LightSourceParameters {
@@ -41,14 +38,14 @@ uniform mat3 p3d_NormalMatrix;
 uniform mat4 p3d_TextureMatrix;
 uniform mat4 p3d_ModelMatrixInverseTranspose;
 
-attribute vec4 p3d_Vertex;
-attribute vec4 p3d_Color;
-attribute vec3 p3d_Normal;
-attribute vec4 p3d_Tangent;
-attribute vec2 p3d_MultiTexCoord0;
+in vec4 p3d_Vertex;
+in vec4 p3d_Color;
+in vec3 p3d_Normal;
+in vec4 p3d_Tangent;
+in vec2 p3d_MultiTexCoord0;
 #ifdef ENABLE_SKINNING
-attribute vec4 transform_weight;
-attribute vec4 transform_index;
+in vec4 transform_weight;
+in vec4 transform_index;
 #endif
 #ifdef GPU_MORPHS
 // Session Z: morph targets on the GPU (fact #15's missing half — the
@@ -69,7 +66,7 @@ uniform vec2 u_morph_texel;        // (1/W, 1/H)
 // x = target row t, y = slider weight. The pipeline fills live slots
 // first (compact) so the shader may stop at the first zero weight.
 uniform vec2 u_morphs[MORPH_LIVE];
-attribute float morph_index;
+in float morph_index;
 #endif
 #ifdef INSTANCING
 // Per-instance transform under an InstancedNode (ER-002). The engine
@@ -79,22 +76,22 @@ attribute float morph_index;
 // for every draw that reaches an INSTANCING compile. Panda row-major
 // affine memory reads as GL column-major mat4x3 with translation in
 // column 3 — M * vec4(v, 1) is the correct application.
-attribute mat4x3 p3d_InstanceMatrix;
+in mat4x3 p3d_InstanceMatrix;
 #endif
 
 
-varying vec3 v_view_position;
-varying vec3 v_world_position;
-varying vec4 v_color;
-varying vec2 v_texcoord;
-varying mat3 v_view_tbn;
-varying mat3 v_world_tbn;
-varying vec3 v_world_normal;
+out vec3 v_view_position;
+out vec3 v_world_position;
+out vec4 v_color;
+out vec2 v_texcoord;
+out mat3 v_view_tbn;
+out mat3 v_world_tbn;
+out vec3 v_world_normal;
 #ifdef ENABLE_SHADOWS
-varying vec4 v_shadow_pos[MAX_LIGHTS];
+out vec4 v_shadow_pos[MAX_LIGHTS];
 #endif
 #ifdef LOG_DEPTH
-varying float v_log_depth_w;
+out float v_log_depth_w;
 #endif
 
 void main() {
@@ -112,9 +109,9 @@ void main() {
         float w = u_morphs[i].y;
         if (w == 0.0) break;   // slots are compact by contract
         float u_pos = (u_morphs[i].x * 2.0 + 0.5) * u_morph_texel.x;
-        base_vertex.xyz += w * texture2D(u_morph_tex,
+        base_vertex.xyz += w * texture(u_morph_tex,
                                          vec2(u_pos, morph_v)).xyz;
-        base_normal += w * texture2D(u_morph_tex,
+        base_normal += w * texture(u_morph_tex,
                                      vec2(u_pos + u_morph_texel.x,
                                           morph_v)).xyz;
     }

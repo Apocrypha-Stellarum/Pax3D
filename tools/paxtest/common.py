@@ -10,9 +10,14 @@ Pipelines:
     pax3d_simplepbr the fork in the Pax3D repo (unused by the game today)
     pax_pbr         the game's pipeline from C:/python/sfb2 (what ships today)
 
-Baselines:
-    game    (default) mimics sfb2/plan.py PRC: no gl-version -> GLSL 120
-    modern  adds 'gl-version 3 2' (the R1 target)
+Baselines (R1.4, 2026-07-23 — the GLSL-120 path is deleted; the game
+sets gl-version 3 2 in every entry point):
+    game    (default) mimics sfb2 PRC: gl-version 3 2 (core profile)
+    modern  legacy alias of game (kept so existing scripts/logs work)
+    compat  DIAGNOSTIC ONLY: no gl-version (compat context; the
+            pipeline still emits GLSL 330 and warns). Not part of the
+            standard gate — for fixed-function-interplay archaeology
+            (fact #17 class) only.
 """
 import argparse
 import json
@@ -317,7 +322,8 @@ ADAPTERS = {
 
 def add_common_args(parser):
     parser.add_argument('--pipeline', default='none', choices=sorted(ADAPTERS))
-    parser.add_argument('--baseline', default='game', choices=['game', 'modern'])
+    parser.add_argument('--baseline', default='game',
+                        choices=['game', 'modern', 'compat'])
     parser.add_argument('--msaa', type=int, default=0)
     parser.add_argument('--win-size', default='512x512',
                         help='WxH, e.g. 512x512 or 960x540')
@@ -358,7 +364,7 @@ class Harness:
         ]
         if not args.show:
             prc.append('window-type offscreen')
-        if args.baseline == 'modern':
+        if args.baseline != 'compat':
             prc.append('gl-version 3 2')
         for line in prc:
             p3d.load_prc_file_data('paxtest', line)
@@ -368,7 +374,7 @@ class Harness:
         self.base.disable_mouse()
         self.base.set_background_color(0, 0, 0, 1)
 
-        self.use_330 = args.baseline == 'modern'
+        self.use_330 = args.baseline != 'compat'
         self.adapter = ADAPTERS[args.pipeline]()
 
     def init_pipeline(self, exposure=0.0, tonemap='hejl_dawson', bloom=None,
