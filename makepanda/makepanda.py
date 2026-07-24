@@ -2324,7 +2324,12 @@ def WriteConfigSettings():
             # This is faster than both DeletedBufferChain and malloc,
             # especially in the multi-threaded case.
             dtool_config["USE_MEMORY_MIMALLOC"] = '1'
-            dtool_config["USE_DELETED_CHAIN"] = 'UNDEF'
+            # PAX3D: keep DeletedChain ON alongside mimalloc. Every stable Panda
+            # release ran Geom-class churn through DeletedChain's same-size
+            # arenas; running it raw on a general-purpose allocator unmasks the
+            # cross-thread GVAD handle race (documents/CRASH_GVAD_HANDLE_RACE.md,
+            # field AVs 2026-07-20/23).
+            dtool_config["USE_DELETED_CHAIN"] = '1'
         else:
             # If we don't have mimalloc, use DeletedBufferChain as fallback,
             # which is still more efficient than malloc.

@@ -149,7 +149,10 @@ CycleData *PipelineCyclerTrueImpl::
 write_stage(int pipeline_stage, Thread *current_thread) {
   _lock.acquire(current_thread);
 
-#ifdef _DEBUG
+// PAX3D: restored to #ifndef NDEBUG (upstream demoted to #ifdef _DEBUG, which
+// opt-3 wheels never define — 1.10.16 release wheels ran this guard, ours did
+// not; CRASH_GVAD_HANDLE_RACE.md §5.2).
+#ifndef NDEBUG
   nassertd(pipeline_stage >= 0 && pipeline_stage < get_num_stages()) {
     _lock.release();
     return nullptr;
@@ -197,7 +200,8 @@ CycleData *PipelineCyclerTrueImpl::
 write_stage_upstream(int pipeline_stage, bool force_to_0, Thread *current_thread) {
   _lock.acquire(current_thread);
 
-#ifdef _DEBUG
+// PAX3D: restored to #ifndef NDEBUG — see write_stage() above.
+#ifndef NDEBUG
   nassertd(pipeline_stage >= 0 && pipeline_stage < get_num_stages()) {
     _lock.release();
     return nullptr;
@@ -335,9 +339,13 @@ set_num_stages(int num_stages) {
     // Deallocate the array, since we're back to one stage.
     if (_data != &_single_data) {
       nassertv(_data[0]._writes_outstanding == 0);
-      _single_data._cdata = std::move(_data[0]._cdata);
+      // PAX3D: upstream reassigned _data to &_single_data BEFORE the delete[],
+      // freeing an interior pointer of this live object instead of the old
+      // array (CRASH_GVAD_HANDLE_RACE.md §5, latent defects).
+      CycleDataNode *old_data = _data;
+      _single_data._cdata = std::move(old_data[0]._cdata);
       _data = &_single_data;
-      delete[] _data;
+      delete[] old_data;
     }
   }
   else if (num_stages <= _data[0]._num_stages) {
