@@ -1380,3 +1380,38 @@ now in a gate). Docs: arch doc §AF + testing contract, paxtest README
 snapshot + 3 entries, master plan §4.19, game-side
 ENGINE_UPDATE_2026-07-24_SESSION_AF_LIGHTS.md, ER-013 →
 IMPLEMENTED + GATED (same day as filing). Engine work uncommitted.
+
+**Session AG (2026-07-24): the GVAD stability build window — the
+handle-race fix lands** (master plan §4.20; fact #21). User go-ahead
+on the queued P0 (2026-07-23 "report only" hold lifted). Housekeeping
+first: the AD/AE/AF backlog committed (`18a70ea964`) so the wheel maps
+to a clean commit. The fix (`d6044b1d8a`), three sites exactly per
+CRASH_GVAD_HANDLE_RACE.md §6: makepanda.py keeps `USE_DELETED_CHAIN=
+'1'` alongside mimalloc (our wheels were the first EVER to run the
+Geom churn on a general-purpose allocator); both cycler stage guards
+back to `#ifndef NDEBUG` (compiled out at opt-3 since the upstream
+demotion — 1.10.16 release wheels ran them); `set_num_stages` frees
+the OLD CycleDataNode array instead of `&_single_data` (upstream
+reassigned before the delete[] — an interior pointer of the live
+object, plainly visible once read). Crash baseline re-proven on the
+Session-X wheel (AV < 60 s, exit 0xC0000005), `built_x64\` deleted
+(flag change = mandatory clean build), full build 11 min 54 s / 20
+threads. Acceptance ALL GREEN: 9/9 previously-crashing repro rows
+survive (0.1–4.1M builds/60 s; deep soak 6.9M/120 s;
+`MATRIX_RESULT: ALL_SURVIVED`); full gate both engines FAIL-sets
+unchanged — **totals now Pax3D 82/7/129 · stock 80/7/131** (+1 PASS
++4 SKIP each = NEW permanent `test_gvad_churn`, the crashing recipe
+promoted into paxtest and proven three ways at introduction: FAIL on
+the pre-fix wheel, PASS on stock 1.10.16, PASS on the fix — an
+interesting aside: the fixed wheel out-churns stock ~2.8× on the
+handle-only row, DeletedChain is also fast); testbed selftests
+(test3d_pax, test3d_ftl) green; plan.py boot smoke alive at 75 s with
+only pre-existing content warnings (the Session-R combine warning
+included, still doing its job). Wheel installed in pax3d-env AND
+system Python, archived `wheels_gvad\` (rollback: `wheels_session_x\`).
+Game side: ER-011's main-thread mitigation no longer load-bearing;
+`ENGINE_UPDATE_2026-07-24_GVAD_STABILITY_WHEEL.md` filed. Docs trued:
+CLAUDE.md (queue row DONE, env table, wheels, C++-changes line, gate
+totals), crash doc status FIXED+VALIDATED, paxtest README (test entry
++ snapshot), master plan (§4.20 + fact #21). Gate logs
+`gate_gvad_pax3d_game.log` / `gate_gvad_stock_game.log`.

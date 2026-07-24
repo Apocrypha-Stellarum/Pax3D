@@ -1,7 +1,15 @@
 # Crash Report: GeomVertexArrayData handle churn × cross-thread destruction
 
-**Status: ROOT-CAUSED TO A CODE PATH, FIX QUEUED (build window on hold,
-user decision 2026-07-23). Repro + dump tooling: `tools/repro_gvad_race/`.**
+**Status: FIXED + VALIDATED (GVAD stability build window, 2026-07-24,
+user go-ahead). The §6 stability-wheel plan landed exactly as written —
+commit `d6044b1d8a`, wheel `wheels_gvad\`. Acceptance measured: every
+crashing §3 row survives (full/no-prim/rows-only/arraydata-rows/
+handle-only/read-handle-only/request-resident + workers=1, 60 s each,
+0.1–4.1M builds; handle-only deep soak 120 s / 6.9M builds), full
+paxtest gate green both engines with FAIL sets unchanged
+(Pax3D 82/7/129 · stock 80/7/131), and the permanent gate
+`test_gvad_churn` FAILs on the pre-fix Session-X wheel / PASSes on the
+fixed wheel and stock. Repro + dump tooling: `tools/repro_gvad_race/`.**
 
 Field incidents: planetside access violations 2026-07-20 06:36 (pid 32784)
 and 2026-07-23 14:39 (pid 94520), both `libp3dtool.dll+0x15a30`
@@ -114,7 +122,7 @@ interior pointer of a live object); `release_write` resolves the
 pipeline stage from the *destroying* thread rather than the handle's;
 the two demoted guards.
 
-## 6. Fix plan (queued, awaiting a build window)
+## 6. Fix plan (LANDED 2026-07-24 — the stability wheel below, verbatim)
 
 **Stability wheel (recommended first):** restore `USE_DELETED_CHAIN=1`
 alongside mimalloc (one-line makepanda change), restore both cycler
@@ -137,3 +145,9 @@ wheel and PASS on the fixed wheel).
 moving the four Panda construction calls of `build_chunk_geomnode`
 onto the main thread; apron generation + conform (the heavy numpy
 work) stay on workers. Filed game-side as ER-011.
+
+**Post-fix (2026-07-24): the fix ships in every installed engine**
+(pax3d-env + system Python both carry the stability wheel). The ER-011
+mitigation is no longer load-bearing — worker-thread Geom construction
+is safe again. Keeping the mitigation is harmless; relaxing it is the
+game lane's call after the wheel has soaked in the field.

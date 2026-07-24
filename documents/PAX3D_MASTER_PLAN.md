@@ -94,6 +94,7 @@ Each was established mechanically; each has a permanent guard.
 | 18 | **Every offscreen frame on the 1.11 fork raises one GL_INVALID_OPERATION — and it was never about characters.** The FPS-lane field attribution ("playing characters") measured wrong: an EMPTY offscreen scene errors identically (probe matrix: fork offscreen 1/frame both baselines; fork real window 0; stock 1.10.16 0 everywhere; the Window-1 wheel reproduces → predates all R6 surgery). Root cause: upstream `bd4dc8a379` (2024-10, a **DX9** wdxGraphicsBuffer copy fix, before our divergence point) commented out the single-buffered branch of `FrameBufferProperties::get_buffer_mask()`, so `prepare_display_region` issues `glDrawBuffer(GL_BACK)` on the single-buffered wgl pbuffer. Consequence: the once-per-second error sweep reaches `gl-max-errors` (default 20) after ~20 s of offscreen wall time and **panic-deactivates the GSG — frozen framebuffer, silently stale screenshots** (every paxtest process runs under this deadline; the runner never surfaced the stderr noise). Sibling defect: `gl-max-errors -1` (documented "no limit") deactivates on the FIRST error — bare `>=` at glGraphicsStateGuardian_src.cxx:4817 (`report_errors_loop` honors -1 correctly). One-line C++ fixes **LANDED (Session X part 2 mini-window, 2026-07-19)**: `PATCH_QUEUE_GL_OFFSCREEN.md` — probe now 0 errors/frame everywhere (was ~60/phase); the `gl-max-errors 1000000` workarounds can come out of game harnesses. Technique worth keeping: pin the global clock to dt>1 s so the 1/sec sweep runs every frame — per-frame GL-error attribution on a release build | Session X; probe_gl_errors.py + test_gl_clean (now the permanent zero-GL-errors guard, both engines) |
 | 19 | **The GPU morph path needs NO engine change and NO gl_VertexID — it runs on stock 1.10 too.** Morph deltas ride a per-vdata RGB32F data texture addressed by a plain float32 `morph_index` column — one mechanism on BOTH GLSL baselines. **Layout is VERTEX-MAJOR since Session AB** (width = 2×targets: position x=2t, normal x=2t+1; height = vertex rows) — byte-identical to the loader's own interleaved morph array (`[vertex.morph.s, normal.morph.s, …]` tightly packed per vertex, measured on production heads), so when a vdata's column order matches the character slider order the bake is a ZERO-COPY upload of the array's raw bytes (wren/juno: 5/7 vdatas ≈95% of rows; kade's pack orders non-canonically → numpy column gather, pure-Python fallback; all three variants byte-compared in-gate). Two conventions MEASURED before building (TexturePeeker probe): Texture ram row 0 = texcoord v=0, and `set_ram_image_as(data,'RGB')` preserves float component order. Panda ships normal deltas alongside positions (`normal.morph.<slider>` columns — the GPU path is lighting-correct, not position-only). Instrument trap the bench exposed: `apply_freeze_scalar` alone does NOT dirty the bundle — without `force_update()` (or a playing clip) the CPU path re-animates nothing and a perf A/B silently measures an idle scene (the +0.01 ms tell) | Session Z; probe_ram_order (scratchpad), test_morph_gltf `gpu_*` + `bake_fast_matches_reorder` (both engines × both baselines), probe_gpu_morph_bench.py |
 | 20 | **Panda Python wrapper identity lies in both directions — key caches by `.this`, never `id()`.** Two lookups of the SAME C++ object return different wrapper objects (`id(a) != id(b)`, `a.this == b.this`, measured), so an `id()`-keyed cache never hits for shared objects — and worse, a collected wrapper's id can be REUSED by a different object (false hit → wrong data bound; the Session Z bake cache carried exactly this latent hazard, fixed Session AB). Same trap inverted: pointer-equality conclusions drawn from `id()` are wrong — Session Z's "copy_to clones share the vdata AND the delta textures" was HALF wrong: `copy_to` on a Character subtree pointer-shares RenderStates and their textures (delta textures ARE shared, `.this`-verified) but DEEP-COPIES the animated vdata (≈ the morph-column bytes per clone in RAM, ~18 MB on a production head). Corollary contract (Session AB): a clone of an enabled template arrives converted-but-puppeted (it inherits the template's `u_morphs` block) — `set_gpu_morphs(clone)` detects the variant states, skips the bake, and gives it its own face | Session AB; probe_identity (scratchpad), test_morph_gltf `copy_*` checks |
+| 21 | **Cross-thread Geom destruction vs GVAD handle acquisition corrupts the heap on any wheel that runs mimalloc WITHOUT DeletedChain** — the first attributable native crashes of the fork (planetside chunk mesher, 2026-07-20 + 2026-07-23, both `libp3dtool.dll+0x15a30` in `write_stage_upstream`; the faulting thread is the VICTIM — a second constructor ran over its live object after a freelist double-issue). Single-threaded churn is clean at 97M iterations; stock 1.10.16 immune at 548k (it runs DeletedChain); `workers=1` does NOT mitigate (main-thread destruction is enough). Root regime change: `makepanda.py` set `USE_DELETED_CHAIN=UNDEF` when mimalloc is on, so our wheels were the first ever to run this churn on a general-purpose allocator; two latent upstream defects rode along (cycler stage guards demoted `#ifndef NDEBUG`→`#ifdef _DEBUG` = compiled out at opt-3, and `set_num_stages` freeing `&_single_data` instead of the old array). FIXED 2026-07-24 (GVAD stability window, `d6044b1d8a`): DeletedChain restored alongside mimalloc + guards restored + interior delete fixed; every crashing repro row survives (deep soak 6.9M builds) | GVAD window; `test_gvad_churn` (permanent, FAILed on the pre-fix wheel), `tools/repro_gvad_race/`, `CRASH_GVAD_HANDLE_RACE.md` |
 
 ---
 
@@ -926,6 +927,39 @@ LIGHTS.md` (halo per bulb = fleet-recipe step 6; flare adoption =
 multiply by `q.visibility`, delete the occluder registrations, mind
 the sky-dome valve; floods = set exponents deliberately before
 enabling the flag). Remaining: game-side adoption only.
+
+---
+
+### 4.20 GVAD stability build window (2026-07-24) — the handle-race fix lands
+
+The queued P0 from `CRASH_GVAD_HANDLE_RACE.md` (user go-ahead after the
+2026-07-23 "report only" hold). Fifth C++ build window; first since
+Session X part 2. Sequence executed: Session AD/AE/AF backlog committed
+(`18a70ea964`, the wheel maps to a clean commit) → the three-site fix
+committed (`d6044b1d8a`: `USE_DELETED_CHAIN='1'` alongside mimalloc in
+makepanda.py; both cycler stage guards back to `#ifndef NDEBUG`
+(live again at opt-3 = the 1.10.16-release regime); `set_num_stages`
+frees the OLD array instead of `&_single_data`) → crash baseline
+re-proven on the Session-X wheel (AV < 60 s) → `built_x64\` deleted
+(dtool_config flag change = mandatory clean build) → full build 11 min
+54 s at 20 threads → acceptance. **Acceptance, all green:** every
+previously-crashing repro row survives 60 s (full 116k / no-prim 1.0M /
+rows-only 3.0M / arraydata-rows 3.9M / handle-only 4.06M /
+read-handle-only 4.08M / request-resident 3.96M / workers=1 3.96M
+builds; handle-only deep soak 120 s = 6.9M); full gate both engines,
+FAIL sets unchanged — **totals now Pax3D 82/7/129 · stock 80/7/131**
+(+1 PASS +4 SKIP each = the NEW permanent `test_gvad_churn`, proven
+three ways at introduction: FAIL on the pre-fix Session-X wheel — both
+rows 0xC0000005 — PASS on stock, PASS on the fix); `test3d_pax
+--selftest` + `test3d_ftl --selftest` green; `plan.py` boot smoke alive
+at 75 s (only pre-existing content warnings). Wheel installed in
+pax3d-env AND system Python (the machine-wide pin), archived
+`wheels_gvad\`; rollback = `wheels_session_x\`. Fact #21 records the
+mechanism. Game side: ER-011's main-thread-construction mitigation is
+no longer load-bearing (relaxation is the game lane's call after field
+soak); `ENGINE_UPDATE_2026-07-24_GVAD_STABILITY_WHEEL.md` filed. The
+optional poison-on-free diagnostic wheel stays available if a stray
+free ever needs naming.
 
 ---
 

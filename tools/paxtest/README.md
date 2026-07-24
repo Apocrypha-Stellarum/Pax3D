@@ -453,6 +453,19 @@ runtime recompile), cos²/cos⁸ exact, the Spotlight class-default-50
 trap documented (why the flag is opt-in), PointLight immunity (rms 0),
 byte-identical toggle-off.
 
+**`test_gvad_churn.py`** (GVAD stability window — field AVs 2026-07-20
++ 2026-07-23) — threaded GeomVertexData churn must not corrupt the
+heap. Runs the canonical crash recipe (`tools/repro_gvad_race/
+repro_min.py`) as subprocesses: `handle-only` 60 s (the sharpest
+distilled trigger — cross-thread handle acquisition vs Geom-class
+destruction; AV'd < 60 s every run on the Session-X wheel) and `full`
+30 s (the chunk-mesher field workload). Survival = exit 0 +
+`SURVIVED`; an AV exits the child nonzero and FAILs the row. Proven
+both ways at introduction: FAIL on the Session-X wheel (both rows
+0xC0000005), PASS on stock 1.10.16 (1.24M builds) and on the fixed
+wheel. Engine-level: `none` pipeline only, no window. Root cause and
+forensics: `documents/CRASH_GVAD_HANDLE_RACE.md`.
+
 **`test_ftl_blur.py`** — the FTL warp distortion pass (radial blur +
 chromatic aberration in tonemap); asserts zero-strength passthrough and
 effect behavior (added alongside the feature, post-Session-D).
@@ -478,11 +491,11 @@ the correct surface's favor and mimic a working depth buffer.
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Results snapshot (post Session AF, 2026-07-24 — measured, gate logs on file)
+## Results snapshot (post GVAD build window, 2026-07-24 — measured, gate logs on file)
 
 The standard gate is both engines × the ONE `game` baseline (Session AC
-redefinition). Totals: **Pax3D 81 PASS / 7 FAIL / 125 SKIP · stock
-1.10.16 79 PASS / 7 FAIL / 127 SKIP** — the FAIL sets are IDENTICAL on
+redefinition). Totals: **Pax3D 82 PASS / 7 FAIL / 129 SKIP · stock
+1.10.16 80 PASS / 7 FAIL / 131 SKIP** — the FAIL sets are IDENTICAL on
 both engines and every one is pre-existing/by-design: `lighting/none`
 (fixed-function control under gl 3 2), `bloom` + `rebuild` on the
 retired `pax3d_simplepbr`, `rebuild/pax_pbr` (F4, by design of the old
@@ -491,7 +504,10 @@ R4 baseline; `@logdepth` PASSES). The two-row difference between
 engines is `instancing` (needs InstancedNode — SKIPs on stock 1.10).
 (Session AE added the 6 terrain_water jobs; Session AF added the 18
 light_halo / visibility_query / spot_exponent jobs — +6 PASS +12 SKIP
-per engine, identical rows both engines.)
+per engine, identical rows both engines; the GVAD build window added
+the 5 gvad_churn jobs — +1 PASS +4 SKIP per engine, and the row is the
+permanent heap-corruption guard: it FAILed on the pre-fix Session-X
+wheel, gate logs `gate_gvad_*`.)
 
 Note: with the game's `use_pax3d_render` flag flipped (Session D), the
 `pax_pbr` adapter routes to pax3d_render — its column mirrors
