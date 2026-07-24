@@ -1118,3 +1118,265 @@ under gate load @modern — the scroll advances by wall-clock seconds
 Fixed by pinning the global clock (M_non_real_time, dt=1/30) at test
 start; rms now 0.14060 deterministic on all four configs. Any future
 "did it move over N frames" check must pin the clock.
+
+**Session Y (2026-07-20): the game→engine ER queue cleared — hex
+tiling, light policy, Round-5 env asks** (master plan §4.11). ER-007
+hex-tiling landed at the ratified v2 seam: `set_terrain_splat(...,
+hex_tiling=True, hex_cell_size, hex_rotation (per-layer),
+hex_contrast)` — Mikkelsen-style 3-tap stochastic retiling whose
+per-cell transforms are CONSTANT, so every tap's UV stays continuous
+where its weight is nonzero and plain sampling mips correctly on both
+GLSL baselines (no textureGrad — the design fact); normals ride the
+cells with back-rotated tangent xy. test_terrain_splat +12 checks
+(shift-rms 0.0014→0.2296 periodicity break, anisotropy contract,
+byte-identical opt-out). ER-008 answered from the C++ then measured:
+light overflow uploads the `Light.set_priority()`-sorted head (ties
+spot > directional > point, equal ties ARBITRARY), excess silently
+dropped — so `_create_sun_light` now pins the directional-mode sun at
+priority 1<<20 (default-on guard: overflowing floods would have
+evicted the sun and its shadows), and `set_light_budget(root, lights,
+budget, ...)` adds the per-root nearest-N warden (budgets LOCAL per
+hull; blink-steady scoring, rebind only on membership change). Bonus
+fact on record: zero-light draws render with a default WHITE slot-0
+light (GSG default fill). Round-5 env asks all three landed:
+`set_env_scale(np, s)` (per-node, ibl_spec only), `set_env_intensity(s)`
+(global, composes), `set_env_map_rotation(deg)` (specular yaw, skybox
+set_h sense); test_env_map +5 exact checks. New test_light_priority
+(+@directional). Gate @game 71/6/106 Pax3D · 69/6/108 stock; FAIL sets
+unchanged.
+
+**Session Z (2026-07-20): GPU morphs — fact #15 closed opt-in**
+(master plan §4.12). The queued GPU morph path landed as pure
+Python/GLSL per canon — no build window, works unchanged on stock
+1.10. `set_gpu_morphs(np)`: per-vdata RGB32F delta texture (position +
+normal deltas per target, the ER-003 data-texture contract), a float32
+`morph_index` vertex column for both-baseline addressing (no
+gl_VertexID), and a GPU_MORPHS variant composed per-geom at the
+alpha-mask seam — morph sliders now render ON the hardware-skinning
+path. All 52 ARKit targets addressable, ≤16 live (the character lane's
+contract), O(sliders) per-frame push. test_morph_gltf +5 checks: GPU
+matches the CPU valve at rms 0.0000 (bar 0.02), opt-out byte-identical.
+Perf (hero_wren, 14,684×52, 8 faces × 5 sliders, offscreen 512²):
+~0.3 ms morph-attributable (acceptance ≤0.5 ms); the CPU valve on the
+same scene is 63.5 ms/frame. Known limits documented and
+field-evidence-gated: shadow pass casts the unmorphed silhouette, one
+PBR variant per geom, requires the HW-skinning path. Gate totals
+unchanged (the row grew internally).
+
+**Session AA (2026-07-21): ER-007 height blend + hex world-anchor,
+ER-009 cutout alpha** (master plan §4.13). Both watched-for arrivals
+came in together (terrain dev 651/652) and landed same day.
+`set_terrain_splat(..., height_blend=True, height_sharpness=8.0)` —
+TERRAIN_HEIGHT_BLEND resharpens splat weights by a height softmax
+(`w_i · 2^(k · albedo_i.a)`, renormalized): blend borders follow the
+height texture instead of crossfading. The FORM is the contract —
+equal heights cancel as a common factor, so the terrain dev's pinned
+all-flat-palette no-op requirement holds BY CONSTRUCTION (measured rms
+2.6e-06), and a flat-128 slice competes at its constant middle
+(analytic-exact). `hex_offset=(u, v)` world-anchors the hex cell hash
+— the chunk-border motif seam vanishes when each chunk passes its
+world offset (UV-window equivalence gated, rms 0.0005). ER-009:
+`apply_alpha_masks` now also detects `TransparencyAttrib M_binary`
+(geom- or node-level, predicate a ≥ 0.5 = the cull semantic) and takes
+`instanced=True` to compose INSTANCING into the mask variant — the
+origin-collapse flag/shader pairing trap is now itself a gate check
+(0/4→4/4). The ER's "shadow pass already discards" premise did not
+survive mechanism review (no depth-path discard exists; fact #17
+stands) and was corrected in the response. test_terrain_splat +14 /
+test_alpha_mask +10 checks; gate totals unchanged all four configs.
+Both riders adopted game-side the same day (sfb2 s663).
+
+**Session AB (2026-07-21): GPU morph crowds — zero-copy bake,
+independent clone faces** (master plan §4.14). Probing before building
+found fact #20: Panda wrapper `id()` is unstable — two lookups of one
+C++ object return different wrappers, so key caches by `.this`; and
+`copy_to` on a Character DEEP-COPIES vdata while pointer-sharing
+textures (the Session-Z "clones share vdata" claim was a wrapper-id
+artifact). The delta texture flipped VERTEX-MAJOR — byte-identical to
+the loader's own interleaved morph-column array — so a canonical-order
+vdata uploads its raw bytes directly: enable cost 1.17 s → 0.07–0.08 s
+per face on all three shipped heroes (~15×; numpy column gather for
+non-canonical orders like kade's, pure-Python floor kept, all three
+bake paths byte-compared in-gate). `set_gpu_morphs(clone)` on a
+copy_to clone now reuses the pointer-shared delta textures (ZERO
+re-bake) and registers the clone's OWN sliders + uniform block —
+without the call every clone in a plaza wears the template's face.
+test_morph_gltf → 17 checks/config. Perf re-measured with an
+interleaved min-of-5 A/B (single-run deltas drifted 0.4–0.8 ms under
+machine load — the bench trap on record): 8 faces × 5 sliders
+= 0.19 ms morph-attributable; 32 independently-driven clones 4.3 ms;
+24 clones copy+register in 0.25–0.49 s. Gate totals unchanged.
+
+**Session AC (2026-07-23): R1 CLOSED — sign-offs, one graphics
+reality, GLSL-120 deletion** (master plan §4.15; commit `e67c989adb`).
+The program's oldest open phase closed in three user-gated steps.
+(1) "directional signed off" closed R2 (watch item: planetside shadow
+stripes at certain angles, not reproducible in the testbed — capture
+sun az/el on recurrence); "sRGB flip approved" closed R1.3 — the
+user's "no difference" read was mechanically checked first (the
+testbed's ONE sRGB-eligible texture shifted 27.7% of pixels at rms
+0.092 — real, subtle, approved), and `srgb_inputs` + the boot re-walk
+were wired game-side same day. (2) One graphics reality: the census
+found `plan.py` had NO gl-version — the main game had been booting
+COMPAT daily; `gl-version 3 2` landed in every entry point, and the
+user played a session under core: "core signed off." (3) R1.4
+executed: all 16 shader sources baked to native GLSL 330 (the exact
+swaps the runtime transform performed — preprocessor-equivalent
+compiled text), shaderutils transform + IS_WEBGL machinery deleted;
+compat contexts warn loudly and remain diagnostic-only. **Gate
+redefined: both engines × ONE `game` baseline (= gl 3 2); totals
+Pax3D 70/7/106 · stock 68/7/108 — identical to the historical @modern
+column, FAIL sets unchanged (the bake-equivalence proof).** Latent
+test defect fixed on the way: test_alpha_mask keyed its compat legs on
+the baseline NAME instead of `h.use_330` — key baseline logic on the
+context, never the name.
+
+**Session AD (2026-07-23): effect sprites — baked explosion footage,
+spawn_effect** (master plan §4.16; field guide
+`BAKED_EFFECTS_GUIDE.md`). The VFX lane opened: the user bought the
+CGVision "Air and Space Explosions" pack (28 ProRes 4444 MOVs,
+alpha+beauty, `C:\python\asset_sources\Explosions\`); intake MEASURED
+the footage premultiplied (RGB ≤ alpha everywhere except a deliberate
+additive spark tail) — bake as-is, no conversion.
+`pipeline.spawn_effect()` landed as a composition of already-gated
+parts, zero new shader code: `set_screen(albedo=False, metallic=1)`
+makes the quad analytically unlit (black metallic base zeroes
+diffuse_color AND spec_color exactly — only emission survives,
+HDR-legal for bloom), `set_glass()` gives premultiplied blending with
+coverage-weighted fog/atmosphere inscatter, `exclude_from_shadows()`
+applies when a caster mask exists (fact #17), and `play_flipbook()`
+steps the frames; one-shots self-reap through the public clears so
+every registry returns to empty (byte-identical-when-unused held at
+rms 0.0 in-gate). `tools/gen_flipbook.py` grew alpha awareness
+(ffprobe detection, `-pix_fmt rgba` extraction, RGBA atlas + `alpha`
+sidecar field; RGB sources byte-identical to the old tool — both
+proven in-gate). The "2013 ffmpeg" note was stale: the machine runs
+winget ffmpeg 8.0.1, which decodes ProRes 4444 alpha cleanly. Gate:
+NEW test_effects, 13 analytic checks ×@game/@directional, identical
+on both engines — **totals now Pax3D 73/7/109 · stock 71/7/111** (+3
+PASS +3 SKIP each = the 6 new effects jobs; FAIL sets unchanged).
+First adoption same session (sfb2, uncommitted): `5_1.mov` baked to a
+51-frame 12.5 fps atlas (0.8 MB, `assets/effects/`) and planetside's
+WeaponEffects plays it on NON-ground detonations (grenade airbursts +
+map-edge; ground hits keep the corona+dust read; missing pipeline or
+atlas ⇒ old behavior untouched). Docs trued up both repos; the
+bake→spawn workflow guide `documents/BAKED_EFFECTS_GUIDE.md` born this
+session.
+
+**Session AE (2026-07-24): ER-010 wet-sand waterline —
+set_terrain_water** (master plan §4.17; arch doc Session AE section).
+The water dev's Session-690 water package (depth-alpha shallows, shore
+melt, foam) exposed the terrain half of the Sea-of-Thieves shore look:
+sand above AND below the contact line rendered bone-dry. ER-010 landed
+same-day, the suggested API shape plus the stretch goal:
+`set_terrain_water(chunk_np, water_z, band_m, dark, rough_mult, sat,
+anim_amp, anim_period, anim_scale, anim_phase)` — a TERRAIN_WATER
+rider on the terrain-splat variant (6th cache key; the v2 layer-weight
+seam untouched — water modifies the outputs after the weights).
+Wetness is by WORLD Z only, all layers alike; submerged terrain is
+FULLY wet (the seafloor headline); wet albedo = dark multiplier +
+chroma expansion about Rec.709 luminance (commute exactly), wet
+roughness = rough_mult ahead of GSAA (the sheen is a specular read —
+white-env gate check brightens 0.737→0.827 at rough_mult 0.12). The
+breathing edge: `amp·sin(phase + 2π·noise(world_xy/anim_scale))`,
+phase driven from _update (zero cost when unused), `anim_phase` pins
+it for determinism. Every consumer goes through `mix(dry, wet, w)` so
+wet==0 fragments compute the water-off arithmetic bit-exactly;
+`set_terrain_splat` re-calls PRESERVE the water contract (re-dressing
+must not silently dry the shore). Gate: NEW test_terrain_water, 17
+checks ×@game/@directional, identical on both engines — **totals now
+Pax3D 75/7/113 · stock 73/7/115** (+2 PASS +4 SKIP each = the 6 new
+terrain_water jobs; FAIL sets unchanged). Engine response filed in the
+ER file game-side; adoption is one call in materials.py next to
+set_terrain_splat (feature-probed, ER-009 pattern).
+
+**Session AE addendum (2026-07-24): ER-012 glTF tangent synthesis —
+filed-as-answered, zero engine work** (master plan §4.18). The
+ship-intake lane's ask (synthesize tangents for the 158/246 fleet GLBs
+whose normal-mapped primitives lack TANGENT — Blender won't export
+tangents on n-gon meshes) is ALREADY the shipped behavior:
+panda3d-gltf's `calculate_tangents` runs at convert time on every UV'd
+primitive without TANGENT, and the model cache stores the result.
+Probed on the ER's own meshes (`tools/probe_tangent_synthesis.py`,
+new): SR4 and Hermes load with 0 geoms missing the tangent column.
+Mechanism correction filed: pax_pbr has NO draw-time derivative
+fallback — genuinely missing tangents under USE_NORMAL_MAP go
+NaN-black, so black = loader regression, shimmer/seams = tangent
+quality (mikktspace exactness + rare degenerate-UV zero tangents; both
+watch-gated LOW on the ER's own trigger). Housekeeping: the lane filed
+it as "ER-010", colliding with the wet-sand waterline filed the same
+morning — renumbered to ER-012 (git mv, staged game-side), index
+trued up (ER-009 row was stale-OPEN, ER-011 was missing).
+
+**Post-AE lighting consult (2026-07-24): fleet look, flood lamps,
+interiors, flare occlusion — answers on record, ER-013 filed.**
+(1) Nav lights at fleet scale: the perf question is already solved —
+set_blink is an emission envelope (near-free at any ship count), real
+spill is ER-008-warded; adoption recipe delivered game-side
+(`ENGINE_UPDATE_2026-07-24_NAV_LIGHTS_FLEET_RECIPE.md`); confirmed
+config-side bulb placement (nozzle precedent), no baked GLB anchors —
+the Pitbull rebuild proceeds unblocked. **ER-013 `set_light_halo`
+FILED** (engine desk, on the ship lane's request): min-screen-size
+camera-facing sprites = the km-range readability piece; depth-tested =
+free occlusion; composes with the blink registry; accepted in
+principle, proposed API + gate plan in the ER, candidate next slice.
+(2) Flood lamps: mechanically we HAVE them — Spotlight through the
+forward path with smooth cone edge (SPOTSMOOTH), spot shadows, spot >
+point in the ER-008 class rank, measured in test_local_lights; gaps =
+per-light penumbra control (shader ignores spotExponent — small gated
+GLSL item if wanted) and volumetric shafts (separate, evidence-gated;
+authored translucent cone is the cheap game-side stand-in).
+(3) Interior vs exterior light: adoption contract, not an engine gap —
+Session S built the valves for exactly this: `set_light_off(
+pipeline.sun_light_np)` on the interior subtree (exact, free; do NOT
+rely on shadow maps to darken enclosed spaces — leak-prone),
+`set_ambient_scale(interior, ~0)`, per-subtree `set_env_map`/
+`set_ambient_sh`, `set_atmosphere_scale(interior, 0)`.
+(4) Flare-through-hull: TWO flare systems exist — the engine's
+Session-S bright-extract ghosts are occlusion-implicit (wall covers
+sun ⇒ no extract energy ⇒ no flare, gated); the through-wall offender
+is the game's legacy sprite flare (sun_lens_flare.py) whose
+hand-registered ray-sphere occluders can't express "camera is inside a
+hull". Proposed engine fix: a depth-tap visibility query
+(`query_sun_visibility`-class API — tiny GPU pass sampling scene depth
+around the sun's screen position, one-frame-latent readback, no stall)
+that retires ALL hand-built occluders; Python/GLSL only, gate:
+behind-wall=0 / open-sky=1 / half-covered≈0.5. Clustered-forward
+backlog row sharpened (§4.7): direction recorded, evidence-gated,
+trigger + ingredients named.
+
+**Session AF (2026-07-24): the lights slice — ER-013 halos,
+visibility queries, spot penumbra** (master plan §4.19; arch doc
+Session AF section). All three consult items landed + gated same day,
+pure Python/GLSL, byte-identical when unused. (1) `set_light_halo`:
+view-space-expanded additive quads, `size = max(size_m, min_px /
+px_per_world)` from proj[1][1]+clip-w (exact for perspective AND ortho
+— one formula), falloff (1-r²)² (center exactly 1 = the analytic
+anchor), depth-tested/no-write, OmniBounds (the shader resizes the
+card), shadow-mask excluded, LOG_DEPTH gl_FragDepth like pax_pbr
+(recompile-tracked); halos inherit u_emission_factor ⇒ blink circuits
+drive them for free. (2) `add_visibility_query` + `VisibilityQuery`
+handle: K×1 buffer via make_texture_buffer(to_ram) sorted BEFORE every
+FilterManager buffer — reads LAST frame's depth so RTM_copy_ram waits
+only on the 16×1 quad itself (no mid-frame stall); 16-tap sqrt-spiral;
+targets' depths pre-scaled ×0.995 so a depth-writing sun billboard
+can't occlude its own query; `max_occluder_depth` = the sky-dome
+valve; measured latency exactly 2 frames. Depth target now requested
+when `enable_ssao OR enable_visibility_query` (both-on coexistence
+probed). (3) `enable_spot_exponent` (SPOT_EXPONENT define +
+conditional struct member): GL_SPOT_EXPONENT semantics; opt-in
+because Spotlight's class default is exponent 50 (spotlight.I:19 —
+measured; Light base returns 0), guard `pow(max(spotcos,1e-4), e)`
+inside the cutoff branch only. Gate: 3 NEW tests (light_halo 10+1,
+visibility_query 7+INFO, spot_exponent 7) ×@game +@directional/
++@logdepth — **totals now Pax3D 81/7/125 · stock 79/7/127** (+6 PASS
++12 SKIP each; FAIL sets unchanged, identical engines; all three
+features PASS on stock 1.10). Two test traps met and encoded: the
+half-max size prediction must be solved THROUGH the tonemap curve
+(linear-space 0.541 → post-curve 0.728 — the near_size FAIL taught
+it), and a lights-free scene needs a BLACK AmbientLight or the
+zero-light white-flood quirk lights the occluder card (Session-Y fact,
+now in a gate). Docs: arch doc §AF + testing contract, paxtest README
+snapshot + 3 entries, master plan §4.19, game-side
+ENGINE_UPDATE_2026-07-24_SESSION_AF_LIGHTS.md, ER-013 →
+IMPLEMENTED + GATED (same day as filing). Engine work uncommitted.

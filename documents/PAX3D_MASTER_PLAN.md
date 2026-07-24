@@ -244,7 +244,7 @@ Evaluate ONLY when it can run the paxtest suite. No cadence; check when curious.
 | ~~Runtime fog toggle~~ | pax3d_render | **Superseded by Session J R5.1** — `set_enable_atmosphere()` is the runtime toggle; the legacy `enable_fog`/p3d_Fog path stays as-is |
 | ~~SSAO first slice~~ (game Tier-1 ask; walkable-interior contact shading) | pipeline + shaders | **DONE Session S** — `enable_ssao` (opt-in, rebuild-class): depth-only Alchemy/SAO obscurance + blur, applied in tonemap; flat geometry = AO exactly 1.0 (plane byte-identity gated); knobs ao_radius/ao_intensity/ao_bias uniform-only, ao_samples init. test_ssao green both engines × baselines × @logdepth × **@msaa4 (measured: the multisampled depth resolve works)**. Upgrade path documented: indirect-only AO via scene-pass sampling; depth+normals foundation now exists for TAA v2/SSR |
 | CSM (cascades) | pipeline + shaders | Post-R5, if extent-following stops sufficing |
-| Clustered/tiled lights | shaders (+ maybe C++ culling) | Post-R5; openworld's Megacity wants it (781 lamps vs ~6 forward lights) |
+| Clustered/tiled lights (Godot-4-Forward+-class) | shaders (+ maybe C++ culling) | Post-R5; openworld's Megacity wants it (781 lamps vs ~6 forward lights). **Re-asked 2026-07-24 (user + ship lane, fleet-look consult) — direction recorded, still evidence-gated.** Trigger: a real scene wanting >16 real lights on the SAME geometry with measured visual loss (warden pop). Nav-light fleets do NOT qualify — emission blink + ER-013 halos carry them, and the ER-008 warden already buys clustering's cheap 80% (locality). Ingredients when it fires: light lists in data textures (ER-003 `data_texture` carrier, GLSL-330-compatible Doom-2016 style), froxel cull manager prototyped Python→C++ per canon, and shadow decoupling into an atlas (the per-light shadow varying array is the actual 22-light link ceiling) |
 | `shaderAttrib.cxx:471` intermittent assert | engine | Needs a repro (fires when a shader reads an unbound input; the known recompile-wipe class is fixed) |
 | Planet analytic tangents | sfb2 `planet_factory.py` | When normal-mapped planets arrive |
 | GLSL-120 dual-path removal (R1.4) | pax3d_render | (1) ~~flip every entry point to `gl-version 3 2`~~ **DONE 2026-07-23** (plan.py, main.py all modes, test3d.py, test3d_ftl.py, test3d_pax.py modern-by-default with `--compat` escape; boot smoke green, combine warning fired once = the known look-change content); **DONE 2026-07-23 (Session AC)** — entry-point flip + "core signed off" + deletion all landed the same day; 16 shader sources baked native 330, transform + IS_WEBGL deleted, gate redefined to one core `game` baseline (+`compat` diagnostic), totals = the historical @modern column exactly (70/7/106 · 68/7/108, FAIL sets unchanged). R1 closed |
@@ -737,6 +737,195 @@ game-side adoption, do it before building new mode content.
 Remaining R1 items: **none.** Program-wide: R3 content retune, R4
 game-side items, R5 content adoption, R6 Vulkan watch, ER adoption
 watches — all evidence- or game-side-gated.
+
+### 4.16 Session AD (2026-07-23) — Effect sprites: baked explosion footage, spawn_effect
+
+Panda3D never did explosions well (the stock particle system is dated,
+and there is no volumetric path anywhere in the real-time world — even
+UE only imports VDBs since 5.3). The sanctioned game technique is baked
+footage on billboards, and the user bought the CGVision "Air and Space
+Explosions" pack (28 ProRes 4444 MOVs, 2048×1500, alpha+beauty in one
+`yuva444p12le` stream, `C:\python\asset_sources\Explosions\`). Intake
+MEASURED the footage premultiplied (RGB ≤ alpha everywhere except a
+deliberate additive spark tail; a==0 regions black to 1e-5) — bake
+as-is, no unpremultiply, blend `M_premultiplied_alpha`.
+
+**`pipeline.spawn_effect()` landed — a composition of already-gated
+parts, zero new shader code:**
+
+- `set_screen(albedo=False, metallic=1)`: black metallic base ⇒
+  `diffuse_color` and `spec_color` both EXACTLY 0 in the frag — every
+  lit term dies analytically, only emission survives (HDR-legal,
+  `emission_scale` feeds bloom). Residuals on record: the f0=0 direct
+  Fresnel grazing lobe and the IBL LUT bias term (env-bound scenes) —
+  both bounded ≪ emission; field-watch, not blockers.
+- `set_glass()`: the GLASS variant + premultiplied blending — emission
+  adds at full strength (footage carries its own coverage), fog and
+  atmosphere inscatter are coverage-weighted, so haze cannot paint the
+  quad's transparent texels.
+- `exclude_from_shadows()` when a caster mask is configured (fact #17:
+  the depth pass never reads alpha — an un-excluded quad stamps its
+  full silhouette).
+- `play_flipbook()` + a new `_effects` registry: one-shots self-reap on
+  completion through the public clears, so every registry returns to
+  empty (byte-identical-when-unused held at rms 0.0 in-gate).
+  `remove_effect()` for loops/cancel; game-removed nodes purge their
+  dead registrations (the recompile-re-walk trap).
+
+`tools/gen_flipbook.py` grew alpha: ffprobe-detected alpha sources
+extract `-pix_fmt rgba`, scaling/assembly preserve the channel, RGB
+sources produce the byte-identical 3-channel atlas as before (both
+proven in-gate against synthetic frames). Sidecar gains `alpha`; the
+paste-ready suggestion becomes `spawn_effect(meta=...)`. The tool's
+"2013 ffmpeg" note was stale — the machine runs 8.0.1 (winget); ProRes
+4444 alpha decodes clean.
+
+**Gate: new test_effects (13 analytic checks/config: premult composite,
+additive glow, opaque core, unlit-under-ambient-×4, billboard vs
+rotated parent, one-shot self-cleanup, shadow-mask exclusion, tool
+alpha/RGB exactness), runs @game + @directional, PASSES identically on
+both engines. Totals now Pax3D 73/7/109 · stock 71/7/111 (+3 PASS +3
+SKIP each = the 6 new effects jobs; FAIL sets unchanged, all
+pre-existing).**
+
+First adoption same-session (sfb2, uncommitted): `5_1.mov` baked to a
+51-frame 12.5 fps 1792×1504 atlas (0.8 MB, `assets/effects/`), and
+planetside's `WeaponEffects._begin_impact(fireball=True)` plays it on
+NON-ground detonations (launcher/grenade airbursts + map-edge; ground
+hits keep the corona+dust read; no pipeline / missing atlas ⇒ old
+behavior). Offscreen smoke: bolt expires t=5.00, fireball spawns,
+self-reaps t=9.10, registries clean. Structure hits should pass
+`fireball=True` when structure collision lands (comment on file).
+
+Retune levers on file: bake fps (12.5 → 25 doubles smoothness and
+VRAM), cell size, `EXPLODE_FX_SIZE`/`_EMISSION` in effects.py, and
+`depth_bias`/surface-normal offset for future wall impacts. Slice-2
+candidates, evidence-gated: soft-particle depth fade, an EFFECT define
+zeroing `glass_spec` if the env-ghost residual ever shows, multi-angle
+bakes if slow orbiting explosions read flat.
+
+The lane's field guide is `BAKED_EFFECTS_GUIDE.md` (intake facts, bake
+levers, the spawn_effect contract, the planetside adoption pattern,
+watch list) — hand THAT to a downstream dev, not this section.
+
+### 4.17 Session AE (2026-07-24) — ER-010 wet-sand waterline: set_terrain_water
+
+The terrain half of the Sea-of-Thieves shore look. The water dev's
+Session-690 water (per-pixel depth, Beer-Lambert shallows, shore melt,
+foam, Gerstner) made the missing piece visible at every beach: the sand
+above AND below the contact line rendered identical dry albedo — "dry
+beach with a blue film". ER-010 asked for a per-node water contract on
+the splat shader; it landed same-day, exactly the suggested shape plus
+the stretch goal:
+
+```python
+pipeline.set_terrain_water(chunk_np, water_z, band_m=1.0, dark=0.55,
+                           rough_mult=0.35, sat=1.25,
+                           anim_amp=0.0, anim_period=12.0,
+                           anim_scale=6.0, anim_phase=None)
+pipeline.clear_terrain_water(chunk_np)   # or water_z=None
+```
+
+- **TERRAIN_WATER rider on the splat variant** (6th cache key; the v2
+  layer-weight seam untouched — water modifies the OUTPUTS after the
+  weights). Wetness by WORLD Z only, all layers alike (wet rock darkens
+  like wet sand — no layer coupling): `wet = 1 - smoothstep(water_z,
+  water_z + band_m, world_z)`. **Submerged terrain is FULLY wet** — the
+  seafloor under the depth-alpha shallows was the ER's headline.
+- **Wet look:** albedo × `dark` + chroma expansion `sat` about Rec.709
+  luminance (they commute exactly; applied after macro), roughness ×
+  `rough_mult` (clamped, ahead of GSAA) — the sheen is a specular read,
+  and under an env map the wet band mirrors the sky.
+- **Breathing edge (the stretch goal):** `anim_amp` metres of edge
+  offset `amp·sin(phase + 2π·noise(world_xy/anim_scale))` — static
+  world-xy value noise phase-shifts a shared `anim_period` cycle, so
+  the sheen line advances/retreats unevenly along shore. Phase pushed
+  from `_update` (O(animated nodes), zero when none); `anim_phase`
+  pins it (determinism valve, gate-used). amp=0 EXACT.
+- **Contracts, all gated:** every consumer goes through `mix(dry, wet,
+  w)` — wet==0 fragments compute the water-off arithmetic bit-exactly
+  (dry-region rms 0.0 in-compile, <1e-4 cross-variant); unset nodes
+  keep the water-free variant (byte-identical by construction);
+  `set_terrain_splat` RE-calls PRESERVE water (chunk re-dressing must
+  not silently dry the shore); water before splat raises ValueError;
+  clears restore at rms 0.0.
+
+**Gate: new test_terrain_water (17 checks/config: full-wet /
+below-waterline / band-mid exact analytics against the wet transform,
+dry-above arithmetic identity, re-dress preservation, white-env sheen
+comparison 0.737→0.827, five breathing-edge checks, byte-identical
+clears + opt-out), runs @game + @directional, identical on both
+engines. Totals now Pax3D 75/7/113 · stock 73/7/115 (+2 PASS +4 SKIP
+each = the 6 new terrain_water jobs; FAIL sets unchanged, all
+pre-existing).**
+
+Adoption is game-side and one call in `materials.py` next to
+`set_terrain_splat` (feature-probed per the ER-009 pattern; sea level
+already a single float `world.water.water_z`). Suggested start:
+defaults + `anim_amp=0.35` on ocean worlds. Engine response filed in
+the ER: `sfb2/documents/ENGINE_REQUESTS/ER-010_wet_sand_waterline.md`.
+
+### 4.18 Session AE addendum (2026-07-24) — ER-012 glTF tangent synthesis: filed-as-answered
+
+The ship-intake lane filed a second "ER-010" the same morning (renumbered
+ER-012 by this desk; ER-011 = the mesher crash): synthesize tangents at
+load time for the 158/246 fleet GLBs whose normal-mapped primitives ship
+without TANGENT (Blender refuses tangent export on n-gon meshes; the
+intake pipeline rightly refuses to triangulate early). **Answered same
+day with a probe, zero engine work: the ask is already the shipped
+behavior.** panda3d-gltf 1.3.0 synthesizes per-vertex tangents at convert
+time for every UV'd primitive lacking TANGENT (`calculate_tangents`,
+Lengyel accumulation + Gram-Schmidt + handedness w) and the model cache
+stores the result. Measured on the ER's own meshes
+(`tools/probe_tangent_synthesis.py`): SR4 4/5 primitives tangent-less
+in-file → **0/5 geoms missing post-load**; Hermes 13/14 → 0/14; Storm
+24/24 in-file (and 0 normal-mapped) → 0/24. Mechanism correction on
+record in the ER: there is NO draw-time derivative fallback in pax_pbr —
+truly missing tangents under USE_NORMAL_MAP render NaN-black, so the
+watch item's diagnostic split is *black = tangents actually missing
+(loader regression), shimmer/seams = tangent quality*. Genuinely
+remaining, watch-gated LOW per the ER's own trigger: mikktspace
+exactness and ~0.02–0.5% zero-magnitude tangents at degenerate-UV
+vertices. If the trigger fires, the fix is a Python-only post-load pass
+in `pax3d_render/`, gated against a reference-tangent GLB.
+
+### 4.19 Session AF (2026-07-24) — the lights slice: ER-013 halos, visibility queries, spot penumbra
+
+The three "now" items from the same-day fleet-look consult, all landed
++ gated in one slice, all Python/GLSL, all byte-identical when unused
+(arch doc Session AF section has the mechanisms):
+
+1. **`set_light_halo(np, color, size_m, min_px, intensity)` (ER-013)**
+   — camera-facing additive halo quads with a minimum on-screen size;
+   depth-tested (occlusion = the depth test, zero occluder
+   bookkeeping), never depth-written, shadow-mask excluded, LOG_DEPTH
+   composing (recompile-tracked shader); inherits `u_emission_factor`
+   so halos flash with their `set_blink` circuit for free. ER-013
+   status flipped to IMPLEMENTED + GATED same day it was filed.
+2. **`add_visibility_query(np, radius_px, max_occluder_depth)`** (init
+   flag `enable_visibility_query`, rebuild-class like SSAO) — the
+   flare-occluder retirement: a K×1 depth-tap pass reports each
+   target's visible fraction, ~2 frames latent via RTM_copy_ram with
+   NO mid-frame stall (the query buffer sorts before the scene and
+   reads last frame's depth). Kills the game's ray-sphere occluder
+   lists AND fixes sun-flare-through-the-Phobos-hull (the case those
+   lists cannot express). Sky-dome valve = `max_occluder_depth`.
+3. **`enable_spot_exponent`** (+ runtime setter, recompile-class) —
+   the flood-lamp gap from the consult: p3d_LightSource spotExponent
+   with GL semantics. Opt-in BECAUSE Panda's Spotlight class default
+   is exponent 50 (Light base reports 0 for non-spots) — flag-off is
+   byte-identical, exponent-0 under the flag is an arithmetic no-op
+   (both gated). Flood recipe: wide fov + exponent 1-4.
+
+Gate: 3 NEW paxtests ×@game(+@directional / +@logdepth) — **totals now
+Pax3D 81/7/125 · stock 79/7/127** (+6 PASS +12 SKIP each = the 18 new
+jobs; FAIL sets unchanged, identical both engines; all three features
+PASS identically on stock 1.10 — pure Python/GLSL). Game-facing
+adoption notes: `sfb2/documents/ENGINE_UPDATE_2026-07-24_SESSION_AF_
+LIGHTS.md` (halo per bulb = fleet-recipe step 6; flare adoption =
+multiply by `q.visibility`, delete the occluder registrations, mind
+the sky-dome valve; floods = set exponents deliberately before
+enabling the flag). Remaining: game-side adoption only.
 
 ---
 

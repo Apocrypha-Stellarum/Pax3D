@@ -1117,9 +1117,12 @@ TBN (u→+world_x, v→+world_y — chunks carry no tangents). The layer-weight
 function is the ratified v2 seam (hex-tiling LANDED there Session Y,
 height-blend sharpening + hex world-anchor Session AA —
 TERRAIN_HEX_TILING, see the Session Y section; height-blend sharpening
-still slots in the same way). sampler2DArray works on the 120 path via
-GL_EXT_texture_array (measured). Gate: test_terrain_splat — 12 exact
-analytics + 12 hex checks + directional variant.
+still slots in the same way; the ER-010 wet-sand waterline rider —
+TERRAIN_WATER, `set_terrain_water`, Session AE — modifies the OUTPUTS
+(albedo/roughness) after the weights, not the seam). sampler2DArray
+works on the 120 path via GL_EXT_texture_array (measured). Gate:
+test_terrain_splat — 12 exact analytics + 12 hex checks + directional
+variant; test_terrain_water for the water rider.
 
 **ER-002 — `set_instanced(np)`**: hardware instancing over upstream
 `InstancedNode` — INSTANCING compile of pax_pbr + F_hardware_instancing
@@ -1538,6 +1541,182 @@ strip-columns lever exists on paper, unbuilt pending evidence.
 
 ---
 
+### Session AD — Effect sprites: `spawn_effect(atlas, ...)` (LANDED)
+
+Baked-footage explosions/impacts (the CGVision air/space pack class) as
+one call — a composition of already-gated parts, no new shader:
+
+```python
+meta = json.load(open('explosion_5_1_flipbook.json'))
+atlas = loader.load_texture('explosion_5_1_flipbook.png')
+fx = pipeline.spawn_effect(atlas, meta=meta, pos=impact_pos, size=9.0,
+                           emission_scale=2.0)      # self-reaps at end
+loop_fx = pipeline.spawn_effect(atlas, meta=meta, loop=True)
+pipeline.remove_effect(loop_fx)                     # loops need this
+```
+
+- **Atlas contract:** PREMULTIPLIED RGBA flipbook from
+  `tools/gen_flipbook.py` (alpha-aware since this session; the CGVision
+  MOVs measured premultiplied — bake as-is). `meta=` takes the sidecar
+  dict; explicit cols/rows/num_frames/fps also accepted. Gamma-2.2
+  content — under `srgb_inputs` the game's format walk flags it sRGB
+  like any emission map.
+- **Mechanism:** CardMaker quad (world-width `size`, height follows the
+  cell aspect), `set_billboard_point_eye()` (`billboard=False` = static
+  two-sided card), depth-test-no-write, `set_screen(albedo=False,
+  metallic=1)` — black metallic base zeroes diffuse_color AND
+  spec_color exactly, leaving pure emission — plus `set_glass()` for
+  premultiplied blending with coverage-weighted fog/atmo inscatter, and
+  `exclude_from_shadows()` when a caster mask is configured (fact #17).
+- **Lifecycle:** one-shots register in `_effects` and self-reap in
+  `_update` via the public clears — every registry back to empty,
+  byte-identical-when-unused (gated at rms 0.0). The returned NodePath
+  may be reparented/moved while playing; if the game removes the node
+  itself, dead registrations purge on the next reap (recompile-safe).
+- **Residuals on record (field-watch, not blockers):** direct-spec
+  grazing lobe at f0=0 (F90 white lobe) and the IBL BRDF-LUT bias term
+  when an env map is bound — both bounded far below working
+  emission_scale values. If an env ghost ever shows, the fix is an
+  EFFECT define zeroing glass_spec.
+- **Impacts on surfaces:** spawn at contact + surface-normal epsilon
+  (game-side) or pass `depth_bias` (set_depth_offset units).
+  Soft-particle depth fade is the slice-2 candidate, evidence-gated.
+
+Gated by test_effects (13 analytic checks ×@game/@directional, both
+engines identical): premultiplied composite, additive glow (a=0 adds,
+occludes nothing), opaque core, unlit under ambient ×4, billboard vs
+rotated parent, one-shot self-cleanup, shadow-mask exclusion, and
+gen_flipbook RGBA-exact / RGB-unchanged assembly. Field guide (intake,
+baking, adoption): `documents/BAKED_EFFECTS_GUIDE.md`.
+
+### Session AE — ER-010 wet-sand waterline: `set_terrain_water` (LANDED)
+
+The terrain half of the Sea-of-Thieves shore look (the water half —
+depth-alpha shallows, foam, Gerstner — landed game-side Session 690).
+One call next to `set_terrain_splat`:
+
+```python
+pipeline.set_terrain_water(chunk_np, world.water.water_z,
+                           band_m=1.0,       # wet reach above sea level
+                           dark=0.55,        # wet albedo multiplier
+                           rough_mult=0.35,  # wet roughness multiplier
+                           sat=1.25,         # wet chroma expansion
+                           anim_amp=0.0)     # breathing edge, off by default
+pipeline.clear_terrain_water(chunk_np)       # or water_z=None
+```
+
+- **Mechanism:** TERRAIN_WATER rider on the splat variant (a 6th key in
+  the variant cache). Wetness is by WORLD Z only — all layers alike, no
+  layer-semantics coupling: `wet = 1 - smoothstep(water_z, water_z +
+  band_m, world_z)`, so submerged terrain is FULLY wet (the seafloor
+  visible through the game's depth-alpha shallows must not read
+  bone-dry — the ER's headline). Wet albedo = dark multiplier + chroma
+  expansion about Rec.709 luminance (the transforms commute exactly),
+  applied after macro variation; wet roughness = `clamp(pr *
+  rough_mult, 0, 1)` ahead of GSAA. Everything lands through
+  `mix(dry, wet_value, wet)` — a wet==0 fragment computes the
+  water-off arithmetic bit-exactly (gated: dry-region rms 0.0 within a
+  compile, < 1e-4 across variants).
+- **Breathing edge (the ER-010 stretch):** `anim_amp` (m) offsets the
+  edge by `amp · sin(phase + 2π · noise(world_xy / anim_scale))` —
+  static value noise phase-shifts a shared `anim_period` cycle, so the
+  sheen line advances/retreats unevenly along shore. The pipeline's
+  `_update` pushes the phase per frame (O(animated nodes), zero when
+  none); `anim_phase=<float>` pins it (the determinism valve the gate
+  uses). amp=0 is EXACT (`edge + 0.0·noise == edge`).
+- **Contracts:** unset nodes keep the water-free variant — byte-
+  identical by construction; `set_terrain_splat` RE-calls preserve the
+  node's water config (chunk re-dressing must not silently dry the
+  shore); `set_terrain_water` before `set_terrain_splat` raises
+  ValueError; clears restore byte-identically (rms 0.0 gated).
+- **The sheen is a specular read:** under a bound env map the wet band
+  mirrors the sky — the gate pins rough_mult reaching the specular
+  term via a white env cube (env-BRDF at n·v≈1 rises as roughness
+  falls; submerged region brightens 0.737→0.827 at rough_mult 0.12).
+
+Gated by test_terrain_water (17 checks ×@game/@directional, both
+engines identical): full-wet/below-waterline/band-mid exact analytics,
+wet==0 arithmetic identity, re-dress preservation, sheen, 5 breathing-
+edge checks (amp-0 exactness, phase-live, reach bounds, along-shore
+variation), byte-identical clears + opt-out.
+
+### Session AF — the lights slice: halos (ER-013), visibility queries, spot penumbra (LANDED)
+
+Three small opt-in features from the 2026-07-24 fleet-look consult —
+all Python/GLSL, all byte-identical when unused.
+
+**1. Light halo billboards — `set_light_halo` (ER-013).**
+
+```python
+quad = pipeline.set_light_halo(bulb_np, color=(1, .2, .2),
+                               size_m=0.4,   # world diameter close up
+                               min_px=6.0,   # never smaller on screen
+                               intensity=1.0)  # HDR-legal (feeds bloom)
+pipeline.clear_light_halo(bulb_np)
+```
+
+A camera-facing quad (`halo.vert/frag`) expanded in VIEW space around
+the node origin: `size = max(size_m, min_px / px_per_world)` with
+`px_per_world = proj[1][1] * vp_h / (2 * clip_w)` — exact for both
+perspective and orthographic lenses. Soft falloff `(1-r²)²` (center
+exactly 1.0, zero slope — the analytic anchor), additive blend
+(one, one) into the HDR scene buffer, **depth-TESTED but never
+depth-written**: occlusion by hulls/terrain/ships is the depth test,
+no occluder lists. The quad culls by OmniBoundingVolume (the shader
+resizes it), is excluded from the shadow caster mask when one is
+configured, and under LOG_DEPTH writes the same log-encoded
+gl_FragDepth as pax_pbr so its depth test composes (shader tracked by
+the recompile discipline). **Composition contract:** the fragment
+multiplies by `u_emission_factor` — the set_blink/set_emission_scale
+registry input — so a halo parented under a circuit node flashes in
+sync with its bulbs with zero extra wiring.
+
+**2. Depth-tap visibility queries — `add_visibility_query`.**
+
+```python
+pipe = init(enable_visibility_query=True)   # rebuild-class, like SSAO
+q = pipe.add_visibility_query(sun_marker_np, radius_px=8.0,
+                              max_occluder_depth=None)
+# per frame: flare_sprite.set_alpha_scale(q.visibility)
+pipe.remove_visibility_query(q)
+```
+
+The general replacement for hand-built analytic flare occluders. A
+`max_visibility_queries × 1` buffer (`vis_query.frag`) samples the
+scene depth in a 16-tap spiral disc around each target's projected
+position and writes the visible fraction; `RTM_copy_ram` brings it to
+RAM and `_update` reads it — `q.visibility` ∈ [0, 1], ~2 frames
+latent. **The stall dodge:** the query buffer sorts BEFORE every
+FilterManager buffer, reading LAST frame's depth texture, so the
+readpixels waits on nothing but the 16×1 quad itself. Any
+depth-writing geometry occludes (hull walls from inside — the case
+ray-sphere occluders cannot express); partial coverage fades smoothly;
+cleared depth counts open sky; `max_occluder_depth` (default
+0.999·far) treats depth beyond it as open — set it just below a sky
+dome's radius. Targets behind the camera or off-frustum read 0.0.
+Enabling requests the scene depth target (shared with SSAO); the
+visible chain is untouched (gated: rms 0.0 with queries active).
+
+**3. Per-light spot penumbra — `enable_spot_exponent`.**
+
+`init(enable_spot_exponent=True)` or
+`set_enable_spot_exponent(True)` (recompile-class) compiles the
+SPOT_EXPONENT read of `p3d_LightSource[i].spotExponent` —
+GL_SPOT_EXPONENT semantics, `pow(cos angle-to-axis, exponent)` inside
+the cone, on top of the existing SPOTSMOOTH edge. **Why opt-in:
+Panda's Spotlight class default exponent is 50** (Light base reports 0
+for non-spots) — an unconditional read would silently retighten every
+existing spot. Exponent 0 = the flag-off flat cone exactly
+(`pow(x>0, 0) == 1`, gated at rms 0). The flood-lamp recipe: a wide
+Spotlight (fov 90–120°), `set_exponent(1–4)` for the soft
+center-weighted wash, optional shadows — landing pads, hangar bays,
+hull floods. Point/directional lights are never affected.
+
+Gated by test_light_halo (10 checks + @directional shadow-mask row),
+test_visibility_query (7 checks + latency INFO, +@logdepth), and
+test_spot_exponent (7 checks, +@directional) — identical on both
+engines.
+
 ## 10. Testing Contract
 
 - Every feature has (at least) one paxtest: gamma, lighting (×sun-modes),
@@ -1546,8 +1725,11 @@ strip-columns lever exists on paper, unbuilt pending evidence.
   (×sun-modes), doublesided (×sun-modes), ambient_scale, env_map,
   local_lights (×sun-modes), orbital (+@logdepth), srgb, ssao
   (+@logdepth/@msaa4), lens_flare, morph_gltf, data_texture,
-  terrain_splat (×sun-modes), instancing (×sun-modes), rigid_clips,
-  screen, alpha_mask. Run `tools/paxtest/run.py` before and after.
+  terrain_splat (×sun-modes), terrain_water (×sun-modes), instancing
+  (×sun-modes), rigid_clips, screen, alpha_mask, effects (×sun-modes),
+  light_halo (×sun-modes), visibility_query (+@logdepth),
+  spot_exponent (×sun-modes).
+  Run `tools/paxtest/run.py` before and after.
 - Add a test WITH the feature, not after. Analytic checks > goldens;
   goldens (`--golden` / `--check-golden`) are a refactor safety net.
 - The testbed (`sfb2/test3d_pax.py`) is the eyeball companion — its

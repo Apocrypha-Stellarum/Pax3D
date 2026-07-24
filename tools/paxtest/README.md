@@ -265,6 +265,194 @@ single-buffered pbuffer, ~1 error/frame) and stock-clean; when
 guard. `probe_gl_errors.py` is the diagnostic sibling (phase
 attribution, --gl-debug, --empty-only for wheel bisection).
 
+**`test_srgb.py`** (Session R / R1.3) — the INPUT half of the color
+contract: `set_srgb_inputs(True)` flags base-color (M_modulate) and
+emission (M_emission) stage textures as sRGB formats so the GPU decodes
+to linear at sample time; data textures (M_normal, M_selector, ...)
+stay linear. Analytic cards (metallic-1/roughness-1 collapses ambient
+to `base * A` exactly): an 8-bit 128 texel renders at raw 0.502 with
+the flag off and sRGB-decoded 0.216 with it on, emission likewise;
+data-texture immunity, recompile survival, and byte-identical opt-out
+are asserted. Default-off was the shipped contract until the user
+approved the flip (Session AC) — the game now boots `srgb_inputs` ON.
+
+**`test_orbital.py`** (Session R / R5.5) — orbital scattering
+(`set_orbital_atmosphere`): planet limb/halo/terminator from space via
+pipeline-owned extinction + additive-inscatter billboard passes. The
+reference model is an INDEPENDENT high-resolution quadrature of the
+same documented math (any model change must land in both places);
+planet and backdrop render known constant radiances, so every pixel is
+analytic: `curve(source * T_rgb + L_rgb)` — the render matches the
+integrator to ≤0.003. Density-0 registration and clears are
+byte-identical; `@logdepth` reruns the whole row.
+
+**`test_ssao.py`** (Session S) — depth-only screen-space ambient
+obscurance (`enable_ssao`). The defining property gated: FLAT geometry
+produces AO exactly 1.0 (a constant-depth wall renders rms 0.0 vs
+off — SSAO can only darken real concavities). Wall/floor/ceiling slot
+scene: both crease rows darken, far regions unchanged, intensity
+monotonic, intensity-0 an exact no-op; `@logdepth` and `@msaa4`
+variants prove the depth-source plumbing.
+
+**`test_lens_flare.py`** (Session S — the R5 lens-polish finale) —
+pseudo-flare ghosts sourced from the bloom bright extract. Ghost
+positions are analytic (`x_k = 0.5 + (p-0.5)/c_k` at the shader's four
+pinned constants): all four predicted centers brighten, off-axis
+controls don't, a hidden source renders flare-on == flare-off
+byte-identical (occlusion is implicit — no bright pixels, no flare),
+strength-0 adds exactly 0, and a half-black dirt texture kills exactly
+the ghosts under its dark half.
+
+**`test_morph_gltf.py`** (Sessions T/Z/AB — facts #15/#16/#19/#20) —
+glTF morph delivery end-to-end, 17 checks. Guards permanently:
+`gltf_compat.install()` keeps Blender-default morph exports loadable
+(3 upstream panda3d-gltf 1.3.0 bugs); the CPU path reproduces the
+Blender ground-truth manifest exactly; the DEFAULT HW-skinning path
+still silently drops sliders (`hw_drops_morphs` — set_gpu_morphs is
+the opt-in fix, not enabling it is byte-identical); the GPU morph path
+matches the CPU valve at rms 0.0000; the Session-AB crowd riders
+(zero-copy vertex-major bake == numpy gather == pure Python,
+byte-compared; `set_gpu_morphs(clone)` reuses pointer-shared delta
+textures with zero re-bake and drives the clone's OWN face).
+
+**`test_data_texture.py`** (Session U, ER-003) — the data-texture
+contract, HOSTILE CONFIG LIVE: the whole test runs under
+`compressed-textures 1` (the prc that block-compresses every
+CM_default texture at prepare time). `data_texture()` /
+`load_data_texture()` stamp F_r16/CM_off/ATS_none; the anti-terracing
+assertion: a 16-bit gradient spanning 1022 codes survives GPU
+round-trip with far more than 8-bit's 4 levels. This is the gate that
+keeps the 2025 FPS-loader terracing class of bug dead.
+
+**`test_terrain_splat.py`** (Sessions U/Y/AA, ER-001 + ER-007 — 38
+checks) — the TERRAIN_SPLAT variant: 4-layer texture arrays weighted
+by an RGBA splat map, replacing only the MATERIAL INPUTS of the PBR
+shader. Analytic quadrant purity (`curve(c_i * A)` exact), bilinear
+blend, weight renormalization, macro variation, per-layer uv_scale,
+normal-map + distance-fade behavior. Session Y adds hex tiling
+(periodicity break shift-rms 0.0014→0.2296, anisotropy contract
+|dy|/|dx| 0.19 rot0 / 1.14 rot1, byte-identical opt-out); Session AA
+adds height blend (softmax analytics exact at k=4/k=8, the ALL-FLAT
+palette no-op at rms 2.6e-06 — the contract holds by construction) and
+`hex_offset` world-anchoring (UV-window equivalence rms 0.0005).
+`@directional` reruns the full row.
+
+**`test_terrain_water.py`** (Session AE, ER-010 — 17 checks) — the
+TERRAIN_WATER rider: `set_terrain_water(np, water_z, ...)` renders
+fragments below the waterline + band WET (darker/saturated albedo,
+much lower roughness). A card spanning world z [-1, 1] under an ortho
+camera gives exact per-height analytics: full-wet / below-waterline /
+band-midpoint pixels match the wet transform (dark multiplier + chroma
+expansion about Rec.709 luminance) through the tonemap curve; the
+region above the band computes the water-off arithmetic (rms 0.0
+in-compile — every consumer is a `mix()` by wetness); a white env cube
+pins `rough_mult` reaching the specular read (0.737→0.827 at 0.12);
+five breathing-edge checks (amp-0 exactness, pinned phase 0-vs-π,
+reach bounds above AND below, along-shore variation via the world-xy
+noise); `set_terrain_splat` re-dress preserves the contract;
+`water_z=None` / `clear_terrain_water` / `clear_terrain_splat` all
+restore byte-identically. `@directional` reruns the full row.
+
+**`test_instancing.py`** (Session U, ER-002) — hardware instancing
+under the pipeline (`set_instanced` over upstream InstancedNode).
+Measured contract: an UNFLAGGED InstancedNode still renders every
+instance correctly (set_instanced is a perf switch, not a correctness
+switch); the flag/shader pairing trap (F_hardware_instancing without
+p3d_InstanceMatrix collapses instances onto the origin — doubling as
+proof the flagged path is real); instanced vs fallback equivalence;
+instanced SHADOWS; and clear_shader keeping flags (the trap
+gate-guarded). SKIPs on stock 1.10 (no InstancedNode).
+
+**`test_rigid_clips.py`** (Session V, ER-004 — walkable-ship
+doors/ramps/gear) — panda3d-gltf silently drops animation channels
+targeting PLAIN nodes (every Unity ship-pack door clip);
+`rigid_clips.py` + `get_model_clips()` reads them from the .glb and
+plays them onto the loaded nodes. Authors a minimal GLB from scratch:
+pins the loader-conjugation axis contract (key-0 pose == the loader's
+own rest pose in T, R, and S), analytic seeks (LINEAR lerp/slerp
+midpoint, STEP hold, CUBICSPLINE, reverse scrub, reset), and
+`RigidClip.from_delta()` (the Minerva prefab script-lerp synthesizer,
+validated against the pack's C# source).
+
+**`test_screen.py`** (Session V, ER-005 — powered displays, 19
+checks) — `set_screen()` (texture bound as albedo AND emission, the
+Unity-pack display convention) + `set_emission_scale/_color` +
+`set_uv_transform`/`set_uv_scroll`/`play_flipbook`. Ortho camera, 2×2
+quadrant texture, per-channel analytics (`e*t + AMB*(0.96*t + 0.04)`);
+power-off keeps albedo lit, HDR emission feeds bloom, clears restore
+byte-identically, UV windows map exactly, and gen_flipbook's atlas
+drives the flipbook end-to-end. Instrument note: the scroll check pins
+the global clock (wall-clock contract — Session X part 2 lesson).
+
+**`test_alpha_mask.py`** (Sessions W/AA — fact #17 + ER-009) — glTF
+alphaMode MASK reaches only fixed-function GL_ALPHA_TEST, so under
+core every MASK material silently renders opaque (identical on stock —
+upstream behavior). `apply_alpha_masks()` composes the in-shader
+discard variant per-geom at the same predicate; Session AA adds
+`TransparencyAttrib M_binary` detection (geom- or node-level, a ≥ 0.5
+= the cull semantic) and `instanced=True` (the origin-collapse pairing
+trap, measured 0/4→4/4). Compat legs key on `h.use_330` — the context,
+never the baseline name (the Session-AC latent-defect lesson) — and
+stay bit-identical (rms 0.0) under `--baseline compat`.
+
+**`test_light_priority.py`** (Session Y, ER-008) — the light-selection
+policy pinned mechanically: over max_lights the engine uploads the
+highest-`set_priority` head (ties spot > directional > point, then
+arbitrary) and SILENTLY DROPS the rest. Overflow drops measured,
+priority selects the bound set, re-sort is live mid-session,
+`set_light_budget()` (the per-root nearest-N warden) binds the top-N
+by attenuated luma, and `@directional` proves the sun-eviction guard
+(the priority-1<<20 pin — floods must never evict the sun + shadows).
+
+**`test_effects.py`** (Session AD — 13 checks) — effect sprites:
+`spawn_effect()` playing a PREMULTIPLIED-alpha flipbook atlas as pure
+emission (set_screen metallic-1-black = analytically unlit + set_glass
+premultiplied blending + play_flipbook). Ortho scene over a known
+background, synthetic 2×2-cell premultiplied atlas, per-channel
+analytics (`e*cell + B*(1-cell.a)`): premultiplied composite, additive
+glow (a=0 adds without occluding), opaque core, unlit-under-ambient ×4
+(the ambient sweep moves the background but not the effect),
+billboard vs rotated static parent, one-shot self-cleanup (every
+pipeline registry back to empty — the byte-identical-when-unused
+invariant at rms 0.0), shadow-mask exclusion, and gen_flipbook tool
+exactness (RGBA atlas assembly exact; alpha-free sources byte-identical
+to the pre-alpha tool). `@directional` reruns the row; PASSES
+identically on both engines.
+
+**`test_light_halo.py`** (Session AF, ER-013 — nav-light readability)
+— `set_light_halo()`: camera-facing additive sprites with a minimum
+on-screen size. Perspective camera, black scene (plus a BLACK
+AmbientLight — the zero-light white-flood quirk), unlit shader ⇒ every
+center pixel is `curve(intensity * color * envelope)` exactly. Checks:
+world-size regime (half-max diameter matches the projected size — the
+half-max radius is solved THROUGH the tonemap curve by bisection, not
+assumed in linear space), the min_px clamp regime (brightness
+distance-independent), occlusion == the depth test (halo behind a card
+= rms 0 vs baseline, no occluder registered), blink + emission-scale
+composition through the inherited `u_emission_factor`, byte-identical
+clear, and (@directional) shadow-caster-mask exclusion.
+
+**`test_visibility_query.py`** (Session AF — flare occluder
+retirement) — `add_visibility_query()`: depth-tap visibility around a
+target's projected position. The wall card's x=0 edge plane contains
+the camera, so it covers exactly the left half-screen at every depth —
+open/blocked/half-covered are analytic by construction (1.0 / 0.0 /
+0.498 measured). Also: geometry behind the target does not occlude,
+the `max_occluder_depth` sky-dome valve both ways, the rendered frame
+byte-identical with queries active, and the ~2-frame latency measured
+as an INFO row. `@logdepth` reruns the row through the log depth
+decode.
+
+**`test_spot_exponent.py`** (Session AF — flood lamps) —
+`enable_spot_exponent`: the p3d_LightSource spotExponent read. The
+local-lights recipe with the spot AIMED 20° off the view axis: every
+BRDF dot stays 1 while spotcos = cos(20°), so the exponent factor is
+the only new term. Pins: flag-off ignores exponent (shipped behavior),
+flag-on exponent-0 = rms 0 vs flag-off (arithmetic no-op through the
+runtime recompile), cos²/cos⁸ exact, the Spotlight class-default-50
+trap documented (why the flag is opt-in), PointLight immunity (rms 0),
+byte-identical toggle-off.
+
 **`test_ftl_blur.py`** — the FTL warp distortion pass (radial blur +
 chromatic aberration in tonemap); asserts zero-strength passthrough and
 effect behavior (added alongside the feature, post-Session-D).
@@ -290,39 +478,71 @@ the correct surface's favor and mimic a working depth buffer.
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Results snapshot (post Session Q, 2026-07-18)
+## Results snapshot (post Session AF, 2026-07-24 — measured, gate logs on file)
 
-Same results on stock 1.10.16 and Pax3D 1.11.0 (Window-3 wheel), both
-baselines. Note: with the game's `use_pax3d_render` flag flipped
-(Session D), the `pax_pbr` adapter routes to pax3d_render — its column now
-mirrors pax3d_render except for `rebuild` (the test exercises the old
-attach pattern, which fails by design).
+The standard gate is both engines × the ONE `game` baseline (Session AC
+redefinition). Totals: **Pax3D 81 PASS / 7 FAIL / 125 SKIP · stock
+1.10.16 79 PASS / 7 FAIL / 127 SKIP** — the FAIL sets are IDENTICAL on
+both engines and every one is pre-existing/by-design: `lighting/none`
+(fixed-function control under gl 3 2), `bloom` + `rebuild` on the
+retired `pax3d_simplepbr`, `rebuild/pax_pbr` (F4, by design of the old
+attach pattern), and `scale` on `none` + `pax3d_render` (the documented
+R4 baseline; `@logdepth` PASSES). The two-row difference between
+engines is `instancing` (needs InstancedNode — SKIPs on stock 1.10).
+(Session AE added the 6 terrain_water jobs; Session AF added the 18
+light_halo / visibility_query / spot_exponent jobs — +6 PASS +12 SKIP
+per engine, identical rows both engines.)
+
+Note: with the game's `use_pax3d_render` flag flipped (Session D), the
+`pax_pbr` adapter routes to pax3d_render — its column mirrors
+pax3d_render except for `rebuild` (old attach pattern, fails by design)
+and rows whose harness scenes need pax3d_render-only hooks (skip).
 
 | Test | none | simplepbr | pax_pbr (routed) | pax3d_render |
 |---|---|---|---|---|
 | gamma | PASS | PASS | PASS | PASS |
-| lighting | PASS (game); FAIL @modern (fixed-function control under gl 3 2 — identical both engines, pre-existing) | PASS | PASS | PASS (both sun modes) |
-| bloom | skip | skip | PASS | **PASS (F3 fixed, Session D)** |
+| lighting | **FAIL (fixed-function control under gl 3 2 — identical both engines, pre-existing)** | PASS | PASS | PASS (+@directional) |
+| bloom | skip | skip | PASS | **PASS (F3 fixed, Session D; both resolutions)** |
 | rebuild | skip | skip | FAIL (F4, by design of the old pattern) | **PASS** |
-| shadows | skip | skip | skip | **PASS (incl. off-origin extent, skinned + glTF casters, @softskin)** |
+| shadows | skip | skip | skip | **PASS (incl. off-origin extent, skinned + glTF casters; +@softskin)** |
 | shadows_gltf | skip | skip | skip | **PASS (glTF caster AND receiver, 45° sun)** |
 | shadow_quality | skip | skip | skip | **PASS** |
 | shadow_grazing | skip | skip | skip | **PASS (grazing acne cleared by slope-scaled bias, umbra kept)** |
 | shadow_snap | skip | skip | skip | **PASS (sub-texel sweep depth+screen stable; teeth measured)** |
-| atmosphere | skip | skip | PASS | **PASS (analytic transmittance exact; opt-out byte-identical)** |
-| ambient_sh | skip | skip | PASS | **PASS (hemisphere analytics exact; SH survives recompile; file-skybox face table pinned)** |
-| glass | skip | skip | PASS | **PASS (spec survives alpha, 2.07× vs M_alpha; both sun modes; opt-out byte-identical)** |
-| doublesided | skip | skip | PASS | **PASS (backface 0.108→0.705 analytic; front faces bit-identical; opt-out byte-identical)** |
-| ambient_scale | skip | skip | PASS | **PASS (per-channel analytics exact ×3 states; direct light unscaled; opt-out byte-identical)** |
-| env_map | skip | skip | PASS | **PASS (analytics exact vs LUT peek; LOD ladder + orientation + glass composition; GGX prefilter tool end-to-end; opt-out byte-identical)** |
-| local_lights | skip | skip | PASS | **PASS (point/spot analytics exact incl. attenuation + scoping; interior recipe composes; both sun modes)** |
 | ftl_blur | skip | skip | PASS | PASS |
 | scale | **FAIL (R4 baseline)** | skip | skip | **FAIL (R4 baseline)**; **@logdepth PASS (R4.1)** |
 | skinning | skip | skip | skip | **PASS (opt-out API + both openworld packs)** |
+| atmosphere | skip | skip | PASS | **PASS (analytic transmittance exact; opt-out byte-identical)** |
+| ambient_sh | skip | skip | PASS | **PASS (hemisphere analytics exact; face table pinned end-to-end)** |
+| glass | skip | skip | PASS | **PASS (spec survives alpha; +@directional)** |
+| doublesided | skip | skip | PASS | **PASS (backface analytic; front faces bit-identical; +@directional)** |
+| ambient_scale | skip | skip | PASS | **PASS (per-channel analytics ×3 states; direct light unscaled)** |
+| env_map | skip | skip | PASS | **PASS (23 checks: LUT-peek analytics, LOD ladder, GGX tool end-to-end, Session-Y scale/intensity/rotation)** |
+| local_lights | skip | skip | PASS | **PASS (point/spot analytics exact; authored-lights activation; +@directional)** |
+| orbital | skip | skip | PASS | **PASS (independent integrator ≤0.003; +@logdepth)** |
+| srgb | skip | skip | PASS | **PASS (raw vs decoded texel analytics; data textures immune)** |
+| ssao | skip | skip | PASS | **PASS (flat-plane byte-identity; +@logdepth +@msaa4)** |
+| lens_flare | skip | skip | PASS | **PASS (analytic ghost positions; implicit occlusion)** |
+| morph_gltf | skip | skip | skip | **PASS (17 checks: loader shim, CPU truth, GPU path rms 0.0000, crowd riders)** |
+| data_texture | skip | skip | skip | **PASS (13 checks under hostile `compressed-textures 1`)** |
+| terrain_splat | skip | skip | skip | **PASS (38 checks: splat/hex/height-blend analytics; +@directional)** |
+| terrain_water | skip | skip | skip | **PASS (17 checks: wet analytics, sheen, breathing edge; +@directional)** |
+| instancing | skip | skip | skip | **PASS (+@directional; SKIPs entirely on stock 1.10)** |
+| rigid_clips | skip | skip | PASS | **PASS (axis contract, analytic seeks, from_delta)** |
+| screen | skip | skip | PASS | **PASS (19 checks: display analytics, UV/flipbook, clock-pinned scroll)** |
+| alpha_mask | skip | skip | PASS | **PASS (MASK + M_binary variants; instanced pairing trap)** |
+| viewmodel | skip | skip | skip | **PASS (+@directional: zero vm texels in the sun depth map)** |
+| gl_clean | **PASS (the permanent zero-GL-errors guard, fact #18)** | skip | skip | skip (runs on `none` only) |
+| light_priority | skip | skip | skip | **PASS (+@directional: the sun-eviction guard)** |
+| effects | skip | skip | PASS | **PASS (13 checks: premult composite, unlit, self-reap, tool exactness; +@directional)** |
+| light_halo | skip | skip | skip | **PASS (10+1 checks: tonemapped size analytics, min_px clamp, depth-test occlusion, blink composition; +@directional mask exclusion)** |
+| visibility_query | skip | skip | skip | **PASS (7 checks: open/blocked/half exact, sky-dome valve, frame-invisible; +@logdepth)** |
+| spot_exponent | skip | skip | skip | **PASS (7 checks: cos^e analytics, exponent-0 no-op, default-50 trap, point immunity; +@directional)** |
 
 `pax3d_simplepbr` (retired) keeps its historical bloom/rebuild failures.
 `scale` failing is the DOCUMENTED baseline until R4 lands — see its entry
-above.
+above. `--baseline compat` remains available as a diagnostic
+(fixed-function archaeology); it is not part of the gate.
 
 Key established facts (full analysis:
 `documents/PAXTEST_FINDINGS_SESSION_A.md` + master plan session updates):

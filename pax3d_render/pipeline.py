@@ -285,6 +285,24 @@ def load_data_texture(path, name=None):
     return data_texture(tex)
 
 
+class VisibilityQuery:
+    """Handle returned by Pipeline.add_visibility_query() (Session AF).
+
+    `visibility` is the latest measured fraction of the tap disc where
+    the scene depth does NOT occlude the target (0.0 fully blocked ..
+    1.0 fully visible), ~2 frames latent (the query pass reads last
+    frame's depth and the RAM copy is read the frame after). Multiply
+    your sprite flare / glow intensity by it."""
+
+    __slots__ = ('np', 'radius_px', 'max_occluder_depth', 'visibility')
+
+    def __init__(self, np, radius_px, max_occluder_depth):
+        self.np = np
+        self.radius_px = radius_px
+        self.max_occluder_depth = max_occluder_depth
+        self.visibility = 0.0
+
+
 class _SceneCameraRegistration:
     """Internal record of an auxiliary camera attached to the scene buffer."""
 
@@ -339,6 +357,9 @@ class Pipeline:
                  ao_bias=0.02, ao_samples=12,
                  max_skinning_bones=100,
                  enable_lens_flare=False, flare_strength=1.0,
+                 enable_spot_exponent=False,
+                 enable_visibility_query=False,
+                 max_visibility_queries=8,
                  **_kwargs):
         base = builtins.base
 
@@ -463,6 +484,46 @@ class Pipeline:
         self._lens_dirt_strength = 1.0
         self._flare_warned = False
 
+        # Per-light spot penumbra (Session AF — flood lamps): compile
+        # the SPOT_EXPONENT read of p3d_LightSource[i].spotExponent
+        # (GL_SPOT_EXPONENT semantics). Default off = byte-identical:
+        # Panda's Spotlight class default exponent is 50 (measured,
+        # spotlight.I), so an unconditional read would retighten every
+        # existing spot. With the flag on, exponent 0 is an arithmetic
+        # no-op (gated) — flood lamps use 1-4 for a soft wash.
+        self.enable_spot_exponent = bool(enable_spot_exponent)
+
+        # Depth-tap visibility queries (Session AF — the lens-flare
+        # occluder retirement): a VIS_MAX_QUERIES x 1 pass sampling the
+        # scene depth buffer around projected target positions, read
+        # back via RTM_copy_ram (~2 frames latent, no mid-frame stall:
+        # the pass sorts BEFORE the scene and reads last frame's
+        # depth). Rebuild-class opt-in (requests the depth target, like
+        # SSAO). Default off = the chain is structurally untouched.
+        self.enable_visibility_query = bool(enable_visibility_query)
+        self.max_visibility_queries = max(1, min(
+            64, int(max_visibility_queries)))
+        self._vis_queries = []
+        self._vis_buffer = None
+        self._vis_tex = None
+        self._vis_root = None
+        self._vis_quad = None
+        self._vis_pta = None
+        self._vis_far_pta = None
+        self._scene_depth_tex = None
+
+        # Light halo billboards (Session AF, ER-013): camera-facing
+        # additive sprites with a minimum on-screen size, so blinking
+        # nav bulbs stay readable at km ranges. Depth-tested (occlusion
+        # for free), never depth-written, excluded from the shadow
+        # caster mask when one is configured. A halo under a set_blink
+        # circuit inherits u_emission_factor = flashes in sync. Empty
+        # registry = byte-identical to the shipped pipeline (paxtest
+        # test_light_halo opt-out check).
+        self._halo_nodes = []
+        self._halo_shader = None
+        self._halo_vp_h = None
+
         # Planetside package (Session J / R5.1-R5.3) — ALL opt-in; with the
         # defaults every one of these is byte-identical to the previous
         # pipeline (guarded by test_atmosphere / test_ambient_sh /
@@ -521,6 +582,12 @@ class Pipeline:
         # pipeline (paxtest test_terrain_splat opt-out check).
         self._terrain_nodes = []
         self._terrain_shaders = {}
+        # ER-010 wet-sand waterline: terrain entries whose water config
+        # has a live breathing edge (anim_amp > 0, phase not pinned) —
+        # _update pushes their phase per frame. Rebuilt by
+        # set_terrain_water/clear_terrain_water/clear_terrain_splat;
+        # empty list = zero per-frame cost.
+        self._terrain_water_anim = []
 
         # Instanced nodes (set_instanced, ER-002): per-node INSTANCING
         # variant + F_hardware_instancing flag over an InstancedNode.
@@ -572,6 +639,12 @@ class Pipeline:
         # pushes (state changes only), so a parked fleet of blinking
         # ships costs a handful of comparisons per frame.
         self._blinks = []
+        # Effect sprites (Session AD — explosion/impact flipbook quads):
+        # spawn_effect() cards awaiting completion reaping. Entries:
+        # {'np', 'end'} — 'end' None for looping effects (game removes
+        # via remove_effect). Empty registry = zero per-frame cost and
+        # byte-identical output (paxtest test_effects opt-out checks).
+        self._effects = []
         self._screen_stages = None
         self._screen_white_tex = None
         self._screen_flat_normal_tex = None
@@ -767,6 +840,7 @@ class Pipeline:
             'SHADOW_FILTER_SIZE': self.shadow_filter_size,
             'ENABLE_ATMOSPHERE': self.enable_atmosphere,
             'DOUBLE_SIDED_LIGHTING': self.double_sided_lighting,
+            'SPOT_EXPONENT': self.enable_spot_exponent,
         }
 
     def _recompile_pbr(self):
@@ -815,6 +889,9 @@ class Pipeline:
         # stale quad shaders would break their depth testing.
         self._orbital_shaders = None
         self._reapply_orbital_shaders()
+        # Halo quads: same recompile-tracking rule (LOG_DEPTH define).
+        self._halo_shader = None
+        self._reapply_halo_shaders()
 
     def _set_env_map_uniforms(self):
         """Set IBL-related shader inputs.
@@ -1137,6 +1214,15 @@ class Pipeline:
         self._bloom_down_quads = []
         self._bloom_up_quads = []
 
+        # Tear down the visibility-query pass (ours, not FilterManager's
+        # — its buffer must be removed explicitly on every rebuild)
+        if self._vis_buffer is not None:
+            self._vis_buffer.get_engine().remove_window(self._vis_buffer)
+            self._vis_buffer = None
+            self._vis_tex = None
+            self._vis_root = None
+            self._vis_quad = None
+
         # 1. Scene -> RGBA16F buffer
         fbprops = p3d.FrameBufferProperties()
         fbprops.float_color = True
@@ -1157,9 +1243,10 @@ class Pipeline:
         scene_tex.set_magfilter(p3d.SamplerState.FT_linear)
 
         depth_tex = None
-        if self.enable_ssao:
-            # SSAO needs the scene depth. Requested only when the feature
-            # is on, so the default chain is structurally untouched.
+        if self.enable_ssao or self.enable_visibility_query:
+            # SSAO / visibility queries need the scene depth. Requested
+            # only when a consumer is on, so the default chain is
+            # structurally untouched.
             depth_tex = p3d.Texture('scene_depth')
             depth_tex.set_wrap_u(p3d.SamplerState.WM_clamp)
             depth_tex.set_wrap_v(p3d.SamplerState.WM_clamp)
@@ -1172,6 +1259,7 @@ class Pipeline:
             postquad = self._filtermgr.render_scene_into(
                 colortex=scene_tex, fbprops=fbprops
             )
+        self._scene_depth_tex = depth_tex
 
         if postquad is None:
             raise RuntimeError('[Pax3DRender] Failed to setup FilterManager')
@@ -1465,6 +1553,11 @@ class Pipeline:
 
         self._post_process_quad = postquad
 
+        # Visibility-query pass (Session AF) — after the chain exists so
+        # its buffer can sort ahead of every FilterManager buffer.
+        if self.enable_visibility_query:
+            self._build_vis_query_pass(depth_tex)
+
         # R1: auxiliary cameras survive the rebuild
         self._reattach_scene_cameras()
 
@@ -1660,6 +1753,150 @@ class Pipeline:
         self.ao_bias = float(value)
         if self._ssao_quad is not None:
             self._ssao_quad.set_shader_input('u_ao_bias', self.ao_bias)
+
+    # ------------------------------------------------------------------
+    # Depth-tap visibility queries (Session AF — flare occluder retirement)
+    # ------------------------------------------------------------------
+
+    def _build_vis_query_pass(self, depth_tex):
+        """The VIS_MAX_QUERIES x 1 query buffer + quad. Sorted BEFORE
+        every FilterManager buffer so it reads LAST frame's depth — the
+        RTM_copy_ram readback then stalls on nothing but this quad."""
+        k = self.max_visibility_queries
+        tex = p3d.Texture('pax3d_vis_query')
+        tex.set_minfilter(p3d.SamplerState.FT_nearest)
+        tex.set_magfilter(p3d.SamplerState.FT_nearest)
+        buf = self.window.make_texture_buffer(
+            'pax3d_vis_query', k, 1, tex, True)   # to_ram = RTM_copy_ram
+        buf.set_clear_color(p3d.LColor(0, 0, 0, 1))
+        sorts = [b.get_sort() for b in self._filtermgr.buffers] or [0]
+        buf.set_sort(min(sorts) - 10)
+
+        root = p3d.NodePath('pax3d_vis_query_root')
+        cm = p3d.CardMaker('pax3d_vis_query_card')
+        cm.set_frame(-1, 1, -1, 1)
+        quad = root.attach_new_node(cm.generate())
+        quad.set_two_sided(True)
+        quad.set_depth_test(False)
+        quad.set_depth_write(False)
+        quad.set_shader(shaderutils.make_shader(
+            'vis_query', 'post.vert', 'vis_query.frag', {
+                'LOG_DEPTH': self.enable_log_depth,
+                'VIS_MAX_QUERIES': k,
+                'VIS_TAPS': 16,
+            }))
+        quad.set_shader_input('depth_tex', depth_tex)
+        win_x = max(1, self.window.get_x_size())
+        win_y = max(1, self.window.get_y_size())
+        quad.set_shader_input('u_texel',
+                              p3d.LVecBase2(1.0 / win_x, 1.0 / win_y))
+        if self._vis_pta is None or len(self._vis_pta) != k:
+            self._vis_pta = p3d.PTA_LVecBase4f()
+            self._vis_far_pta = p3d.PTA_float()
+            for _ in range(k):
+                self._vis_pta.push_back(p3d.LVecBase4f(0, 0, -1, 0))
+                self._vis_far_pta.push_back(1e30)
+        quad.set_shader_input('u_queries', self._vis_pta)
+        quad.set_shader_input('u_query_far', self._vis_far_pta)
+        self._push_ssao_lens_inputs(quad)   # u_near_far/u_log_depth_coef
+
+        cam = p3d.Camera('pax3d_vis_query_cam')
+        lens = p3d.OrthographicLens()
+        lens.set_film_size(2, 2)
+        lens.set_near_far(-10, 10)
+        cam.set_lens(lens)
+        cam_np = root.attach_new_node(cam)
+        cam_np.set_pos(0, -5, 0)
+        dr = buf.make_display_region()
+        dr.set_camera(cam_np)
+
+        self._vis_buffer = buf
+        self._vis_tex = tex
+        self._vis_root = root
+        self._vis_quad = quad
+
+    def add_visibility_query(self, nodepath, radius_px=8.0,
+                             max_occluder_depth=None):
+        """Register a screen-space visibility query on `nodepath` (the
+        sun marker, a beacon, an FTL destination star). Returns a
+        VisibilityQuery whose `.visibility` updates every frame (0.0
+        fully occluded .. 1.0 fully visible, ~2 frames latent) — the
+        general replacement for hand-built analytic flare occluders:
+        ANY depth-writing geometry occludes (hull walls from inside,
+        ships, planets, terrain), partial coverage fades smoothly.
+
+        `radius_px`: tap-disc radius around the projected position —
+        match it to the flare core's on-screen size. `max_occluder_depth`:
+        scene depth at or beyond this counts as OPEN SKY (set it just
+        below your sky-dome radius; default = 0.999 * lens far). A
+        target behind the camera or outside the frustum reads 0.0."""
+        if not self.enable_visibility_query:
+            raise RuntimeError(
+                'add_visibility_query needs enable_visibility_query=True '
+                '(init kwarg or set_enable_visibility_query) — the scene '
+                'depth target is rebuild-class, like SSAO')
+        if len(self._vis_queries) >= self.max_visibility_queries:
+            raise ValueError(
+                f'all {self.max_visibility_queries} visibility-query '
+                f'slots in use (raise max_visibility_queries at init)')
+        query = VisibilityQuery(nodepath, float(radius_px),
+                                max_occluder_depth)
+        self._vis_queries.append(query)
+        return query
+
+    def remove_visibility_query(self, query):
+        """Unregister a VisibilityQuery handle (idempotent)."""
+        self._vis_queries = [q for q in self._vis_queries
+                             if q is not query]
+
+    def set_enable_visibility_query(self, enabled):
+        """Toggle the visibility-query pass (rebuild-class: the chain
+        gains/loses the scene depth target, like SSAO). Registered
+        queries survive the rebuild."""
+        enabled = bool(enabled)
+        if enabled == self.enable_visibility_query:
+            return
+        self.enable_visibility_query = enabled
+        self._rebuild_tonemapping()
+
+    def _step_visibility_queries(self):
+        """Per-frame: read last frame's query results from the RAM copy,
+        then project each target and push this frame's uniforms."""
+        self._vis_queries = [q for q in self._vis_queries
+                             if not q.np.is_empty()]
+        peeker = self._vis_tex.peek()
+        if peeker is not None:
+            col = p3d.LColor()
+            k = self.max_visibility_queries
+            for i, query in enumerate(self._vis_queries):
+                peeker.lookup(col, (i + 0.5) / k, 0.5)
+                query.visibility = col[0]
+
+        lens = self.camera_node.node().get_lens()
+        default_far = lens.get_far() * 0.999
+        p2 = p3d.Point2()
+        for i in range(self.max_visibility_queries):
+            if i < len(self._vis_queries):
+                query = self._vis_queries[i]
+                rel = query.np.get_pos(self.camera_node)
+                ok = (lens.project(p3d.Point3(rel), p2)
+                      and abs(p2.x) <= 1.0 and abs(p2.y) <= 1.0
+                      and rel[1] > 0.0)
+                if ok:
+                    # 0.995: a target that itself writes depth (a sun
+                    # billboard) must not occlude its own query.
+                    self._vis_pta.set_element(i, p3d.LVecBase4f(
+                        p2.x * 0.5 + 0.5, p2.y * 0.5 + 0.5,
+                        rel[1] * 0.995, query.radius_px))
+                else:
+                    self._vis_pta.set_element(
+                        i, p3d.LVecBase4f(0, 0, -1, 0))
+                mx = query.max_occluder_depth
+                self._vis_far_pta.set_element(
+                    i, float(mx) if mx is not None else default_far)
+            else:
+                self._vis_pta.set_element(i, p3d.LVecBase4f(0, 0, -1, 0))
+        self._push_ssao_lens_inputs(self._vis_quad)
 
     def set_bloom_strength(self, value):
         """Update bloom extract strength (uniform-only, no rebuild)."""
@@ -2726,6 +2963,225 @@ class Pipeline:
                                               entry['rows'], f)))
 
     # ------------------------------------------------------------------
+    # Effect sprites (Session AD — explosions, impacts, muzzle flashes)
+    # ------------------------------------------------------------------
+
+    def spawn_effect(self, texture, cols=None, rows=None, num_frames=None,
+                     fps=25.0, meta=None, parent=None, pos=(0.0, 0.0, 0.0),
+                     size=1.0, emission_scale=1.0,
+                     emission_color=(1.0, 1.0, 1.0), billboard=True,
+                     loop=False, depth_bias=0):
+        """One-call flipbook effect: a camera-facing quad playing a
+        PREMULTIPLIED-alpha atlas (baked footage — the CGVision air/space
+        explosion class) as pure emission, composited over the scene.
+
+        `texture` is an RGBA atlas from tools/gen_flipbook.py; pass the
+        sidecar dict as `meta=` (cols/rows/frames/fps read from it) or
+        give cols/rows/num_frames/fps explicitly. `size` is the quad's
+        world-space width; height follows the cell aspect. The effect
+        auto-removes when playback completes (`loop=True` plays until
+        remove_effect()). Returns the effect NodePath (reparent/move it
+        freely while it plays; parenting to a ship node makes the
+        explosion ride the ship).
+
+        Mechanism — a composition of gated parts, no new shader:
+          * set_screen(albedo=False, metallic=1): black dielectric-free
+            base ⇒ diffuse, specular, ambient, and IBL are analytically
+            ZERO (F0 = base = 0 at metallic 1) — only emission survives,
+            so the sprite is unlit and HDR-legal (emission_scale > 1
+            feeds bloom).
+          * set_glass(): the GLASS PBR variant + M_premultiplied_alpha —
+            emission adds at full strength (the footage already carries
+            its coverage), the background shows through 1-alpha, and
+            fog/atmosphere inscatter is coverage-weighted so haze cannot
+            paint the quad's transparent texels.
+          * exclude_from_shadows() when a shadow_caster_mask is
+            configured — an un-excluded quad would stamp its full
+            silhouette into the sun depth map (fact #17's depth-pass
+            rule: the depth path never reads alpha).
+          * play_flipbook(): uniform-only UV stepping, atlas resident.
+
+        Depth: the quad depth-TESTS (hull geometry occludes it) but
+        never depth-writes. For impacts ON a surface, spawn a little off
+        the surface (impact point + normal * epsilon, game-side) or pass
+        `depth_bias` (int, NodePath.set_depth_offset units) to win the
+        depth test near the contact point.
+
+        Atlases are gamma-2.2 content: under srgb_inputs the game's
+        format walk flags them sRGB like any authored emission map."""
+        if meta is not None:
+            cols = meta.get('cols', cols)
+            rows = meta.get('rows', rows)
+            num_frames = meta.get('frames', num_frames)
+            fps = meta.get('fps', fps)
+        if not cols or not rows:
+            raise ValueError('spawn_effect needs cols and rows '
+                             '(or meta=<gen_flipbook sidecar dict>)')
+        cols = max(1, int(cols))
+        rows = max(1, int(rows))
+        n = int(num_frames) if num_frames else cols * rows
+        n = max(1, min(n, cols * rows))
+        fps = max(1e-3, float(fps))
+
+        cell_w = texture.get_x_size() / cols
+        cell_h = texture.get_y_size() / rows
+        aspect = (cell_w / cell_h) if cell_h > 0 else 1.0
+        half_w = 0.5 * float(size)
+        half_h = half_w / max(1e-6, aspect)
+
+        cm = p3d.CardMaker('pax3d_effect')
+        cm.set_frame(-half_w, half_w, -half_h, half_h)
+        cm.set_uv_range((0, 0), (1, 1))
+        root = parent if parent is not None else self.render_node
+        effect_np = root.attach_new_node(cm.generate())
+        effect_np.set_pos(*pos)
+        if billboard:
+            effect_np.set_billboard_point_eye()
+        else:
+            effect_np.set_two_sided(True)
+        # Depth-test but never depth-write: overlapping effects and the
+        # transparent bin's back-to-front sort compose correctly.
+        effect_np.set_depth_write(False)
+        if depth_bias:
+            effect_np.set_depth_offset(int(depth_bias))
+
+        self.set_screen(effect_np, texture, albedo=False,
+                        emission_scale=emission_scale,
+                        emission_color=emission_color,
+                        roughness=1.0, metallic=1.0)
+        self.set_glass(effect_np)
+        if self.shadow_caster_mask is not None:
+            self.exclude_from_shadows(effect_np)
+        self.play_flipbook(effect_np, cols, rows, num_frames=n, fps=fps,
+                           loop=loop)
+
+        end = None
+        if not loop:
+            end = (p3d.ClockObject.get_global_clock().get_frame_time()
+                   + n / fps)
+        self._effects.append({'np': effect_np, 'end': end})
+        return effect_np
+
+    def remove_effect(self, effect_np):
+        """Remove a spawn_effect() quad now — looping effects, or an
+        early cancel. One-shot effects self-remove on completion; a
+        second call on an already-reaped handle is a no-op."""
+        self._effects = [e for e in self._effects if e['np'] != effect_np]
+        self._cleanup_effect(effect_np)
+
+    def _cleanup_effect(self, effect_np):
+        """Purge every pipeline registration the effect holds, then drop
+        the node. Uses the public clears so the registries (_flipbooks,
+        _screen_nodes, _glass_nodes, _emission_overrides) go back to
+        empty — the byte-identical-when-unused invariant."""
+        if effect_np.is_empty():
+            # The game removed the node itself: the restore-style clears
+            # cannot touch an empty NodePath — drop dead registrations
+            # directly so a later recompile re-walk never meets one.
+            self._flipbooks = [e for e in self._flipbooks
+                               if not e['np'].is_empty()]
+            self._screen_nodes = [e for e in self._screen_nodes
+                                  if not e[0].is_empty()]
+            self._glass_nodes = [e for e in self._glass_nodes
+                                 if not e[0].is_empty()]
+            self._emission_overrides = [e for e in self._emission_overrides
+                                        if not e[0].is_empty()]
+            return
+        self.stop_flipbook(effect_np)
+        self.clear_emission(effect_np)
+        self.clear_screen(effect_np)
+        self.set_glass(effect_np, enabled=False)
+        effect_np.remove_node()
+
+    # ------------------------------------------------------------------
+    # Light halo billboards (Session AF, ER-013 — nav-light readability)
+    # ------------------------------------------------------------------
+
+    def _get_halo_shader(self):
+        if self._halo_shader is None:
+            self._halo_shader = shaderutils.make_shader(
+                'pax3d_halo', 'halo.vert', 'halo.frag',
+                {'LOG_DEPTH': self.enable_log_depth})
+        return self._halo_shader
+
+    def _reapply_halo_shaders(self):
+        """Recompile-tracking (the glass discipline): halo quads carry
+        their own shader whose LOG_DEPTH define must follow the
+        pipeline's."""
+        if not self._halo_nodes:
+            return
+        self._halo_nodes = [e for e in self._halo_nodes
+                            if not e['quad'].is_empty()]
+        shader = self._get_halo_shader()
+        for entry in self._halo_nodes:
+            entry['quad'].set_shader(shader, 1)
+
+    def set_light_halo(self, nodepath, color=(1.0, 1.0, 1.0), size_m=0.5,
+                       min_px=6.0, intensity=1.0):
+        """A camera-facing additive halo sprite at `nodepath`'s position
+        (ER-013): true world diameter `size_m` close up, never smaller
+        than `min_px` pixels on screen — so a 10 cm blinking nav bulb
+        stays readable at km ranges. Re-calling reconfigures in place;
+        returns the quad NodePath.
+
+        Contracts:
+          * Depth-TESTED against the scene but never depth-written —
+            occlusion by hulls/terrain/other ships is the depth test,
+            no occluder lists (a halo behind another ship winks out
+            with its bulb).
+          * Inherits the set_blink / set_emission_scale registry
+            (u_emission_factor): a halo under a blink circuit node
+            flashes in sync with its bulbs, no extra wiring.
+          * `intensity` is HDR-legal — > 1 feeds bloom for glow.
+          * Excluded from the shadow caster mask when one is
+            configured (an un-excluded quad would stamp its silhouette
+            into the sun depth map — the fact-#17 depth-pass rule).
+          * clear_light_halo() removes it byte-identically."""
+        entry = next((e for e in self._halo_nodes
+                      if e['np'] == nodepath), None)
+        if entry is None:
+            cm = p3d.CardMaker('pax3d_halo')
+            cm.set_frame(-1, 1, -1, 1)
+            quad = nodepath.attach_new_node(cm.generate())
+            quad.set_shader(self._get_halo_shader(), 1)
+            quad.set_bin('transparent', 0)
+            quad.set_depth_write(False)
+            quad.set_two_sided(True)
+            quad.set_attrib(p3d.ColorBlendAttrib.make(
+                p3d.ColorBlendAttrib.M_add,
+                p3d.ColorBlendAttrib.O_one,
+                p3d.ColorBlendAttrib.O_one), 1)
+            # The vertex shader expands the quad in view space (size
+            # clamp), so cull by everything-visible bounds, not the
+            # unit card's.
+            quad.node().set_bounds(p3d.OmniBoundingVolume())
+            quad.node().set_final(True)
+            if self.shadow_caster_mask is not None:
+                quad.hide(self.shadow_caster_mask)
+            entry = {'np': nodepath, 'quad': quad}
+            self._halo_nodes.append(entry)
+        quad = entry['quad']
+        quad.set_shader_input('u_halo_color', p3d.LVecBase3(
+            float(color[0]), float(color[1]), float(color[2])))
+        quad.set_shader_input('u_halo_intensity', float(intensity))
+        quad.set_shader_input('u_halo_size', max(1e-6, float(size_m)))
+        quad.set_shader_input('u_halo_min_px', max(0.0, float(min_px)))
+        self._halo_vp_h = float(max(1, self.window.get_y_size()))
+        self.render_node.set_shader_input('u_halo_vp_h', self._halo_vp_h)
+        return quad
+
+    def clear_light_halo(self, nodepath):
+        """Remove set_light_halo() from the node — byte-identical
+        opt-out (the quad is dropped; nothing else was touched)."""
+        entry = next((e for e in self._halo_nodes
+                      if e['np'] == nodepath), None)
+        if entry is None:
+            return
+        self._halo_nodes.remove(entry)
+        if not entry['quad'].is_empty():
+            entry['quad'].remove_node()
+
+    # ------------------------------------------------------------------
     # Rigid node clips (ER-004, Session V — walkable ships)
     # ------------------------------------------------------------------
 
@@ -3022,7 +3478,8 @@ class Pipeline:
                config['orm_array'] is not None,
                config['macro_map'] is not None,
                config['hex_tiling'],
-               config['height_blend'])
+               config['height_blend'],
+               config['water'] is not None)
         shader = self._terrain_shaders.get(key)
         if shader is None:
             defines = self._get_pbr_defines()
@@ -3037,6 +3494,8 @@ class Pipeline:
                 defines['TERRAIN_HEX_TILING'] = True
             if key[4]:
                 defines['TERRAIN_HEIGHT_BLEND'] = True
+            if key[5]:
+                defines['TERRAIN_WATER'] = True
             shader = shaderutils.make_shader(
                 'pax_pbr_terrain', 'pax_pbr.vert', 'pax_pbr.frag', defines)
             self._terrain_shaders[key] = shader
@@ -3089,6 +3548,18 @@ class Pipeline:
             nodepath.set_shader_input(
                 'u_terrain_height_sharp',
                 float(config['height_sharpness']))
+        water = config['water']
+        if water is not None:
+            nodepath.set_shader_input(
+                'u_terrain_water',
+                p3d.LVecBase4(water['water_z'], water['band_m'],
+                              water['dark'], water['rough_mult']))
+            phase = (water['anim_phase']
+                     if water['anim_phase'] is not None else 0.0)
+            nodepath.set_shader_input(
+                'u_terrain_water2',
+                p3d.LVecBase4(water['sat'], water['anim_amp'],
+                              1.0 / water['anim_scale'], phase))
 
     def _reapply_terrain_splat(self):
         """Re-push (freshly invalidated) terrain variants onto every
@@ -3244,12 +3715,17 @@ class Pipeline:
             'hex_offset': hex_off,
             'height_blend': bool(height_blend),
             'height_sharpness': float(height_sharpness),
+            'water': None,
         }
         idx = next((i for i, e in enumerate(self._terrain_nodes)
                     if e[0] == nodepath), None)
         if idx is None:
             self._terrain_nodes.append((nodepath, config))
         else:
+            # Re-dressing a chunk keeps its water contract (ER-010) —
+            # like the other per-node contracts, it lives until
+            # explicitly cleared (paxtest test_terrain_water).
+            config['water'] = self._terrain_nodes[idx][1].get('water')
             self._terrain_nodes[idx] = (nodepath, config)
         self._apply_terrain_splat(nodepath, config)
 
@@ -3269,8 +3745,114 @@ class Pipeline:
                      'u_terrain_normal_fade', 'u_terrain_macro_scale',
                      'u_terrain_macro_strength', 'u_terrain_hex',
                      'u_terrain_hex_rot', 'u_terrain_hex_off',
-                     'u_terrain_height_sharp'):
+                     'u_terrain_height_sharp', 'u_terrain_water',
+                     'u_terrain_water2'):
             nodepath.clear_shader_input(name)
+        self._refresh_terrain_water_anim()
+
+    def set_terrain_water(self, nodepath, water_z, band_m=1.0, dark=0.55,
+                          rough_mult=0.35, sat=1.25, anim_amp=0.0,
+                          anim_period=12.0, anim_scale=6.0,
+                          anim_phase=None):
+        """Give a set_terrain_splat() node a wet-sand waterline (ER-010):
+        fragments below `water_z` + band render WET — darker, more
+        saturated albedo and much lower roughness (the retreating-wave
+        sheen is a specular read). Wetness is by WORLD Z only, applied
+        to ALL splat layers alike (wet rock and wet soil darken too —
+        no layer-semantics coupling), and it applies BELOW the waterline
+        as much as above: the seafloor visible through the game's
+        depth-alpha shallows reads wet, not bone-dry.
+
+        wet = 1 below water_z, easing to 0 across [water_z,
+        water_z + band_m]. Every change is applied via mix(dry, wet, w),
+        so wet == 0 fragments compute exactly the water-off arithmetic;
+        nodes that never call this keep the water-free shader variant —
+        byte-identical to today by construction.
+
+        Args:
+            water_z: sea level in WORLD z (the game's world.water
+                contract). None clears the contract (same as
+                clear_terrain_water()).
+            band_m: wet reach above sea level in world units — the
+                dark mirror band the last wave left.
+            dark: wet albedo multiplier (0.55 reads like soaked sand).
+            rough_mult: wet roughness multiplier — the sheen lever;
+                the wet result is clamped to [0, 1].
+            sat: wet chroma expansion about Rec.709 luminance (1.0 =
+                none). Applied with `dark` in one transform; the two
+                commute exactly.
+            anim_amp: breathing-edge amplitude in world z units (the
+                ER-010 stretch goal). 0 (default) = the static band,
+                EXACT (the edge offset is amp * noise; x + 0.0*n == x).
+                ~0.3-0.6 sells the advancing/retreating wash.
+            anim_period: breathe cycle in seconds (~8-15 reads like
+                shore wash).
+            anim_scale: along-shore spatial variation cell size in
+                world units — each ~cell breathes with its own phase
+                (static value noise of world xy phase-shifts the
+                shared cycle).
+            anim_phase: None (default) = the pipeline's per-frame task
+                drives the phase from the global clock. A float pins
+                the phase in radians (determinism valve — paxtest and
+                screenshot A/Bs).
+
+        Re-calling reconfigures in place; set_terrain_splat() re-calls
+        on the same node PRESERVE the water contract (chunk re-dressing
+        must not silently dry the shore). Gated by paxtest
+        test_terrain_water.
+        """
+        if water_z is None:
+            self.clear_terrain_water(nodepath)
+            return
+        idx = next((i for i, e in enumerate(self._terrain_nodes)
+                    if e[0] == nodepath), None)
+        if idx is None:
+            raise ValueError('set_terrain_water: node has no terrain '
+                             'splat config — call set_terrain_splat() '
+                             'first')
+        water = {
+            'water_z': float(water_z),
+            'band_m': max(float(band_m), 1e-4),
+            'dark': float(dark),
+            'rough_mult': float(rough_mult),
+            'sat': float(sat),
+            'anim_amp': float(anim_amp),
+            'anim_period': max(float(anim_period), 1e-3),
+            'anim_scale': max(float(anim_scale), 1e-3),
+            'anim_phase': (None if anim_phase is None
+                           else float(anim_phase)),
+        }
+        nodepath, config = self._terrain_nodes[idx]
+        config['water'] = water
+        self._apply_terrain_splat(nodepath, config)
+        self._refresh_terrain_water_anim()
+
+    def clear_terrain_water(self, nodepath):
+        """Undo set_terrain_water(): the node reverts to the water-free
+        terrain variant, byte-identical to never having called it
+        (paxtest test_terrain_water opt-out check). The splat config
+        itself stays."""
+        idx = next((i for i, e in enumerate(self._terrain_nodes)
+                    if e[0] == nodepath), None)
+        if idx is None:
+            return
+        nodepath, config = self._terrain_nodes[idx]
+        if config.get('water') is None:
+            return
+        config['water'] = None
+        self._apply_terrain_splat(nodepath, config)
+        for name in ('u_terrain_water', 'u_terrain_water2'):
+            nodepath.clear_shader_input(name)
+        self._refresh_terrain_water_anim()
+
+    def _refresh_terrain_water_anim(self):
+        """Rebuild the per-frame water-anim worklist: entries with a
+        live breathing edge only (amp > 0, phase clock-driven)."""
+        self._terrain_water_anim = [
+            (np_, cfg['water']) for np_, cfg in self._terrain_nodes
+            if cfg.get('water') is not None
+            and cfg['water']['anim_amp'] > 0.0
+            and cfg['water']['anim_phase'] is None]
 
     # ------------------------------------------------------------------
     # Hardware instancing (ER-002 — scatter rendering)
@@ -3954,6 +4536,25 @@ class Pipeline:
         self.double_sided_lighting = enabled
         self._recompile_pbr()
 
+    def set_enable_spot_exponent(self, enabled):
+        """Toggle the per-light spot penumbra read (Session AF — flood
+        lamps). Recompiles the PBR shader (variants track it).
+
+        When on, every Spotlight's `set_exponent()` value applies with
+        GL_SPOT_EXPONENT semantics — pow(cos angle-to-axis, exponent)
+        inside the cone. Exponent 0 = the flag-off flat cone exactly
+        (arithmetic no-op, gated); flood lamps want 1-4 for a soft
+        center-weighted wash. BEWARE Panda's Spotlight class default is
+        exponent 50 (a tight beam): set your spots' exponents
+        deliberately before enabling, or existing cones retighten. Off
+        (default) is byte-identical to the shipped shader — point and
+        directional lights are never affected either way."""
+        enabled = bool(enabled)
+        if enabled == self.enable_spot_exponent:
+            return
+        self.enable_spot_exponent = enabled
+        self._recompile_pbr()
+
     def update_sun(self, sun_dir_world, sun_color):
         """Update the sun. Same signature in both modes.
 
@@ -4551,6 +5152,55 @@ class Pipeline:
                                 if not e['np'].is_empty()]
                 for entry in self._blinks:
                     self._step_blink(entry, now)
+
+        # Light halos (Session AF, ER-013): keep the viewport-height
+        # uniform current (resize) and prune dead nodes. O(halos), zero
+        # when the registry is empty.
+        if self._halo_nodes:
+            self._halo_nodes = [e for e in self._halo_nodes
+                                if not e['np'].is_empty()
+                                and not e['quad'].is_empty()]
+            vp_h = float(max(1, self.window.get_y_size()))
+            if vp_h != self._halo_vp_h:
+                self._halo_vp_h = vp_h
+                self.render_node.set_shader_input('u_halo_vp_h', vp_h)
+
+        # Visibility queries (Session AF): read last frame's results,
+        # push this frame's target projections. O(queries).
+        if self._vis_buffer is not None:
+            self._step_visibility_queries()
+
+        # Effect sprites (Session AD): reap completed one-shots — the
+        # held last frame is transparent, but the draw call and the
+        # screen/glass/flipbook registrations must not outlive playback.
+        if self._effects:
+            now = p3d.ClockObject.get_global_clock().get_frame_time()
+            live = []
+            for entry in self._effects:
+                done = (entry['np'].is_empty()          # game removed it
+                        or (entry['end'] is not None
+                            and now >= entry['end']))   # playback over
+                if done:
+                    self._cleanup_effect(entry['np'])
+                else:
+                    live.append(entry)
+            self._effects = live
+
+        # ER-010 wet-sand breathing edge: per-frame phase push,
+        # O(animated terrain nodes); zero while no shore breathes or
+        # every phase is pinned (anim_phase — the determinism valve).
+        if self._terrain_water_anim:
+            now = p3d.ClockObject.get_global_clock().get_frame_time()
+            self._terrain_water_anim = [
+                e for e in self._terrain_water_anim
+                if not e[0].is_empty()]
+            tau = 6.28318530718
+            for np_, water in self._terrain_water_anim:
+                phase = (tau * now / water['anim_period']) % tau
+                np_.set_shader_input(
+                    'u_terrain_water2',
+                    p3d.LVecBase4(water['sat'], water['anim_amp'],
+                                  1.0 / water['anim_scale'], phase))
 
         # ER-008 local light budgets: re-score and rebind on change
         if self._light_budgets:

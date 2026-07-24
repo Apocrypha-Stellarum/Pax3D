@@ -29,6 +29,9 @@ uniform struct p3d_LightSourceParameters {
     vec3 attenuation;
     vec3 spotDirection;
     float spotCosCutoff;
+#ifdef SPOT_EXPONENT
+    float spotExponent;
+#endif
 #ifdef ENABLE_SHADOWS
     sampler2DShadow shadowMap;
     mat4 shadowViewMatrix;
@@ -314,6 +317,54 @@ vec4 terrain_layer_sample(sampler2DArray layers, int i, vec2 base_uv) {
 #endif
 }
 #endif  // TERRAIN_HEIGHT_BLEND
+
+#ifdef TERRAIN_WATER
+// ---- Wet-sand waterline (ER-010, pipeline.set_terrain_water) ----
+// Fragments near/below a world-z waterline render WET: darker, more
+// saturated albedo and much lower roughness (the retreating-wave sheen
+// is a specular read). Wetness is by WORLD Z only — no layer-semantics
+// coupling: wet rock and wet soil darken exactly like wet sand.
+// wet = 1 below water_z, easing to 0 across [water_z, water_z+band_m];
+// submerged terrain (the depth-alpha shallows) stays fully wet — the
+// seafloor under 30 cm of water must not read bone-dry. Every consumer
+// applies its change through mix(dry, wet_value, wet), so a wet == 0
+// fragment computes bit-exactly the water-off arithmetic.
+uniform vec4 u_terrain_water;   // x=water_z y=band_m z=dark w=rough_mult
+uniform vec4 u_terrain_water2;  // x=sat y=anim amp (m) z=anim spatial
+                                // freq (1/m) w=anim phase (rad)
+
+// Same Hoskins fract-mix family as hex_hash (which is only compiled
+// under TERRAIN_HEX_TILING): well distributed at large world xy.
+float water_hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.x, p.y, p.x) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+// Bilinear value noise over world xy (smoothstep-faded), 0..1.
+float water_noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(water_hash(i), water_hash(i + vec2(1.0, 0.0)), u.x),
+               mix(water_hash(i + vec2(0.0, 1.0)),
+                   water_hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+// Wetness at a world position. The breathing edge: every point cycles
+// on the shared anim period (phase pushed per-frame by the pipeline),
+// phase-shifted by STATIC spatial noise of world xy — so the sheen
+// line advances and retreats unevenly along the shore, loosely
+// trailing the wash. amp == 0 keeps the edge EXACT (x + 0.0*n == x):
+// the static-band contract.
+float terrain_wetness(vec3 wpos) {
+    float edge = u_terrain_water.x
+               + u_terrain_water2.y
+                 * sin(u_terrain_water2.w + 6.28318530718
+                       * water_noise(wpos.xy * u_terrain_water2.z));
+    return 1.0 - smoothstep(edge, edge + u_terrain_water.y, wpos.z);
+}
+#endif  // TERRAIN_WATER
 #endif
 
 uniform sampler2D p3d_TextureBaseColor;
@@ -531,6 +582,15 @@ void main() {
     float metallic = clamp(p3d_Material.metallic * metal_rough.b, 0.0, 1.0);
     float perceptual_roughness = clamp(p3d_Material.roughness * metal_rough.g,  0.0, 1.0);
     float alpha_roughness = perceptual_roughness * perceptual_roughness;
+#ifdef TERRAIN_WATER
+    // ER-010: wetness computed once, consumed here (roughness — the
+    // sheen) and by the albedo compose below (dark + saturate).
+    float terrain_wet = terrain_wetness(v_world_position);
+    perceptual_roughness = mix(perceptual_roughness,
+        clamp(perceptual_roughness * u_terrain_water.w, 0.0, 1.0),
+        terrain_wet);
+    alpha_roughness = perceptual_roughness * perceptual_roughness;
+#endif
 #ifdef TERRAIN_HEIGHT_BLEND
     // Reuse the up-front per-layer taps (same accumulate order as the
     // blend functions).
@@ -550,6 +610,20 @@ void main() {
         v_texcoord * u_terrain_macro_scale).r;
     terrain_albedo_px.rgb *= mix(1.0, 2.0 * terrain_macro_px,
                                  u_terrain_macro_strength);
+#endif
+#ifdef TERRAIN_WATER
+    // Wet albedo: darker (the dark multiplier) and more saturated
+    // (chroma expanded about Rec.709 luminance; the two transforms
+    // commute exactly, S(k*c) == k*S(c)). Applied AFTER macro so the
+    // large-scale variation darkens with everything else.
+    {
+        vec3 wet_rgb = terrain_albedo_px.rgb * u_terrain_water.z;
+        float wet_l = dot(wet_rgb, vec3(0.2126, 0.7152, 0.0722));
+        wet_rgb = max(vec3(0.0),
+                      wet_l + (wet_rgb - wet_l) * u_terrain_water2.x);
+        terrain_albedo_px.rgb = mix(terrain_albedo_px.rgb, wet_rgb,
+                                    terrain_wet);
+    }
 #endif
     vec4 base_color = p3d_Material.baseColor * v_color * p3d_ColorScale * (terrain_albedo_px + p3d_TexAlphaOnly);
     vec3 diffuse_color = (base_color.rgb * (vec3(1.0) - F0)) * (1.0 - metallic);
@@ -768,6 +842,19 @@ void main() {
         float spotcos = dot(normalize(p3d_LightSource[i].spotDirection), -l);
         float spotcutoff = p3d_LightSource[i].spotCosCutoff;
         float shadowSpot = (spotcutoff > SPOTSMOOTH) ? smoothstep(spotcutoff-SPOTSMOOTH, spotcutoff+SPOTSMOOTH, spotcos) : 1.0;
+#ifdef SPOT_EXPONENT
+        // Per-light penumbra (Session AF, flood lamps): GL_SPOT_EXPONENT
+        // semantics — pow(cos angle-to-axis, exponent) inside the cone.
+        // Exponent 0 is an arithmetic no-op (pow(x>0, 0) == 1.0 exactly;
+        // the Light base class reports 0 for non-spots, so the cutoff
+        // guard is belt-and-braces). BEWARE: Panda's Spotlight CLASS
+        // default is 50 — a tight beam. Flood lamps want 1-4;
+        // set_exponent(0) restores the flag-off flat cone exactly.
+        if (spotcutoff > SPOTSMOOTH) {
+            shadowSpot *= pow(max(spotcos, 1e-4),
+                              p3d_LightSource[i].spotExponent);
+        }
+#endif
 #ifdef ENABLE_SHADOWS
         // Slope-scaled bias: view-space NdotL == world-space NdotL (the
         // receiver/light angle is frame-invariant), so dot(n, l) here is the

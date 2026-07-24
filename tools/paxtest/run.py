@@ -22,8 +22,10 @@ ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows',
              'atmosphere', 'ambient_sh', 'glass', 'doublesided',
              'ambient_scale', 'env_map', 'local_lights', 'orbital',
              'srgb', 'ssao', 'lens_flare', 'morph_gltf', 'data_texture',
-             'terrain_splat', 'instancing', 'rigid_clips', 'screen',
-             'alpha_mask', 'viewmodel', 'gl_clean', 'light_priority']
+             'terrain_splat', 'terrain_water', 'instancing',
+             'rigid_clips', 'screen', 'alpha_mask', 'viewmodel',
+             'gl_clean', 'light_priority', 'effects', 'light_halo',
+             'visibility_query', 'spot_exponent']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 
@@ -105,8 +107,9 @@ def main():
                 jobs.append((test, pipeline,
                              passthrough + ['--sun-mode', 'directional']))
             if (test in ('glass', 'doublesided', 'local_lights',
-                         'terrain_splat', 'instancing', 'viewmodel',
-                         'light_priority')
+                         'terrain_splat', 'terrain_water', 'instancing',
+                         'viewmodel', 'light_priority', 'effects',
+                         'light_halo', 'spot_exponent')
                     and pipeline == 'pax3d_render'):
                 # Sessions K/O: the directional variants exercise the
                 # p3d_LightSource loop with the sun occupying slot 0
@@ -132,6 +135,9 @@ def main():
                 # depth resolve path explicitly
                 jobs.append((test, pipeline, passthrough + ['--log-depth']))
                 jobs.append((test, pipeline, passthrough + ['--msaa', '4']))
+            if test == 'visibility_query' and pipeline == 'pax3d_render':
+                # Session AF: the depth decode's log branch
+                jobs.append((test, pipeline, passthrough + ['--log-depth']))
 
     results = []
     print(f'paxtest: {len(jobs)} jobs, python={sys.executable}, '
