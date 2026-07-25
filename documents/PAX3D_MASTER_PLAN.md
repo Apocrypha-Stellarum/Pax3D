@@ -95,6 +95,7 @@ Each was established mechanically; each has a permanent guard.
 | 19 | **The GPU morph path needs NO engine change and NO gl_VertexID — it runs on stock 1.10 too.** Morph deltas ride a per-vdata RGB32F data texture addressed by a plain float32 `morph_index` column — one mechanism on BOTH GLSL baselines. **Layout is VERTEX-MAJOR since Session AB** (width = 2×targets: position x=2t, normal x=2t+1; height = vertex rows) — byte-identical to the loader's own interleaved morph array (`[vertex.morph.s, normal.morph.s, …]` tightly packed per vertex, measured on production heads), so when a vdata's column order matches the character slider order the bake is a ZERO-COPY upload of the array's raw bytes (wren/juno: 5/7 vdatas ≈95% of rows; kade's pack orders non-canonically → numpy column gather, pure-Python fallback; all three variants byte-compared in-gate). Two conventions MEASURED before building (TexturePeeker probe): Texture ram row 0 = texcoord v=0, and `set_ram_image_as(data,'RGB')` preserves float component order. Panda ships normal deltas alongside positions (`normal.morph.<slider>` columns — the GPU path is lighting-correct, not position-only). Instrument trap the bench exposed: `apply_freeze_scalar` alone does NOT dirty the bundle — without `force_update()` (or a playing clip) the CPU path re-animates nothing and a perf A/B silently measures an idle scene (the +0.01 ms tell) | Session Z; probe_ram_order (scratchpad), test_morph_gltf `gpu_*` + `bake_fast_matches_reorder` (both engines × both baselines), probe_gpu_morph_bench.py |
 | 20 | **Panda Python wrapper identity lies in both directions — key caches by `.this`, never `id()`.** Two lookups of the SAME C++ object return different wrapper objects (`id(a) != id(b)`, `a.this == b.this`, measured), so an `id()`-keyed cache never hits for shared objects — and worse, a collected wrapper's id can be REUSED by a different object (false hit → wrong data bound; the Session Z bake cache carried exactly this latent hazard, fixed Session AB). Same trap inverted: pointer-equality conclusions drawn from `id()` are wrong — Session Z's "copy_to clones share the vdata AND the delta textures" was HALF wrong: `copy_to` on a Character subtree pointer-shares RenderStates and their textures (delta textures ARE shared, `.this`-verified) but DEEP-COPIES the animated vdata (≈ the morph-column bytes per clone in RAM, ~18 MB on a production head). Corollary contract (Session AB): a clone of an enabled template arrives converted-but-puppeted (it inherits the template's `u_morphs` block) — `set_gpu_morphs(clone)` detects the variant states, skips the bake, and gives it its own face | Session AB; probe_identity (scratchpad), test_morph_gltf `copy_*` checks |
 | 21 | **Cross-thread Geom destruction vs GVAD handle acquisition corrupts the heap on any wheel that runs mimalloc WITHOUT DeletedChain** — the first attributable native crashes of the fork (planetside chunk mesher, 2026-07-20 + 2026-07-23, both `libp3dtool.dll+0x15a30` in `write_stage_upstream`; the faulting thread is the VICTIM — a second constructor ran over its live object after a freelist double-issue). Single-threaded churn is clean at 97M iterations; stock 1.10.16 immune at 548k (it runs DeletedChain); `workers=1` does NOT mitigate (main-thread destruction is enough). Root regime change: `makepanda.py` set `USE_DELETED_CHAIN=UNDEF` when mimalloc is on, so our wheels were the first ever to run this churn on a general-purpose allocator; two latent upstream defects rode along (cycler stage guards demoted `#ifndef NDEBUG`→`#ifdef _DEBUG` = compiled out at opt-3, and `set_num_stages` freeing `&_single_data` instead of the old array). FIXED 2026-07-24 (GVAD stability window, `d6044b1d8a`): DeletedChain restored alongside mimalloc + guards restored + interior delete fixed; every crashing repro row survives (deep soak 6.9M builds) | GVAD window; `test_gvad_churn` (permanent, FAILed on the pre-fix wheel), `tools/repro_gvad_race/`, `CRASH_GVAD_HANDLE_RACE.md` |
+| 22 | **`Thread::bind_thread`'s returned PT(Thread) was the ONLY reference to the bound ExternalThread while the impl kept a RAW pointer in TLS** — every measured consumer (paxcraft, sfb2 `planetside/world/chunks.py`, repro_min's own `_bind`) drops the return value, deleting the ExternalThread under `_current_thread`; heap reuse then poisons `get_pipeline_stage()` and release-mode cycler paths index `_data[garbage]` unchecked → null/junk CycleData → the GVAD-lookalike signature family (worker Geom-construction AV / stage asserts / `_pointer != nullptr`). Crashing is ALLOCATOR LUCK, not thread count — reproduced at workers=2 (the sfb2 envelope) from the paxcraft recipe; minidump: ref() on NULL CycleData (`fetch_add` on 0x8) under `GeomPrimitivePipelineReader` ← `close_primitive`; proof by intervention (keep the PT → full selftest passes; discard → AV in 3 s). Stock 1.10.16 carries the same upstream dangle (measured: AVs on the discard-shape render-churn row) — inherited, never patched by policy. FIXED 2026-07-26 (Session AH mini-window): `bind_thread` ref()s the bound thread — pinned for process lifetime (no portable foreign-thread exit hook; bounded deliberate leak). Corollary on record: the fork REQUIRES `bind_thread` on foreign threads (`thread != nullptr`, threadWin32Impl.cxx:71 — intentional, no auto-ExternalThread fallback like 1.10) | Session AH; `test_thread_bind` (permanent; bind_pinned FAILed rc=1 on the pre-fix wheel), `CRASH_BIND_THREAD_DANGLE.md` |
 
 ---
 
@@ -960,6 +961,34 @@ no longer load-bearing (relaxation is the game lane's call after field
 soak); `ENGINE_UPDATE_2026-07-24_GVAD_STABILITY_WHEEL.md` filed. The
 optional poison-on-free diagnostic wheel stays available if a stray
 free ever needs naming.
+
+---
+
+### 4.21 Session AH (2026-07-26) — bind_thread dangling-ExternalThread pin (the paxcraft crash)
+
+The paxcraft lane reported worker-thread Geom construction still AVing
+on the GVAD wheel (5 bound workers vs a live render). Sixth C++ window,
+smallest yet: ONE line. The report was real but mis-aimed — bisection
+killed worker count (crashes at workers=2 = the sfb2 envelope), attach,
+render state, and every per-frame subsystem; repro_min distillation
+would NOT reproduce (allocator luck, the tell). Full-memory minidump
+(freeze-filter workflow): ref() on a NULL CycleData under
+`GeomPrimitivePipelineReader` ← `close_primitive`. Root cause = fact
+#22: consumers drop `bind_thread`'s returned PT, deleting the
+ExternalThread under the raw TLS pointer; heap reuse poisons
+`get_pipeline_stage()`. Fix: `thread.cxx` pins the bound thread
+(`ref()`, process lifetime). 1m32s incremental build. Acceptance:
+bind-pin probe UNPINNED(rc=1)→PINNED(rc=2); the 3-second-AV paxcraft
+discard shape completes its full selftest twice; `test_gvad_churn`
+regression green (2.55M builds); full gate both engines (logs
+`gate_bind_*`); NEW permanent `test_thread_bind` (pin contract + the
+paxcraft envelope verbatim; SKIPs whole on stock — which AVs on the
+discard shape, upstream-inherited, recorded not gated). Docs:
+`CRASH_BIND_THREAD_DANGLE.md`, sibling pointer in the GVAD crash doc,
+paxcraft `ENGINE_NOTES.md` response, sfb2
+`ENGINE_UPDATE_2026-07-26_BIND_THREAD_PIN.md` + `chunks.py`
+keep-the-PT one-liner. Wheel archived `wheels_bind_pin\`; rollback =
+`wheels_gvad\`.
 
 ---
 

@@ -466,6 +466,20 @@ both ways at introduction: FAIL on the Session-X wheel (both rows
 wheel. Engine-level: `none` pipeline only, no window. Root cause and
 forensics: `documents/CRASH_GVAD_HANDLE_RACE.md`.
 
+**`test_thread_bind.py`** (Session AH — the paxcraft field crash,
+2026-07-25/26) — `Thread.bind_thread` must PIN the bound
+ExternalThread so dropping the returned PT(Thread) (the universal
+consumer mistake) can never dangle the TLS current-thread pointer.
+Rows: `bind_pinned` (ref count ≥ 2 + dangle survives drop/gc/churn;
+deterministic — measured rc=1 UNPINNED on the pre-fix wheel) and
+`bound_churn_render` (the paxcraft envelope verbatim: 5 bound workers
+sharing one sync name building Geoms against a live offscreen render,
+30 s). SKIPs whole on stock 1.10 — no pin contract there, and the
+discard-shape churn row AVs on stock (upstream-inherited dangle,
+recorded not gated). Engine-level: `none` pipeline; the repro
+subprocesses open their own offscreen contexts. Root cause and
+forensics: `documents/CRASH_BIND_THREAD_DANGLE.md`.
+
 **`test_ftl_blur.py`** — the FTL warp distortion pass (radial blur +
 chromatic aberration in tonemap); asserts zero-strength passthrough and
 effect behavior (added alongside the feature, post-Session-D).
@@ -507,7 +521,12 @@ light_halo / visibility_query / spot_exponent jobs — +6 PASS +12 SKIP
 per engine, identical rows both engines; the GVAD build window added
 the 5 gvad_churn jobs — +1 PASS +4 SKIP per engine, and the row is the
 permanent heap-corruption guard: it FAILed on the pre-fix Session-X
-wheel, gate logs `gate_gvad_*`.)
+wheel, gate logs `gate_gvad_*`. Session AH added the 5 thread_bind
+jobs — Pax3D +1 PASS +4 SKIP, stock +5 SKIP (whole-test skip: no pin
+contract on 1.10, and the discard-shape churn row AVs there —
+upstream-inherited, recorded not gated): **totals now Pax3D 83/7/133 ·
+stock 80/7/136, FAIL sets unchanged**; bind_pinned FAILed rc=1 on the
+pre-fix GVAD wheel, gate logs `gate_bind_*`.)
 
 Note: with the game's `use_pax3d_render` flag flipped (Session D), the
 `pax_pbr` adapter routes to pax3d_render — its column mirrors

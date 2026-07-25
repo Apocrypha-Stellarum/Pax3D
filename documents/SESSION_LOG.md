@@ -1415,3 +1415,51 @@ CLAUDE.md (queue row DONE, env table, wheels, C++-changes line, gate
 totals), crash doc status FIXED+VALIDATED, paxtest README (test entry
 + snapshot), master plan (§4.20 + fact #21). Gate logs
 `gate_gvad_pax3d_game.log` / `gate_gvad_stock_game.log`.
+
+**Session AH update (2026-07-26, the bind-pin mini-window — user "action
+any necessary changes" on the paxcraft crash report):** the paxcraft
+lane's report (5 bound workers building Geoms against a live render still
+AV on the GVAD wheel) is REAL, root-caused, and fixed engine-side — and
+it was never about worker count. Reproduced first-try from their recipe
+(worktree at their v0.1.0 baseline, AV in 3–5 s), then bisected: crashes
+at workers=2 (the sfb2 shipping envelope), with no attach, plain state,
+and every per-frame subsystem gated off. Distillation into repro_min
+(new knobs: --render/--attach/--pipeline/--custom-format/--numpy-load/
+--numpy-inline/--multi-node/--inflight/--no-bind/--main-churn) would NOT
+reproduce — the tell that the trigger was environmental, not structural.
+Full-memory minidump (freeze-filter workflow from the GVAD window):
+fetch_add WRITE on address 0x8 — ref() on a NULL CycleData — under
+GeomPrimitivePipelineReader ← get_num_vertices ← close_primitive on the
+worker's own fresh primitive. Root cause: `Thread::bind_thread` returns
+the ONLY reference to the new ExternalThread while the impl stores a RAW
+pointer in TLS; every measured consumer (paxcraft, sfb2
+planetside/world/chunks.py, repro_min's own _bind) drops the return
+value, deleting the ExternalThread under the TLS pointer. Heap reuse then
+poisons get_pipeline_stage(): release-mode cycler paths index
+_data[garbage] unchecked → null/junk CycleData → the whole field
+signature family (AV + stage asserts + `_pointer != nullptr`). Crashing
+is pure allocator luck — the 2-vs-5-worker "envelope" was a mirage, and
+sfb2 has been running planetside on a dangling thread pointer since the
+streamer landed. Proof by intervention: keeping the PT alive passes the
+full crashing selftest repeatedly; discarding controls AV in 3 s. FIX
+(one line + comment, thread.cxx): bind_thread ref()s the bound
+ExternalThread — pinned for process lifetime (foreign threads have no
+portable exit hook; the bounded leak is correct). 1m32s incremental
+build. Acceptance: bind-pin probe UNPINNED(rc=1,exit 4) pre-fix →
+PINNED(rc=2)+dangle-survival post-fix; paxcraft discard shape completes
+selftest twice (269 chunks, clean exit); gvad_churn regression green
+(2.55M builds). NEW permanent gate `test_thread_bind` (bind_pinned +
+bound_churn_render = the paxcraft envelope verbatim); SKIPs whole on
+stock — measured: stock 1.10.16 AVs on the discard-shape churn row (the
+same upstream-inherited dangle, no pin contract there; recorded, not
+gated — stock is never patched). Bonus finding on record: the fork's
+foreign-thread hard-fail (`thread != nullptr`, threadWin32Impl.cxx:71)
+is intentional and load-bearing — always bind executor workers. Docs:
+new `CRASH_BIND_THREAD_DANGLE.md` (root cause, proof table, forensics
+workflow), sibling-bug pointer in CRASH_GVAD_HANDLE_RACE.md, CLAUDE.md
+queue row + C++-changes line, paxcraft ENGINE_NOTES.md response
+(engine-dev section in place), sfb2
+`ENGINE_UPDATE_2026-07-26_BIND_THREAD_PIN.md` + the chunks.py
+keep-the-PT one-liner applied game-side. Gate logs
+`gate_bind_pax3d_game.log` / `gate_bind_stock_game.log`; wheel archived
+`wheels_bind_pin\` (rollback: `wheels_gvad\`).

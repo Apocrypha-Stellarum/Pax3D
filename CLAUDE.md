@@ -47,8 +47,10 @@ The rendering program runs in gated phases (see the master plan):
 **Engine C++ changes so far: a handful of surgical, gate-proven fixes**
 (build-system fix; Session-R combine-mode warning; Session-X offscreen GL
 fixes; the 2026-07-24 GVAD stability window — DeletedChain restored +
-cycler guards + `set_num_stages` interior delete). Everything else is
-Python/GLSL in `pax3d_render/`. When to use which language is canon — see
+cycler guards + `set_num_stages` interior delete; the 2026-07-26
+bind-thread pin — `bind_thread` ref()s the bound ExternalThread so the
+TLS pointer can never dangle when callers drop the return value).
+Everything else is Python/GLSL in `pax3d_render/`. When to use which language is canon — see
 **Language Canon** below: prototype in Python/GLSL, promote to C++ on
 evidence; C++ only in build windows the user schedules (never casually
 mid-session — every C++ change needs a full rebuild).
@@ -207,6 +209,7 @@ the GPU and Panda's C++, not in our orchestration layer.
 | **InstanceList bulk fill** (`set_from_buffer` — fill per-instance transforms from a flat buffer/numpy instead of 1k–10k Python `append()` calls per mesh class per chunk) | New C++ API | Queued Session U on the ER-002 volume envelope, **on profile evidence only** — the game side accepted the append loop on worker threads; `get_array_data()` already caches the GPU-side array in C++, so only the Python fill loop is per-instance. If `test_instancing`/field profiling never shows it hot, it never lands |
 | ~~Offscreen GL fixes~~ (restore the single-buffered branch of `FrameBufferProperties::get_buffer_mask()` — upstream DX9-fix regression `bd4dc8a379` made EVERY offscreen frame raise GL_INVALID_OPERATION and panic-deactivate the GSG after ~20 s, in every Pax3D wheel since the fork; + honor `gl-max-errors -1`) | Two one-line C++ fixes | **DONE 2026-07-19 (Session X part 2 mini-window, user-authorized)** — 1-min incremental build, probe 0 errors/frame everywhere (was ~60/phase), `test_gl_clean` now the permanent zero-GL-errors guard on both engines, full gate green, wheel live in pax3d-env + archived `wheels_session_x\`. Fact #18 |
 | ~~GVAD handle-race stability fix~~ (restore `USE_DELETED_CHAIN=1` alongside mimalloc, makepanda.py:2327; restore both cycler stage guards to `#ifndef NDEBUG`; fix the `set_num_stages` interior delete, pipelineCyclerTrueImpl.cxx:334) — the reproducible chunk-mesher heap corruption (field crashes 2026-07-20 + 2026-07-23; **any cross-thread Geom construction vs destruction**; `workers=1` does NOT mitigate) | Build flag + 2 small C++ fixes | **DONE 2026-07-24 (GVAD stability window, user go-ahead)** — `d6044b1d8a`, clean 12-min build, full acceptance green: every crashing repro row survives (deep soak 6.9M builds), gate both engines FAIL-sets-unchanged (Pax3D 82/7/129 · stock 80/7/131 incl. NEW permanent `test_gvad_churn` — FAILed on the Session-X wheel, PASSes on the fix + stock), testbeds + plan.py smoke green. Wheel live in pax3d-env AND system Python, archived `wheels_gvad\`. ER-011 mitigation no longer load-bearing. Optional follow-up stays available: poison-on-free diagnostic wheel |
+| ~~bind_thread dangling-ExternalThread pin~~ (`thread.cxx` — `bind_thread` ref()s the bound thread for process lifetime; upstream's "caller's responsibility" raw-TLS contract dangled the moment consumers dropped the returned PT — which sfb2 planetside, paxcraft, AND repro_min all did; heap reuse then poisons `get_pipeline_stage()` → `_data[garbage]` → null-CycleData AV. Paxcraft field report 2026-07-25; reproduced at workers=2 = the sfb2 envelope; mechanism proven by keep-the-PT intervention + full-memory minidump (`fetch_add` on 0x8 under GeomPrimitivePipelineReader). DISTINCT from the GVAD bug — same signature family) | 1-line C++ fix | **DONE 2026-07-26 (Session AH mini-window, user "action any necessary changes")** — 1m32s incremental build, bind-pin probe UNPINNED(rc=1)→PINNED(rc=2), the 3-second-AV paxcraft discard shape completes full selftest twice, gvad_churn regression green (2.55M builds), NEW permanent `test_thread_bind` (bind_pinned Pax3D-only + bound_churn_render; SKIPs whole on stock — measured: stock 1.10 AVs on the discard-shape churn row, upstream-inherited, recorded not gated). Root cause + forensics: `documents/CRASH_BIND_THREAD_DANGLE.md`. Stock's foreign-thread `thread != nullptr` assert (threadWin32Impl.cxx:71) confirmed intentional: this fork REQUIRES bind_thread on foreign threads |
 | Vulkan-port evaluation (hand-port from read-only upstream reference) | Port | Only when it can run the paxtest suite. Watch log 2026-07-17: ACTIVE — upstream merged `shaderpipeline` (SPIR-V) into the `vulkan` branch 2026-07-02/03; nowhere near paxtest-ready. The catch-up merge moved our base next to it — a future port got much cheaper |
 | Python→C++ promotions | Promotion | **None yet** — nothing Python has profiled hot |
 
@@ -263,7 +266,7 @@ Critical pitfalls (full detail in `documents/BUILDING_PAX3D.md`):
 |---|---|---|---|
 | Stock testbed | `C:\python\stock-panda-env\` | Stock Panda3D 1.10.16 + gltf 1.3.0 + simplepbr 0.13.1 | **The ONLY stock env on the machine** — paxtest cross-checks. Do not "fix" it to the fork |
 | System Python | `C:\Python313\python.exe` | **Pax3D 1.11.0 fork** (machine-wide engine pinning, game session 643c/ee861db — bare `python x.py` is the fork by construction) | makepanda builds; NO LONGER the stock reference |
-| Pax3D venv | `C:\python\pax3d-env\` | Pax3D 1.11.0 (GVAD stability wheel 2026-07-24 — DeletedChain + cycler fixes; supersedes Session-X) + full game dep stack | **The game's default engine**; engine-build testing |
+| Pax3D venv | `C:\python\pax3d-env\` | Pax3D 1.11.0 (bind-pin wheel 2026-07-26 — bind_thread pins bound threads; supersedes the GVAD wheel, whose fixes it carries) + full game dep stack | **The game's default engine**; engine-build testing |
 | Doubles venv | `C:\python\pax3d-double-env\` | Pax3D 1.11.0 `STDFLOAT_DOUBLE` wheel | The doubles experiment ONLY — never wire to launchers (stock simplepbr crashes on it) |
 
 The game (`plan.py`) and testbed run under either; paxtest runs under both —
@@ -276,7 +279,8 @@ Tools 2026) is the primary dev machine — sfb2 development moved here;
 the external T7 is the master backup; `D:\python\pax3d` is the pre-transfer
 engine backup). Wheels live in `wheels_window1\{float,double}\`,
 `wheels_window2\`, `wheels_window3\`, `wheels_session_r\`,
-`wheels_window4\`, `wheels_session_x\`, `wheels_gvad\` (current);
+`wheels_window4\`, `wheels_session_x\`, `wheels_gvad\`,
+`wheels_bind_pin\` (current);
 `wheels_float\` holds the pre-merge rollback. Smoke-boot the game with `PYTHONUTF8=1` when stdout is
 redirected (a game-side `→` print crashes under cp1252 otherwise).
 

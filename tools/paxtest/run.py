@@ -25,7 +25,8 @@ ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows',
              'terrain_splat', 'terrain_water', 'instancing',
              'rigid_clips', 'screen', 'alpha_mask', 'viewmodel',
              'gl_clean', 'light_priority', 'effects', 'light_halo',
-             'visibility_query', 'spot_exponent', 'gvad_churn']
+             'visibility_query', 'spot_exponent', 'gvad_churn',
+             'thread_bind']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 

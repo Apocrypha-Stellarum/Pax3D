@@ -11,6 +11,13 @@ paxtest gate green both engines with FAIL sets unchanged
 `test_gvad_churn` FAILs on the pre-fix Session-X wheel / PASSes on the
 fixed wheel and stock. Repro + dump tooling: `tools/repro_gvad_race/`.**
 
+> **Sibling bug, same signature family (2026-07-26):** a SECOND, distinct
+> crash — dangling ExternalThread after `bind_thread`'s return value is
+> dropped — produces overlapping symptoms (worker-side Geom-construction
+> AV, cycler stage asserts, null CycleData). If a field report matches
+> this doc but the wheel post-dates the GVAD window, read
+> [CRASH_BIND_THREAD_DANGLE.md](CRASH_BIND_THREAD_DANGLE.md) first.
+
 Field incidents: planetside access violations 2026-07-20 06:36 (pid 32784)
 and 2026-07-23 14:39 (pid 94520), both `libp3dtool.dll+0x15a30`
 (exception 0xc0000005), both with two chunk-mesher workers inside
