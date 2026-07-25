@@ -148,24 +148,29 @@ file footage of quad-intersection artifacts before asking for it.
 ## 5. Worked adoption — planetside detonations (sfb2, Session AD)
 
 `planetside/player/weapons/effects.py` is the reference integration
-(the whole change is ~50 lines):
+(~50 lines at adoption; game session 717 extended it to both
+detonation paths):
 
 - **Optional wiring**: `getattr(app, 'pipeline', None)` then
-  `getattr(pipeline, 'spawn_effect', None)`; atlas + sidecar loaded
-  from `assets/effects/` in a try/except. Missing pipeline (stock A/B)
-  or missing atlas ⇒ the old corona-only detonation, untouched.
-- **Where it fires**: `_begin_impact(bolt, fireball=True)` on
-  NON-ground detonations — grenade fuze timeout in the air and
-  map-edge lobs (the only non-ground hits today). Ground contact keeps
-  the corona+dust read (dirt and dust belong to the ground). When
-  structure collision lands, that call site passes `fireball=True` too
-  (comment on file).
+  `getattr(pipeline, 'spawn_effect', None)`; atlases + sidecars loaded
+  from `assets/effects/` in a try/except per path. Missing pipeline
+  (stock A/B) or a missing atlas ⇒ the old corona-only detonation for
+  that path, untouched.
+- **Where it fires** (s716): `_begin_impact` plays footage on EVERY
+  detonation from a two-take dict (`EXPLODE_ATLASES`): ground contact
+  → a low-fireball/rising-plume take, billboard lifted just under
+  half the card height so the plume roots on the terrain, with
+  `depth_bias=` for the contact seam (the §4 surface recipe, used for
+  real); airburst (dedicated `EffectSpec.fuse` expiry, map-edge — and
+  structure hits when those land) → a spherical take.
 - **Composition with the existing kit**: the 0.45 s light pulse reads
-  as the flash; the ~4 s footage carries the fireball + smoke
-  aftermath. Constants: `EXPLODE_FX_SIZE = 9.0` (metres),
-  `EXPLODE_FX_EMISSION = 2.0` (core into bloom).
-- **Verified offscreen**: bolt expires t=5.00 → fireball spawns →
-  self-reaps t=9.10, all pipeline registries empty after.
+  as the flash; the ~3.5-5 s footage carries the fireball + smoke
+  aftermath. Constants: `EXPLODE_FX_SIZE = 9.0` air /
+  `EXPLODE_FX_SIZE_GROUND = 8.0` (metres), `EXPLODE_FX_EMISSION =
+  2.0` (core into bloom), `EXPLODE_FX_BIAS = 2`.
+- **Verified offscreen**: bolt expires → fireball spawns → self-reaps
+  ~4 s later, all pipeline registries empty after (and the game's
+  scene-switch leak test stays green).
 
 ## 6. Retune levers and the watch list
 
