@@ -105,6 +105,23 @@ bind_thread(const std::string &name, const std::string &sync_name) {
              current_thread->get_sync_name() == sync_name, current_thread);
     thread = current_thread;
   }
+  else if (current_thread == thread.p()) {
+    // PAX3D: pin the freshly bound ExternalThread for the lifetime of the
+    // process (a deliberate, bounded leak: one small object per bound
+    // thread).  Upstream leaves lifetime as "the caller's responsibility",
+    // but the impl stores a RAW pointer in TLS: every consumer measured
+    // (sfb2 planetside, paxcraft, our own repro tool) dropped the returned
+    // PT(Thread), deleting the ExternalThread while _current_thread still
+    // aimed at it.  Once the freed block is reused, get_pipeline_stage()
+    // reads garbage and the release-mode cycler paths index
+    // _data[garbage] unchecked -- null/junk CycleData, ref() on null,
+    // 0xC0000005 (2026-07-26 minidump: fetch_add on address 0x8 under
+    // GeomPrimitivePipelineReader; also the stage asserts seen in the
+    // field).  Foreign threads have no portable exit hook, so releasing
+    // the pin safely is impossible; keeping it is correct.  Gated by
+    // paxtest test_thread_bind.
+    thread->ref();
+  }
   return thread;
 }
 
