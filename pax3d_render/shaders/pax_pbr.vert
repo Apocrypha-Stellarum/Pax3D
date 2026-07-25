@@ -6,6 +6,11 @@
 
 
 #ifdef ENABLE_SHADOWS
+// This declaration must stay FIELD-IDENTICAL to pax_pbr.frag's (GL
+// links per-stage struct uniforms by layout): Session AF added the
+// SPOT_EXPONENT field to the frag only, and every shadows+flood-spot
+// variant failed to link (p3d_LightSource struct type mismatch) until
+// the vert mirrored it (game session 717 sighting).
 uniform struct p3d_LightSourceParameters {
     vec4 position;
     vec4 diffuse;
@@ -13,6 +18,9 @@ uniform struct p3d_LightSourceParameters {
     vec3 attenuation;
     vec3 spotDirection;
     float spotCosCutoff;
+#ifdef SPOT_EXPONENT
+    float spotExponent;
+#endif
     sampler2DShadow shadowMap;
     mat4 shadowViewMatrix;
 } p3d_LightSource[MAX_LIGHTS];
