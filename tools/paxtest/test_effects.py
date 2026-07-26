@@ -293,7 +293,34 @@ def main():
                    f'(the depth pass never reads alpha — fact #17)')
     pipeline.remove_effect(fx)
 
-    # --- 11. gen_flipbook atlas assembly (alpha + RGB regression) -------
+    # --- 11. fade_out: coverage + emission ramp, then clean reap --------
+    # One cell (num_frames=1: no frame-boundary float hazard), 2 s
+    # playback, fade_out = the whole window -> k = 1 - t/2 exactly.
+    # Broken fade (k stuck at 1) misses the analytic target by far more
+    # than the tolerance; the reap must still restore byte-identical.
+    fx = pipeline.spawn_effect(atlas, cols=2, rows=2, num_frames=1,
+                               fps=0.5, pos=(0, 5, 0), size=1.0,
+                               loop=False, fade_out=2.0)
+
+    def expected_fade(cell, k):
+        return tuple(curve(k * cell[ch] + B * (1.0 - k * cell[3]))
+                     for ch in range(3))
+
+    h.step(15)                          # t = 0.5 s -> k = 0.75
+    check_px('fade_out_k075', h.capture(), expected_fade(CELLS[0], 0.75),
+             extra=' (fade_out ramp at k=0.75: emission*k + B*(1-a*k))')
+    h.step(30)                          # t = 1.5 s -> k = 0.25
+    check_px('fade_out_k025', h.capture(), expected_fade(CELLS[0], 0.25),
+             extra=' (fade_out ramp at k=0.25)')
+    h.step(20)                          # t > 2 s: reaped
+    rms = common.image_rms_diff(img_base, h.capture(), step=1)
+    h.report.check('fade_out_reaps_clean',
+                   fx.is_empty() and registries_empty() and rms == 0.0,
+                   f'faded one-shot self-reaped: node empty = '
+                   f'{fx.is_empty()}, registries empty = '
+                   f'{registries_empty()}, rms vs baseline = {rms:.2e}')
+
+    # --- 12. gen_flipbook atlas assembly (alpha + RGB regression) -------
     import gen_flipbook
 
     def cell_img(r, g, b, a=None):

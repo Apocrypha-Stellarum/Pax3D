@@ -2970,7 +2970,7 @@ class Pipeline:
                      fps=25.0, meta=None, parent=None, pos=(0.0, 0.0, 0.0),
                      size=1.0, emission_scale=1.0,
                      emission_color=(1.0, 1.0, 1.0), billboard=True,
-                     loop=False, depth_bias=0):
+                     loop=False, depth_bias=0, fade_out=0.0):
         """One-call flipbook effect: a camera-facing quad playing a
         PREMULTIPLIED-alpha atlas (baked footage — the CGVision air/space
         explosion class) as pure emission, composited over the scene.
@@ -3006,6 +3006,16 @@ class Pipeline:
         the surface (impact point + normal * epsilon, game-side) or pass
         `depth_bias` (int, NodePath.set_depth_offset units) to win the
         depth test near the contact point.
+
+        `fade_out` (seconds, one-shot effects only): ramp the sprite to
+        nothing over the LAST fade_out seconds of playback instead of
+        cutting at the final frame — footage whose last frame is not
+        fully transparent (baked smoke that never quite dissolves)
+        otherwise holds a ghost card then pops off. The ramp scales
+        coverage (set_alpha_scale -> p3d_ColorScale.a) and emission
+        (set_emission_scale -> u_emission_factor, which composes with
+        the material emission baked by set_screen) together, so the
+        premultiplied composite fades linearly. Ignored for loop=True.
 
         Atlases are gamma-2.2 content: under srgb_inputs the game's
         format walk flags them sRGB like any authored emission map."""
@@ -3059,7 +3069,9 @@ class Pipeline:
         if not loop:
             end = (p3d.ClockObject.get_global_clock().get_frame_time()
                    + n / fps)
-        self._effects.append({'np': effect_np, 'end': end})
+        fade = float(fade_out) if (fade_out and end is not None) else 0.0
+        self._effects.append({'np': effect_np, 'end': end, 'fade': fade,
+                              'fade_k': 1.0})
         return effect_np
 
     def remove_effect(self, effect_np):
@@ -5182,8 +5194,19 @@ class Pipeline:
                             and now >= entry['end']))   # playback over
                 if done:
                     self._cleanup_effect(entry['np'])
-                else:
-                    live.append(entry)
+                    continue
+                if entry['fade'] > 0.0:
+                    # spawn_effect(fade_out=...): coverage + emission
+                    # ramp to zero across the last fade seconds, so
+                    # footage with a non-transparent final frame never
+                    # holds a ghost card then pops off.
+                    k = min((entry['end'] - now) / entry['fade'], 1.0)
+                    k = max(k, 0.0)
+                    if k != entry['fade_k']:
+                        entry['fade_k'] = k
+                        entry['np'].set_alpha_scale(k)
+                        self.set_emission_scale(entry['np'], k)
+                live.append(entry)
             self._effects = live
 
         # ER-010 wet-sand breathing edge: per-frame phase push,
