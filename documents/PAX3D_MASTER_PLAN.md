@@ -1038,9 +1038,22 @@ it: the prior session's uncommitted `spawn_effect(fade_out=)` end-ramp
 (pipeline + 3 test_effects checks, 13→16, green both engines) — found
 as working-tree state, gate-proven, committed separately. Docs: ER-014 Engine notes
 + index row (game repo), `ENGINE_UPDATE_2026-07-26_SESSION_AI_DETAIL_MAPS.md`
-(game repo), arch doc API row, fact #23. Adoption = NPC lane: boot log
-`[heroes] <name>: detail maps on N geoms`, hero_closeup A/B frames,
-PS_BENCH A/B number to file in the ER.
+(game repo), arch doc API row, fact #23. **ADOPTED GAME-SIDE same day
+(game s737, `69c8554`, report in the ER's Game adoption section):**
+boot counts kade 10 / wren 14 / juno 12 geoms with hair-cutout
+ordering intact; juno A/B frames show the gap closed (leather folds,
+zipper embossing, brow/nasolabial structure vs the old flat color
+blocks) shot with the CPU face valve ON throughout — the valve
+composition proven in-game, morphs alive, in-game disable/re-enable
+round-tripped 12→12; PS_BENCH filed as unmeasurable (ON↔ON spread 2.0
+ms exceeds any ON/OFF delta — scene-level term ≈ 0, per the ER
+envelope; caveat on record: selftest camera has heroes mostly
+off-frame). Game added a `PS_NO_DETAIL_MAPS=1` kill switch at the
+apply site. Hair-under-valve boundary confirmed not applicable today
+(morph parts and hair cards are siblings on all three heroes; the NPC
+lane will flag us if a rig ever parents cards under a morph part).
+ER-014 is TERMINAL; their next filing on its heels = the SSS-skin ER
+(NPC_VISUAL_QUALITY Phase 2).
 
 ---
 
