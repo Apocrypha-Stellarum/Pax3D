@@ -96,6 +96,7 @@ Each was established mechanically; each has a permanent guard.
 | 20 | **Panda Python wrapper identity lies in both directions — key caches by `.this`, never `id()`.** Two lookups of the SAME C++ object return different wrapper objects (`id(a) != id(b)`, `a.this == b.this`, measured), so an `id()`-keyed cache never hits for shared objects — and worse, a collected wrapper's id can be REUSED by a different object (false hit → wrong data bound; the Session Z bake cache carried exactly this latent hazard, fixed Session AB). Same trap inverted: pointer-equality conclusions drawn from `id()` are wrong — Session Z's "copy_to clones share the vdata AND the delta textures" was HALF wrong: `copy_to` on a Character subtree pointer-shares RenderStates and their textures (delta textures ARE shared, `.this`-verified) but DEEP-COPIES the animated vdata (≈ the morph-column bytes per clone in RAM, ~18 MB on a production head). Corollary contract (Session AB): a clone of an enabled template arrives converted-but-puppeted (it inherits the template's `u_morphs` block) — `set_gpu_morphs(clone)` detects the variant states, skips the bake, and gives it its own face | Session AB; probe_identity (scratchpad), test_morph_gltf `copy_*` checks |
 | 21 | **Cross-thread Geom destruction vs GVAD handle acquisition corrupts the heap on any wheel that runs mimalloc WITHOUT DeletedChain** — the first attributable native crashes of the fork (planetside chunk mesher, 2026-07-20 + 2026-07-23, both `libp3dtool.dll+0x15a30` in `write_stage_upstream`; the faulting thread is the VICTIM — a second constructor ran over its live object after a freelist double-issue). Single-threaded churn is clean at 97M iterations; stock 1.10.16 immune at 548k (it runs DeletedChain); `workers=1` does NOT mitigate (main-thread destruction is enough). Root regime change: `makepanda.py` set `USE_DELETED_CHAIN=UNDEF` when mimalloc is on, so our wheels were the first ever to run this churn on a general-purpose allocator; two latent upstream defects rode along (cycler stage guards demoted `#ifndef NDEBUG`→`#ifdef _DEBUG` = compiled out at opt-3, and `set_num_stages` freeing `&_single_data` instead of the old array). FIXED 2026-07-24 (GVAD stability window, `d6044b1d8a`): DeletedChain restored alongside mimalloc + guards restored + interior delete fixed; every crashing repro row survives (deep soak 6.9M builds) | GVAD window; `test_gvad_churn` (permanent, FAILed on the pre-fix wheel), `tools/repro_gvad_race/`, `CRASH_GVAD_HANDLE_RACE.md` |
 | 22 | **`Thread::bind_thread`'s returned PT(Thread) was the ONLY reference to the bound ExternalThread while the impl kept a RAW pointer in TLS** — every measured consumer (paxcraft, sfb2 `planetside/world/chunks.py`, repro_min's own `_bind`) drops the return value, deleting the ExternalThread under `_current_thread`; heap reuse then poisons `get_pipeline_stage()` and release-mode cycler paths index `_data[garbage]` unchecked → null/junk CycleData → the GVAD-lookalike signature family (worker Geom-construction AV / stage asserts / `_pointer != nullptr`). Crashing is ALLOCATOR LUCK, not thread count — reproduced at workers=2 (the sfb2 envelope) from the paxcraft recipe; minidump: ref() on NULL CycleData (`fetch_add` on 0x8) under `GeomPrimitivePipelineReader` ← `close_primitive`; proof by intervention (keep the PT → full selftest passes; discard → AV in 3 s). Stock 1.10.16 carries the same upstream dangle (measured: AVs on the discard-shape render-churn row) — inherited, never patched by policy. FIXED 2026-07-26 (Session AH mini-window): `bind_thread` ref()s the bound thread — pinned for process lifetime (no portable foreign-thread exit hook; bounded deliberate leak). Corollary on record: the fork REQUIRES `bind_thread` on foreign threads (`thread != nullptr`, threadWin32Impl.cxx:71 — intentional, no auto-ExternalThread fallback like 1.10) | Session AH; `test_thread_bind` (permanent; bind_pinned FAILed rc=1 on the pre-fix wheel), `CRASH_BIND_THREAD_DANGLE.md` |
+| 23 | **Per-geom shader variants, the override-2 skinning valve, and the override-1 shadow-camera initial state form an override ROCK-PAPER-SCISSORS no single override number can solve** — the valve must beat the depth camera (its flag must reach the depth pass: 2>1), a variant geom must beat the valve (or `RenderState` parent-override-wins ignores the child attrib WHOLESALE and the geom silently reverts to the base shader — the hero face going flat exactly in face range, gate-measured), and the depth camera must beat the variant (or the color-pass shader leaks into the shadow map — on this fork that's not subtle: the camera initial state drops the render root's ShaderAttrib with ALL its inputs, so a leaked pax_pbr variant ASSERTS `Shader input ... is not present` at draw; under LOG_DEPTH it would also write log-space gl_FragDepth into the linear shadow map). Resolution (ER-014): valve-covered variant geoms are re-stamped AT the valve override with the flag folded in (equal overrides merge — color pass gets both), and shadow casters carry a per-camera TAG STATE (`set_tag_state_key` + shadow attrib at override 3, composed onto the tagged valve node AFTER its own state, `cullTraverserData.cxx`) that re-asserts the depth shader above the stamp while letting the valve's flag ride through (the tag attrib is shader-only — an explicitly-set flag on it would stomp the valve's). Two residue traps closed with it: an EMPTY flag-cleared attrib left at override 2 still blankets everything below (clear_hardware_skinning now removes the attrib when it's trivially empty), and the empty tag-state key fully disables the per-node tag lookup (zero cost at rest) | Session AI; test_detail_maps (`valve_blanket_trap_measured`, `valve_shadow_intact` @directional @logdepth, tag lifecycle checks; rescue disabled → engine assert, proven) |
 
 ---
 
@@ -989,6 +990,57 @@ paxcraft `ENGINE_NOTES.md` response, sfb2
 `ENGINE_UPDATE_2026-07-26_BIND_THREAD_PIN.md` + `chunks.py`
 keep-the-PT one-liner. Wheel archived `wheels_bind_pin\`; rollback =
 `wheels_gvad\`.
+
+---
+
+### 4.22 Session AI (2026-07-26) — ER-014 character detail maps (`set_detail_maps`)
+
+The next HIGH in the game's request folder, pure Python/GLSL (no build
+window). Characters ship full Normal + ORM sets the globally-off
+USE_NORMAL_MAP/USE_OCCLUSION_MAP defines never sample (session-695
+field diagnosis: heroes look better in the npc_viewer's
+`use_normal_maps=True` preview buffer than in the world); the global
+flip stays unsafe (tangentless procedural geometry NaN-blacks — ER-012)
+and the user call is characters-only cost scoping.
+`pipeline.set_detail_maps(model_np, enabled=True, normal=True,
+occlusion=True)` — the ER proposal's name and signature verbatim, so
+heroes.py's session-695 hasattr wiring lights up with zero game change
+— composes the defines per geom on the apply_alpha_masks pattern:
+NORMAL only where a normal-map stage (M_normal/M_normal_height, the
+`p3d_TextureNormal` binding set) AND a tangent column exist; OCCLUSION
+only where a metal-rough stage exists (M_selector = what the glTF
+loader stamps on combined ORM; `.r` read as AO); geoms already
+carrying a variant shader (ALPHA_MASK/GLASS/GPU_MORPHS) skipped;
+byte-identical restore; lazy per-combo shader cache on the glass
+discipline. **The hard half was the CPU-valve composition** — fact #23:
+override rock-paper-scissors between valve (2), depth camera (1), and
+geom variant, formally unsolvable by override choice alone. Landed
+mechanism: `set_hardware_skinning`/`clear_hardware_skinning` now
+maintain a valve registry and re-stamp covered detail geoms at the
+valve override with the flag folded in; shadow casters get a
+per-camera tag-state rescue (shadow attrib @3 on the tagged valve
+node, shader-only so the valve flag rides through); empty tag key +
+empty registries = byte-identical shipped pipeline, zero per-frame
+cost. `clear_hardware_skinning` also stops leaving an empty override-2
+attrib behind (a residue blanket that would have swallowed variants
+forever). NEW `test_detail_maps` (18 checks default; +4 shadow
+interplay @directional; @directional@logdepth = the depth-pass leak
+detector), green both engines × all legs; the rescue was FALSIFIED
+in-gate (disabled → engine assert `Shader input ... is not present` in
+the depth pass — the leak is loud, not cosmetic). Stock-1.10 import
+guard: the ORM mode constants getattr-degrade
+(M_occlusion_metallic_roughness is 1.11-only). Gate totals move from
+the bind-pin baseline 83/7/133 · 80/7/136 to **87/7/136 · 84/7/139**
+(+4 PASS +3 SKIP each: the routed pax_pbr adapter runs the new test
+too, plus the two directional legs; logs `gate_er014_*`), FAIL sets
+unchanged — the same 7 known rows both engines. Rider committed with
+it: the prior session's uncommitted `spawn_effect(fade_out=)` end-ramp
+(pipeline + 3 test_effects checks, 13→16, green both engines) — found
+as working-tree state, gate-proven, committed separately. Docs: ER-014 Engine notes
++ index row (game repo), `ENGINE_UPDATE_2026-07-26_SESSION_AI_DETAIL_MAPS.md`
+(game repo), arch doc API row, fact #23. Adoption = NPC lane: boot log
+`[heroes] <name>: detail maps on N geoms`, hero_closeup A/B frames,
+PS_BENCH A/B number to file in the ER.
 
 ---
 

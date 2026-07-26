@@ -26,7 +26,7 @@ ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows',
              'rigid_clips', 'screen', 'alpha_mask', 'viewmodel',
              'gl_clean', 'light_priority', 'effects', 'light_halo',
              'visibility_query', 'spot_exponent', 'gvad_churn',
-             'thread_bind']
+             'thread_bind', 'detail_maps']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 
@@ -139,6 +139,16 @@ def main():
             if test == 'visibility_query' and pipeline == 'pax3d_render':
                 # Session AF: the depth decode's log branch
                 jobs.append((test, pipeline, passthrough + ['--log-depth']))
+            if test == 'detail_maps' and pipeline == 'pax3d_render':
+                # ER-014: the shadow/valve interplay needs a real
+                # directional sun; the log-depth leg is the depth-pass
+                # leak detector (a leaked color-pass variant writes
+                # log-space gl_FragDepth into the linear shadow map).
+                jobs.append((test, pipeline,
+                             passthrough + ['--sun-mode', 'directional']))
+                jobs.append((test, pipeline,
+                             passthrough + ['--sun-mode', 'directional',
+                                            '--log-depth']))
 
     results = []
     print(f'paxtest: {len(jobs)} jobs, python={sys.executable}, '

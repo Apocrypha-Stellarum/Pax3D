@@ -99,11 +99,11 @@ post pass). A structural change (`enable_bloom`, `bloom_levels`,
 | Define | Driven by | Effect |
 |---|---|---|
 | `MAX_LIGHTS` | `max_lights` | Size of `p3d_LightSource[]` |
-| `USE_NORMAL_MAP` | `use_normal_maps` | TBN normal mapping (needs tangents!) |
+| `USE_NORMAL_MAP` | `use_normal_maps` — or per-GEOM via `set_detail_maps` (below) | TBN normal mapping (needs tangents!) |
 | `USE_EMISSION_MAP` | `use_emission_maps` | Emission texture sampling |
 | `ENABLE_SHADOWS` | `enable_shadows` | Shadow-map sampling + per-light `v_shadow_pos` |
 | `ENABLE_FOG` | `enable_fog` | Exponential fog |
-| `USE_OCCLUSION_MAP` | `use_occlusion_maps` | AO from metal-rough texture R channel |
+| `USE_OCCLUSION_MAP` | `use_occlusion_maps` — or per-GEOM via `set_detail_maps` (below) | AO from metal-rough texture R channel |
 | ~~`USE_330`~~ | — | REMOVED (R1.4, 2026-07-23): sources are native GLSL 330; a compat context warns and still works (diagnostic only) |
 | `ENABLE_SKINNING` | `enable_hardware_skinning` | GPU skinning |
 | `MAX_SKINNING_BONES` | `max_skinning_bones` | **Session S**: joint-palette size (`p3d_TransformTable[N]`, scene + shadow pass; default 100 — the ceiling that forced the character pipeline's 352→81 cuts, now a knob) |
@@ -114,6 +114,7 @@ post pass). A structural change (`enable_bloom`, `bloom_levels`,
 | `GLASS` | `set_glass(np)` — per-NODE variant, never in the render-root compile | **Session K**: specular-preserving glass (§9) — alpha attenuates transmission terms only, premultiplied output |
 | `DOUBLE_SIDED_LIGHTING` | `double_sided_lighting` | **Session K**: backfaces shade with the inverted normal (glTF doubleSided semantic, §9) — front faces bit-identical |
 | `ALPHA_MASK` (+`ALPHA_MASK_CUTOFF`) | `apply_alpha_masks(model_np, instanced=)` — per-GEOM variant, never in the render-root compile | **Session W**: glTF alphaMode MASK in-shader discard (§9) — core profile ignores the loader's AlphaTestAttrib (fact #17); cutoff baked per distinct value. **Session AA (ER-009)**: also detects TransparencyAttrib M_binary (cutoff 0.5, the cull semantic); `instanced=True` composes INSTANCING into the variant (shaders cached per (cutoff, instanced)) |
+| `USE_NORMAL_MAP` / `USE_OCCLUSION_MAP` (per-geom) | `set_detail_maps(model_np, enabled=, normal=, occlusion=)` — per-GEOM variant, never in the render-root compile | **Session AI (ER-014)**: character detail maps. NORMAL only where a normal-map stage AND a tangent column exist (NaN-black guard); OCCLUSION only where a metal-rough/ORM stage exists (`.r` = AO); geoms already carrying a variant shader skipped (call AFTER apply_alpha_masks / set_gpu_morphs / set_glass). Composes with `set_hardware_skinning(np, False)`: valve-covered geoms re-stamp at the valve override with the flag folded in, and shadow casters carry a tag-state rescue (shadow attrib @3) so the depth pass keeps the shadow shader — fact #23's override rock-paper-scissors, gate-proven (test_detail_maps incl. @directional @logdepth) |
 
 Notable shader features already present (inherited from the game's fork):
 geometric specular anti-aliasing (Kaplanyan-Hill), Eddington limb darkening
@@ -349,6 +350,16 @@ per-node path, so shadows keep matching the visible pose. The always-on
 palette), so one compiled shader serves both paths. Proven by
 test_skinning: pixel-exact vs the GPU path on the same pose, shadow
 follows pose while opted out, round-trip restores exactly.
+
+Since Session AI (ER-014) the valve coordinates with per-geom detail
+variants: the override-2 attrib would otherwise BLANKET a variant geom
+below it (parent-override-wins ignores the child attrib wholesale —
+fact #23), so `set_hardware_skinning`/`clear_hardware_skinning`
+maintain a valve registry, re-stamp covered `set_detail_maps` geoms at
+the valve override with the flag folded in, and manage the shadow
+casters' tag-state rescue. `clear_hardware_skinning` also removes the
+node attrib entirely when the flag was its only content — a leftover
+EMPTY override-2 attrib is still a blanket.
 
 ### 5.7 Texel snapping: `shadow_texel_snap` (Session J — planetside)
 

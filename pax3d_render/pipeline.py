@@ -574,6 +574,36 @@ class Pipeline:
         self._alpha_mask_entries = []
         self._alpha_mask_shaders = {}
 
+        # Detail-map geoms (set_detail_maps, ER-014): per-geom
+        # NORMAL/OCCLUSION variant so characters render their baked
+        # Normal + ORM detail without flipping the global defines
+        # (unsafe: NaN-black on tangentless procedural geometry, and
+        # the cost belongs to characters only). Entries are (model_np,
+        # [(gnode_np, geom_index, original geom RenderState,
+        # use_normal, use_occlusion)], normal, occlusion) so opt-out
+        # restores the geom states exactly; shaders cached per
+        # (normal, occlusion) combo and invalidated on every pipeline
+        # recompile (the glass discipline). Empty list = the shipped
+        # pipeline exactly.
+        self._detail_map_entries = []
+        self._detail_map_shaders = {}
+        # Per-node hardware-skinning valves (set_hardware_skinning),
+        # tracked so detail-map variants under a valve can be
+        # re-stamped at the valve's own override with the flag folded
+        # in — a plain geom-level variant (override 0) is otherwise
+        # BLANKETED by the valve attrib (override 2): RenderState
+        # parent-override-wins ignores the child attrib wholesale, so
+        # the hero face would lose its detail maps exactly when the
+        # face-range CPU valve flips on (measured, ER-014). The depth
+        # pass is rescued per-camera: shadow casters get a tag state
+        # (override 3) that re-asserts the shadow shader above the
+        # override-2 geom stamps while composing the valve's skinning
+        # flag through. _detail_tagged_valves = valve NodePaths
+        # currently tagged for that rescue.
+        self._skinning_valves = []
+        self._detail_tagged_valves = []
+        self._detail_shadow_tag_active = False
+
         # Terrain splat nodes (set_terrain_splat, ER-001): per-subtree
         # TERRAIN_SPLAT variant of the PBR shader. Entries are
         # (nodepath, config dict); shaders cached per optional-feature
@@ -874,6 +904,9 @@ class Pipeline:
         # Alpha-mask geoms: same recompile-tracking rule.
         self._alpha_mask_shaders = {}
         self._reapply_alpha_masks()
+        # Detail-map geoms (ER-014): same recompile-tracking rule.
+        self._detail_map_shaders = {}
+        self._reapply_detail_maps()
         # Terrain splat nodes: same recompile-tracking rule as glass.
         self._terrain_shaders = {}
         self._reapply_terrain_splat()
@@ -3479,6 +3512,309 @@ class Pipeline:
                                              cutoff, instanced)
 
     # ------------------------------------------------------------------
+    # Character detail maps (ER-014)
+    # ------------------------------------------------------------------
+
+    # Stage modes the engine binds to p3d_TextureNormal /
+    # p3d_TextureMetalRoughness (graphicsStateGuardian.cxx,
+    # fetch_specified_texture: STO_stage_normal_i /
+    # STO_stage_metallic_roughness_i). M_selector aliases
+    # M_metallic_roughness (same enum value) — the glTF loader stamps
+    # combined ORM textures with it. getattr-guarded because stock
+    # 1.10 (the paxtest cross-check engine) has no
+    # M_occlusion_metallic_roughness — a bare reference would kill
+    # pipeline import there.
+    _DETAIL_NORMAL_MODES = tuple(
+        m for m in (getattr(p3d.TextureStage, 'M_normal', None),
+                    getattr(p3d.TextureStage, 'M_normal_height', None))
+        if m is not None)
+    _DETAIL_ORM_MODES = tuple(
+        m for m in (getattr(p3d.TextureStage, 'M_selector', None),
+                    getattr(p3d.TextureStage,
+                            'M_occlusion_metallic_roughness', None))
+        if m is not None)
+    # set_hardware_skinning stamps its flag-only attrib at this
+    # override; valve-covered detail geoms must ride at the SAME
+    # override to merge (child >= parent composes; child < parent is
+    # ignored wholesale).
+    _SKIN_VALVE_OVERRIDE = 2
+    # The shadow-camera tag state re-asserts the depth shader ABOVE the
+    # valve/geom override so the color-pass variant never leaks into
+    # the shadow map (it would write log-space gl_FragDepth under
+    # LOG_DEPTH, and costs the full PBR fragment path).
+    _SHADOW_TAG_KEY = 'pax3d_shadow'
+    _SHADOW_TAG_STATE = 'shadow'
+    _SHADOW_TAG_OVERRIDE = 3
+
+    def _get_detail_map_shader(self, use_normal, use_occlusion):
+        """The USE_NORMAL_MAP/USE_OCCLUSION_MAP PBR variant for this
+        combo (compiled lazily, invalidated by _recompile_pbr — the
+        glass discipline)."""
+        key = (bool(use_normal), bool(use_occlusion))
+        shader = self._detail_map_shaders.get(key)
+        if shader is None:
+            defines = self._get_pbr_defines()
+            name = 'pax_pbr_detail'
+            if key[0]:
+                defines['USE_NORMAL_MAP'] = True
+                name += '_n'
+            if key[1]:
+                defines['USE_OCCLUSION_MAP'] = True
+                name += '_o'
+            shader = shaderutils.make_shader(
+                name, 'pax_pbr.vert', 'pax_pbr.frag', defines)
+            self._detail_map_shaders[key] = shader
+        return shader
+
+    def _find_detail_map_geoms(self, model_np, normal, occlusion):
+        """[(gnode_np, geom_index, original geom RenderState,
+        use_normal, use_occlusion)] for every Geom in the subtree that
+        can safely take each define:
+
+        - NORMAL: the composed state binds a normal-map texture stage
+          (M_normal / M_normal_height — what p3d_TextureNormal reads)
+          AND the vertex data has a tangent column. BOTH are required:
+          without the stage the shader samples the flat default for
+          nothing, and without tangents the TBN normalize() produces
+          NaN — the reason the global flip is unsafe (ER-012: there is
+          no draw-time derivative fallback).
+        - OCCLUSION: the composed state binds a metal-rough stage
+          (M_selector alias M_metallic_roughness, or
+          M_occlusion_metallic_roughness — what
+          p3d_TextureMetalRoughness reads). The shader reads occlusion
+          from that texture's .r, the glTF combined-ORM packing; a
+          metal-rough texture whose .r is not occlusion is the
+          caller's responsibility (this is a per-model opt-in).
+
+        Geoms whose composed state already carries a variant shader
+        (ALPHA_MASK hair cards, GLASS subtrees, GPU_MORPHS faces,
+        TERRAIN_SPLAT, ...) are skipped — variant stacking is a
+        documented limit. Call set_detail_maps AFTER the other
+        per-geom/per-node variants so the scan sees them.
+        """
+        tangent_col = p3d.InternalName.get_tangent()
+        gnode_paths = list(model_np.find_all_matches('**/+GeomNode'))
+        if isinstance(model_np.node(), p3d.GeomNode):
+            gnode_paths.insert(0, model_np)
+        found = []
+        for np_ in gnode_paths:
+            gnode = np_.node()
+            # State from model_np's own node down to this GeomNode
+            # (get_state(other) excludes other's own node state).
+            path_state = model_np.node().get_state().compose(
+                np_.get_state(model_np))
+            for i in range(gnode.get_num_geoms()):
+                state = gnode.get_geom_state(i)
+                full = path_state.compose(state)
+                sattr = full.get_attrib(p3d.ShaderAttrib)
+                if sattr is not None and sattr.get_shader() is not None:
+                    continue    # already a per-geom/per-node variant
+                ta = full.get_attrib(p3d.TextureAttrib)
+                if ta is None:
+                    continue
+                has_normal_tex = False
+                has_orm_tex = False
+                for si in range(ta.get_num_on_stages()):
+                    stage = ta.get_on_stage(si)
+                    if ta.get_on_texture(stage) is None:
+                        continue
+                    mode = stage.get_mode()
+                    if mode in self._DETAIL_NORMAL_MODES:
+                        has_normal_tex = True
+                    elif mode in self._DETAIL_ORM_MODES:
+                        has_orm_tex = True
+                use_n = (normal and has_normal_tex
+                         and gnode.get_geom(i).get_vertex_data()
+                         .has_column(tangent_col))
+                use_o = occlusion and has_orm_tex
+                if use_n or use_o:
+                    found.append((np_, i, state, use_n, use_o))
+        return found
+
+    def _detail_valve_for(self, gnode_np):
+        """The innermost set_hardware_skinning valve at/above this
+        GeomNode's path, as (valve_np, flag) — or None."""
+        best = None
+        for valve_np, flag in self._skinning_valves:
+            if valve_np.is_empty():
+                continue
+            if valve_np == gnode_np or valve_np.is_ancestor_of(gnode_np):
+                if best is None or best[0].is_ancestor_of(valve_np):
+                    best = (valve_np, flag)
+        return best
+
+    def _apply_detail_map_state(self, gnode_np, geom_i, orig_state,
+                                use_n, use_o):
+        """Compose the detail variant onto ONE geom's original state.
+
+        No valve above: shader-only attrib at override 0 — the
+        apply_alpha_masks discipline (root inputs/flags compose
+        through; the shadow camera's initial-state attrib, override 1,
+        still wins the depth pass).
+
+        Valve above (set_hardware_skinning): the valve's flag-only
+        attrib (override 2) would blanket an override-0 geom attrib,
+        silently reverting the geom to the base shader — so the stamp
+        rides at the valve's own override with the valve's flag folded
+        in (equal overrides merge: variant shader + valve flag both
+        win the color pass). Returns the valve NodePath when that path
+        was taken (the caller tags it for the shadow-camera rescue),
+        else None.
+        """
+        prev = orig_state.get_attrib(p3d.ShaderAttrib)
+        sattr = prev if prev is not None else p3d.ShaderAttrib.make()
+        sattr = sattr.set_shader(self._get_detail_map_shader(use_n, use_o))
+        valve = self._detail_valve_for(gnode_np)
+        gnode = gnode_np.node()
+        if valve is None:
+            gnode.set_geom_state(geom_i, orig_state.set_attrib(sattr))
+            return None
+        if valve[1] is not None:    # None = flagless residue valve
+            sattr = sattr.set_flag(p3d.ShaderAttrib.F_hardware_skinning,
+                                   valve[1])
+        gnode.set_geom_state(
+            geom_i,
+            orig_state.set_attrib(sattr, self._SKIN_VALVE_OVERRIDE))
+        return valve[0]
+
+    def set_detail_maps(self, model_np, enabled=True, normal=True,
+                        occlusion=True):
+        """Render a model's baked normal/occlusion maps (ER-014) —
+        per-geom opt-in composition of the USE_NORMAL_MAP /
+        USE_OCCLUSION_MAP defines the pipeline ships globally-off.
+        Returns the number of geoms given the variant (0 = nothing on
+        this model qualifies).
+
+        Why not flip the global defines: USE_NORMAL_MAP rotates the
+        sampled normal through the vertex TBN unconditionally, and a
+        missing tangent column makes that TBN NaN — procedural
+        geometry (planet spheres, scatter, water) renders black,
+        silently. And the cost scoping decision (2026-07-24) is
+        characters-only: no per-pixel TBN + extra samples across
+        terrain/buildings/ships without a deliberate per-asset opt-in.
+
+        Selection per geom (all checkable at apply time, so the call
+        is safe on any model): NORMAL needs a bound normal-map texture
+        stage AND a tangent vertex column; OCCLUSION needs a bound
+        metal-rough (ORM) stage — its .r is read as ambient occlusion,
+        the glTF combined-ORM packing. Geoms already carrying a
+        variant shader (ALPHA_MASK hair cards, GLASS, GPU_MORPHS) are
+        skipped — call this AFTER those APIs so the scan sees them.
+
+        Composes with set_hardware_skinning(np, False) — the hero
+        face-range CPU valve: valve-covered geoms are re-stamped at
+        the valve's override with its flag folded in (both survive),
+        and shadow casters get a tag state that keeps the depth pass
+        on the shadow shader for those geoms. The valve may flip at
+        any time, before or after this call, in any order. CPU-skinned
+        caveat (accepted in the ER): the CPU path may not re-skin
+        tangents with the pose — the lighting error is bounded by head
+        rotation and beats no normal map at all.
+
+        Survives pipeline recompiles (the glass discipline).
+        Re-calling with different normal=/occlusion= reconfigures in
+        place. `enabled=False` restores the saved geom states
+        byte-identically.
+        """
+        normal = bool(normal)
+        occlusion = bool(occlusion)
+        idx = next((i for i, e in enumerate(self._detail_map_entries)
+                    if e[0] == model_np), None)
+        if not enabled:
+            if idx is None:
+                return 0
+            _np, entries, _n, _o = self._detail_map_entries.pop(idx)
+            for gnode_np, geom_i, orig_state, _un, _uo in entries:
+                if not gnode_np.is_empty():
+                    gnode_np.node().set_geom_state(geom_i, orig_state)
+            self._refresh_detail_valve_stamps()
+            return len(entries)
+        if idx is not None:
+            _np, entries, prev_n, prev_o = self._detail_map_entries[idx]
+            if (prev_n, prev_o) == (normal, occlusion):
+                return len(entries)     # idempotent
+            # Reconfigure in place: restore, then rescan with the new
+            # combo (the selection itself depends on the flags).
+            self._detail_map_entries.pop(idx)
+            for gnode_np, geom_i, orig_state, _un, _uo in entries:
+                if not gnode_np.is_empty():
+                    gnode_np.node().set_geom_state(geom_i, orig_state)
+        entries = self._find_detail_map_geoms(model_np, normal, occlusion)
+        if entries:
+            self._detail_map_entries.append(
+                (model_np, entries, normal, occlusion))
+            self._refresh_detail_valve_stamps()
+        return len(entries)
+
+    def _reapply_detail_maps(self):
+        """Re-push the (freshly invalidated) detail variants onto every
+        registered geom after a pipeline shader recompile."""
+        self._detail_map_entries = [e for e in self._detail_map_entries
+                                    if not e[0].is_empty()]
+        self._refresh_detail_valve_stamps()
+
+    def _refresh_detail_valve_stamps(self):
+        """Re-stamp every registered detail geom against the current
+        valve set and true up the shadow-camera tag states. Idempotent;
+        zero work while both registries are empty (the shipped
+        pipeline)."""
+        if not self._detail_map_entries and not self._detail_tagged_valves:
+            return
+        self._skinning_valves = [(np_, f) for np_, f in
+                                 self._skinning_valves
+                                 if not np_.is_empty()]
+        tagged = []
+        for model_np, entries, _n, _o in self._detail_map_entries:
+            if model_np.is_empty():
+                continue
+            for gnode_np, geom_i, orig_state, use_n, use_o in entries:
+                if gnode_np.is_empty():
+                    continue
+                valve_np = self._apply_detail_map_state(
+                    gnode_np, geom_i, orig_state, use_n, use_o)
+                if valve_np is not None and all(valve_np != t
+                                                for t in tagged):
+                    tagged.append(valve_np)
+        for old in self._detail_tagged_valves:
+            if not old.is_empty() and all(old != t for t in tagged):
+                old.clear_tag(self._SHADOW_TAG_KEY)
+        for t in tagged:
+            t.set_tag(self._SHADOW_TAG_KEY, self._SHADOW_TAG_STATE)
+        self._detail_tagged_valves = tagged
+        self._refresh_shadow_tag_states()
+
+    def _refresh_shadow_tag_states(self):
+        """Install/remove the depth-pass rescue on every shadow caster
+        (they are Camera subclasses). Active only while some detail
+        geom is stamped at the valve override; the empty tag-state key
+        fully disables the per-node tag lookup in the caster's cull."""
+        self._detail_shadow_tag_active = bool(self._detail_tagged_valves)
+        if not self.enable_shadows:
+            return
+        for caster in self._get_all_casters():
+            if isinstance(caster, p3d.PointLight):
+                continue
+            self._sync_caster_tag_state(caster)
+
+    def _sync_caster_tag_state(self, caster):
+        """True up ONE caster's tag state. The tag attrib is
+        shader-ONLY (no explicitly-set flags) so the valve's
+        F_hardware_skinning=False keeps composing through to the depth
+        pass — the reason the valve rides at override 2 in the first
+        place (pinned rigs must not GPU-skin their shadow)."""
+        if self._detail_shadow_tag_active:
+            caster.set_tag_state_key(self._SHADOW_TAG_KEY)
+            caster.set_tag_state(
+                self._SHADOW_TAG_STATE,
+                p3d.RenderState.make(
+                    p3d.ShaderAttrib.make(self._make_shadow_shader()),
+                    self._SHADOW_TAG_OVERRIDE))
+        else:
+            if caster.has_tag_state(self._SHADOW_TAG_STATE):
+                caster.clear_tag_state(self._SHADOW_TAG_STATE)
+            caster.set_tag_state_key('')
+
+    # ------------------------------------------------------------------
     # Terrain layer splatting (ER-001)
     # ------------------------------------------------------------------
 
@@ -4010,16 +4346,47 @@ class Pipeline:
             prev = p3d.ShaderAttrib.make()
         attr = prev.set_flag(p3d.ShaderAttrib.F_hardware_skinning,
                              bool(enabled))
-        nodepath.set_attrib(attr, 2)
+        nodepath.set_attrib(attr, self._SKIN_VALVE_OVERRIDE)
+        # ER-014: detail-map variants under this valve must be
+        # re-stamped at the valve override or its attrib blankets them
+        # (parent-override-wins). Zero work when no detail maps exist.
+        for i, (np_, _flag) in enumerate(self._skinning_valves):
+            if np_ == nodepath:
+                self._skinning_valves[i] = (nodepath, bool(enabled))
+                break
+        else:
+            self._skinning_valves.append((nodepath, bool(enabled)))
+        self._refresh_detail_valve_stamps()
 
     def clear_hardware_skinning(self, nodepath):
         """Undo set_hardware_skinning(): the node reverts to the
         pipeline-wide enable_hardware_skinning flag. Other shader state on
-        the node (e.g. its shader inputs) is preserved."""
+        the node (e.g. its shader inputs) is preserved.
+
+        When the flag was the only content, the attrib is removed
+        entirely — a left-over EMPTY attrib at the valve override
+        would still blanket every per-geom variant below it (ER-014).
+        If other shader state keeps the attrib alive, the node stays
+        registered as a flagless valve so detail-map stamps under it
+        keep riding at the valve override."""
         prev = nodepath.get_attrib(p3d.ShaderAttrib)
+        residue = False
         if prev is not None:
-            nodepath.set_attrib(
-                prev.clear_flag(p3d.ShaderAttrib.F_hardware_skinning), 2)
+            cleared = prev.clear_flag(p3d.ShaderAttrib.F_hardware_skinning)
+            if cleared.compare_to(p3d.ShaderAttrib.make()) == 0:
+                nodepath.clear_attrib(p3d.ShaderAttrib)
+            else:
+                nodepath.set_attrib(cleared, self._SKIN_VALVE_OVERRIDE)
+                residue = True
+        valves = []
+        for np_, flag in self._skinning_valves:
+            if np_ == nodepath:
+                if residue:
+                    valves.append((np_, None))
+            else:
+                valves.append((np_, flag))
+        self._skinning_valves = valves
+        self._refresh_detail_valve_stamps()
 
     # ------------------------------------------------------------------
     # GPU morphs (Session Z — fact #15's missing half)
@@ -5127,6 +5494,12 @@ class Pipeline:
                     state = state.add_attrib(attr, 1)
                     state = state.remove_attrib(p3d.CullFaceAttrib)
                     caster.set_initial_state(state)
+                    # ER-014: (re)built initial state means the shadow
+                    # shader may have changed — keep the tag-state
+                    # rescue in step (also covers casters that appear
+                    # after the tag went active).
+                    if self._detail_shadow_tag_active:
+                        self._sync_caster_tag_state(caster)
 
         # Copy background color to offscreen buffer
         if self._filtermgr.buffers:
@@ -5281,8 +5654,10 @@ class Pipeline:
                 result.append(node)
         return result
 
-    def _create_shadow_shader_attrib(self):
-        """Create a shader attrib for shadow-casting geometry."""
+    def _make_shadow_shader(self):
+        """The depth-pass shader for the CURRENT pipeline defines
+        (shared by the caster initial states and the ER-014 tag
+        states)."""
         defines = {
             'ENABLE_SKINNING': self.enable_hardware_skinning,
             'MAX_SKINNING_BONES': self.max_skinning_bones,
@@ -5291,10 +5666,13 @@ class Pipeline:
             # non-instanced casters behavior-identical).
             'INSTANCING': bool(self._instanced_nodes),
         }
-        shader = shaderutils.make_shader(
+        return shaderutils.make_shader(
             'shadow', 'shadow.vert', 'shadow.frag', defines
         )
-        attr = p3d.ShaderAttrib.make(shader)
+
+    def _create_shadow_shader_attrib(self):
+        """Create a shader attrib for shadow-casting geometry."""
+        attr = p3d.ShaderAttrib.make(self._make_shadow_shader())
         if self.enable_hardware_skinning:
             attr = attr.set_flag(p3d.ShaderAttrib.F_hardware_skinning, True)
         if self._instanced_nodes:
