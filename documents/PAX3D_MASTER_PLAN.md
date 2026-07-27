@@ -1131,6 +1131,103 @@ quick-ref entries (committed game-side, `bc35e24`).
 
 ---
 
+### 4.24 Session AK (2026-07-28) — the far-field consult: `follow=` scene cameras; readback ask queued
+
+The voxel game's Builder Lane (the cliff-monastery dev) filed a
+three-part report in ENGINE_NOTES.md: the far-field ask (megastructures
+are invisible beyond the ~160 m chunk stream; they want a game-side
+static horizon ring + build imposters and needed three engine answers
+first), a fresh "+1" on the photo-mode aux camera, and an escalation of
+the MSAA edge-on hairline seams. All three answered in-channel
+same-day; one small engine feature landed to complete the recipe.
+
+**The far-field answers (the headline — "three answers, not code," and
+that is mostly what they got):**
+
+1. **Depth: no problem exists.** The lane is `register_scene_camera`
+   background regions on the HDR scene buffer — each region clears
+   depth, so the ring camera carries its own lens (e.g. near 50 / far
+   6000: 24-bit depth resolves ~1 cm at 3 km, Δz ≈ z²/(near·2²⁴))
+   while the world keeps its short far plane. No log depth (their
+   flare/viewmodel 'range' constraint untouched), no reversed-z (not
+   wired, not needed), no camera-relative rendering. Composite order =
+   ascending region sort; recommended layering sky (−100, 'hpr') →
+   ring (−50, 'pose', clear_color=None) → world (0). Interaction
+   documented, not discovered later: the ring never writes the main
+   scene depth, so visibility queries can't see it — a ~20-line
+   game-side horizon-altitude flare gate from their own `column_info`
+   prescribed if they care.
+2. **Cheap material lane: own graph + own ~20-line shader.** A
+   separate scene root is never traversed by the main camera, gets no
+   PBR inputs, and is never rasterized into the shadow cascade —
+   zero cascade budget, no flags. (`exclude_from_shadows` remains the
+   valve for under-render subtrees.) Their Session-7 ORM trap is
+   structurally impossible on an own-shader ring.
+3. **Haze: one system, two consumers.** `set_enable_atmosphere` once;
+   `set_atmosphere_params(...)` per frame from their daynight keys
+   (uniform-only). The ring shader reproduces the engine's analytic
+   aerial-perspective form (quoted verbatim in the reply from
+   pax_pbr.frag) with the same values — near-terrain haze and ring
+   haze meet seamlessly at the stream boundary.
+
+**Landed: `register_scene_camera(..., follow='pose'|'hpr')`** (the one
+missing piece — camera tracking + photo-tour correctness). The
+pipeline mirrors the main camera onto follow cameras each frame in
+`_update` ('pose' = position+rotation for world-anchored far scenes,
+'hpr' = rotation-only sky domes; copied transform applied LOCAL —
+parent follow cameras at their scene root). `render_snapshot` re-aims
+follow cameras to the snapshot pose for its one frame and restores
+exactly — closes the Session-AJ "aux transforms are game-owned"
+snapshot limit for follow cameras, and retires the voxel game's
+apiserver sky-reparent hack once they migrate their sky off
+`app.camera` (required anyway for the layering — their sky currently
+draws in the MAIN region and would paint over the ring). Also fixed
+while in there: `_update_main_region_clears` now saves and RESTORES
+the main region's original clear state when the last background camera
+unregisters (used to stay flipped forever). Gate: test_snapshot
+section 9, +6 checks (live sync, composite-behind-world, snapshot
+re-aim, exact restore, hpr mode, unregister-restores) — green both
+engines, both legs; the test's far scene is itself the worked example
+of the own-graph ring recipe.
+
+**Photo-mode "+1": answered as already-shipped** (Session AJ landed it
+the same day they filed; their own apiserver `/screenshot` already
+runs on it). The reply maps their four workarounds (exec-head boot,
+viewmodel hide, HUD hiding, selftest save-stomping) onto the shipped
+API, plus the sky-hack retirement above.
+
+**MSAA edge-on hairline seams: triaged with a prescription, no engine
+work yet.** Mechanism hypothesis: adjacent chunks are separate meshes
+under separate transforms → shared boundary corners reach clip space
+through different float32 matrix paths → ulp-scale cracks, invisible
+face-on, stacked into a full-height line when the shared 16×384 face
+collapses edge-on to ~one column; MSAA resolves background through the
+crack (their alpha≈232 measurement = minority-sample leak). Resolve-
+side engine fixes can't help (can't invent coverage). Prescribed:
+game-side A/B — mesh a 3×3 region with WORLD-space verts under one
+identity root (voxel corners are integers, exact in float32; one
+modelview ⇒ bit-identical clip results ⇒ watertight) and re-shoot the
+monastery vantage. If a hairline survives THAT, it comes back here for
+a rasterizer look in a build window. Photography workaround today:
+render_snapshot at 2× + downscale (4× SSAA).
+
+**Queued, not landed: PBO round-robin framebuffer readback** (their F9
+H.264 recorder ask, filed mid-session; sync RTM_copy_ram readback
+measured +4.7 ms/frame floor @1600×900). C++/GSG class → build-window
+queue row (CLAUDE.md) with their contract (BGRA bytes view, 1–2-frame
+latency) and field notes (`RTM_triggered_copy_ram` ~10 ms SLOWER than
+continuous on this stack; 8 KB BufferedWriter pipe-write GIL convoy).
+LOW priority, their words — batches into the next scheduled window.
+
+Gate: full matrix re-run (`gate_ak_*`), totals unchanged vs Session AJ
+(the +6 checks live inside the existing test_snapshot jobs) — Pax3D
+90/7/139 · stock 87/7/142, FAIL sets unchanged. Docs: arch doc §6
+(follow= + clear-restore), CLAUDE.md voxel-lane row + build-window
+queue row, sfb2 USING_PAX3D_RENDER quick-ref (follow=), reply inline
+in paxcraft ENGINE_NOTES.md.
+
+---
+
 ## 5. Risks
 
 | Risk | Mitigation |

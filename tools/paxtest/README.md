@@ -515,7 +515,13 @@ snapshot chain's own depth target, resize, and (@directional) the
 SHADOW CONTRACT both ways: a cluster outside the extent samples lit
 (the documented main-camera coupling), `shadow_center=` recentres for
 the one frame, and center/extent restore exactly. Repeat-shot latency
-measured as an INFO row (3–24 ms).
+measured as an INFO row (3–24 ms). Section 9 (Session AK — the
+far-field lane): `register_scene_camera(follow='pose'|'hpr')` — an
+own-graph, own-shader background scene (the horizon-ring recipe)
+behind the world; checks live main-camera mirroring, background pixels
+surviving the main region, snapshot re-aim to the shot pose + exact
+restore, rotation-only 'hpr' mode, and main-region clear restoration
+when the last background camera unregisters.
 
 **`test_ftl_blur.py`** — the FTL warp distortion pass (radial blur +
 chromatic aberration in tonemap); asserts zero-strength passthrough and

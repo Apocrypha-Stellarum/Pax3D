@@ -434,21 +434,38 @@ Instead the pipeline owns auxiliary display regions:
 ```python
 reg = pipeline.register_scene_camera(cam_np, sort=-100,
                                      clear_color=(0,0,0,1),
-                                     clear_depth=True, name='sky_camera')
+                                     clear_depth=True, name='sky_camera',
+                                     follow=None)   # None | 'pose' | 'hpr'
 pipeline.unregister_scene_camera(reg)
 ```
 
 Internals: `_attach_scene_camera` makes a DR on `_filtermgr.buffers[0]`
 with the given sort/clears; for any background camera (sort < 0) the MAIN
 scene DR is set to color-clear OFF / depth-clear ON (preserves background
-pixels, standard sky-camera contract). `_setup_tonemapping()` ends with
-`_reattach_scene_cameras()`, so every rebuild (bloom/TAA toggles) re-creates
-all registered DRs on the new buffer. Proven by `paxtest test_rebuild`
-(manual-discovery pattern dies, registration survives).
+pixels, standard sky-camera contract; since Session AK the original clear
+state is saved and RESTORED when the last background camera unregisters).
+`_setup_tonemapping()` ends with `_reattach_scene_cameras()`, so every
+rebuild (bloom/TAA toggles) re-creates all registered DRs on the new
+buffer. Proven by `paxtest test_rebuild` (manual-discovery pattern dies,
+registration survives).
 
-Caller keeps ownership of the camera node: lens, camera masks, scene root,
-transform sync are the caller's business (the game's `sky_camera.py` shows
-the pattern and auto-uses this API when available).
+Caller keeps ownership of the camera node: lens, camera masks, and scene
+root. Transform sync is the caller's business ONLY when `follow=None`
+(the game's `sky_camera.py` shows the hand-slaved pattern): with
+`follow='pose'` the pipeline mirrors the main camera's render-relative
+position AND rotation onto the camera every frame (world-anchored far
+scenes — horizon rings, build-massing imposters — parallax correctly),
+with `follow='hpr'` rotation only (origin-pinned sky domes). The copied
+transform is applied as the camera's LOCAL transform — parent follow
+cameras at their scene root. `render_snapshot` re-aims follow cameras to
+the snapshot pose for its one frame and restores them (the Session-AJ
+"aux transforms are game-owned" snapshot limit now applies only to
+`follow=None` cameras). The far-field layering this serves (voxel-lane
+Session AK consult): sky at sort −100 `follow='hpr'`, horizon ring at
+sort −50 `follow='pose'` with `clear_color=None`, world at sort 0 — each
+region clears depth, so a 2–6 km ring lens coexists with a short world
+far plane with no log depth and no precision interaction. Gated:
+test_snapshot section 9 (six checks, both engines).
 
 Gotcha for tests/tools: the FilterManager buffer appears in
 `GraphicsEngine`'s window list only after a frame renders — anything doing
