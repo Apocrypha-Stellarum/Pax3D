@@ -1,6 +1,11 @@
 Pax3D
 =====
 
+![License: Modified BSD](https://img.shields.io/badge/license-Modified%20BSD-blue)
+![Python 3.13](https://img.shields.io/badge/python-3.13-3776AB)
+![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64%20%C2%B7%20OpenGL%20core-informational)
+![Verified by paxtest](https://img.shields.io/badge/every%20claim-measured-success)
+
 **A modern, verified 3D engine for Python — with a first-party physically-based
 rendering stack built in.**
 
@@ -27,6 +32,29 @@ What makes it different:
   simulation and a voxel game in daily use; engine features arrive because a
   real game needed them, and stability fixes come from real field crashes,
   reproduced and gated.
+
+Gallery
+=======
+
+Every shot below is an automated offscreen render from the testbed
+(`--selftest`) — the same scene developers use to eyeball features as they
+land, with assets from the games.
+
+**Orbital atmospheric scattering** (`set_orbital_atmosphere`) — limb, halo
+and terminator rendered from space, verified against an independent
+integrator to ≤0.003:
+
+![Orbital atmosphere limb over Earth](documents/media/orbital_atmosphere.png)
+
+**Station and fleet over Earth** — PBR pipeline, directional sun with
+shadow mapping, HDR bloom, emissive materials:
+
+![Station and fleet in Earth orbit](documents/media/station_fleet.png)
+
+**The testbed scene** — sun, planet, station, ships; boots in seconds with
+hotkeys for every pipeline feature:
+
+![Station and cargo hauler against Earth](documents/media/station_earth.png)
 
 Feature Highlights
 ==================
@@ -83,7 +111,8 @@ Where it's going
 The roadmap is driven by the games: VR (OpenXR, seated PCVR) is planned and
 scoped, a Vulkan backend is under evaluation, and feature lanes (terrain,
 ships, characters, effects) advance on field evidence. See
-`documents/PAX3D_MASTER_PLAN.md` for the full program and
+[ROADMAP.md](ROADMAP.md) for the public roadmap,
+`documents/PAX3D_MASTER_PLAN.md` for the full program, and
 [CHANGELOG.md](CHANGELOG.md) for what has landed.
 
 Games built on Pax3D
@@ -122,6 +151,8 @@ Documentation
 
 | Document | Contents |
 |---|---|
+| `documents/USING_PAX3D_RENDER.md` | **Using the renderer** — the adopter's guide to `pax3d_render/`: init, sun modes, shadows, the full API quick reference |
+| [ROADMAP.md](ROADMAP.md) | Where the engine is going: active lanes, the engine queue, VR, Vulkan |
 | `documents/PAX3D_MASTER_PLAN.md` | The phased engineering program and session log |
 | `documents/PAX3D_RENDER_ARCHITECTURE.md` | How the rendering pipeline works: passes, sun modes, shadows, invariants, API |
 | `documents/ENGINE_INTERNALS.md` | Deep dives into engine mechanisms |
