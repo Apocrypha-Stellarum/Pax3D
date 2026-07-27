@@ -36,6 +36,18 @@ further back. Checks:
      the pipeline's shadow center is restored exactly afterwards.
   8. repeat-shot timing INFO (persistent chain: one extra rendered
      frame per shot, the AI-loop latency).
+  9. FOLLOW CAMERAS (Session AK, the far-field lane): a separate-graph
+     background scene (own root, own const shader — the horizon-ring
+     recipe) with a BRIGHT quad due north and a DIM quad due east,
+     drawn by an aux camera registered with follow='pose' at sort -50.
+     Checks: the pipeline mirrors the main camera onto it each frame;
+     background pixels survive the main region (bright north / dim
+     east in the WINDOW); a snapshot aimed east shows the east
+     background while the player looks north (snapshot re-aims follow
+     cameras) and the follow camera's transform is restored after the
+     shot; follow='hpr' copies rotation only (sky-dome idiom); and
+     unregistering the last background camera restores the main
+     region's original clears (the subject renders normally again).
 
 Only meaningful for pipelines exposing render_snapshot (pax3d_render).
 """
@@ -271,6 +283,98 @@ def main():
                   f'{dt * 1000:.1f} ms for a repeat shot on the '
                   f'persistent chain (one extra rendered frame — the '
                   f'AI-loop latency, vs ~30 s for a subprocess boot)')
+
+    # --- 9. Follow cameras (Session AK, the far-field lane) -------------
+    # A far scene in its OWN graph with its OWN trivial shader — the
+    # horizon-ring recipe: never lit, never shadowed, never traversed by
+    # the main camera; composited behind the world by a background
+    # region on the pipeline's scene buffer.
+    bg_root = p3d.NodePath('bg_far_scene')
+    bright = scenes.make_emissive_quad(bg_root, h.use_330, 2.5, 80.0)
+    bright.set_pos(0, 200, 0)                    # due north, faces -Y
+    dim = scenes.make_emissive_quad(bg_root, h.use_330, 0.3, 80.0)
+    dim.set_pos(200, 0, 0)
+    dim.set_h(-90)                               # faces -X (the viewer)
+    bg_lens = p3d.PerspectiveLens()
+    bg_lens.set_near_far(0.5, 6000.0)            # the far-field frustum
+    bg_cam = p3d.Camera('bg_cam')
+    bg_cam.set_lens(bg_lens)
+    bg_cam_np = bg_root.attach_new_node(bg_cam)
+    reg = pipeline.register_scene_camera(bg_cam_np, sort=-50,
+                                         clear_color=(0, 0, 0, 1),
+                                         follow='pose')
+    h.step(2)
+    p_main = base.camera.get_pos(base.render)
+    p_bg = bg_cam_np.get_pos()
+    h.report.check('follow_live_sync',
+                   (p_bg - p_main).length() < 1e-4,
+                   f'aux cam {tuple(round(v, 3) for v in p_bg)} vs main '
+                   f'{tuple(round(v, 3) for v in p_main)} — pipeline '
+                   f'mirrors the main camera each frame')
+
+    base.camera.set_pos(0, 40, 0)                # empty foreground
+    base.camera.set_hpr(0, 0, 0)                 # looking north
+    h.step(2)
+    north_lum = common.avg_lum(h.capture(), h.win_w // 2, h.win_h // 2,
+                               half=3)
+    base.camera.set_hpr(-90, 0, 0)               # looking east
+    h.step(2)
+    east_lum = common.avg_lum(h.capture(), h.win_w // 2, h.win_h // 2,
+                              half=3)
+    h.report.check('background_composites',
+                   north_lum > 0.6 and 0.02 < east_lum < north_lum - 0.2,
+                   f'window centre north={north_lum:.3f} (bright far '
+                   f'quad), east={east_lum:.3f} (dim far quad) — '
+                   f'background pixels survive the main region and the '
+                   f'follow camera tracks the view')
+
+    base.camera.set_hpr(0, 0, 0)                 # player looks north...
+    h.step(2)
+    tex = pipeline.render_snapshot((0, 40, 0), (-90, 0, 0),
+                                   size=(240, 180))
+    snap_lum = common.avg_lum(tex_to_img(tex), 120, 90, half=3)
+    h.report.check('snapshot_reaims_follow',
+                   0.02 < snap_lum < north_lum - 0.2,
+                   f'snapshot aimed east centre={snap_lum:.3f} (the DIM '
+                   f'east quad) while the player looks north at the '
+                   f'bright one — the shot re-aims follow cameras')
+    p_bg = bg_cam_np.get_pos()
+    hpr_bg = bg_cam_np.get_hpr()
+    h.report.check('follow_restored_after_shot',
+                   (p_bg - p3d.Vec3(0, 40, 0)).length() < 1e-4
+                   and abs(hpr_bg[0]) < 1e-4,
+                   f'aux cam after the shot: pos='
+                   f'{tuple(round(v, 3) for v in p_bg)}, '
+                   f'h={hpr_bg[0]:.4f} (pre-shot pose restored)')
+
+    pipeline.unregister_scene_camera(reg)
+    sky_cam_np = bg_root.attach_new_node(p3d.Camera('sky_cam'))
+    reg2 = pipeline.register_scene_camera(sky_cam_np, sort=-40,
+                                          follow='hpr')
+    base.camera.set_pos(77, 33, 11)
+    base.camera.set_hpr(123, 5, 0)
+    h.step(1)
+    h.report.check('follow_hpr_rotation_only',
+                   sky_cam_np.get_pos().length() < 1e-6
+                   and abs(sky_cam_np.get_hpr()[0] - 123.0) < 1e-3
+                   and abs(sky_cam_np.get_hpr()[1] - 5.0) < 1e-3,
+                   f'follow="hpr": pos stays '
+                   f'{tuple(round(v, 3) for v in sky_cam_np.get_pos())} '
+                   f'(origin-pinned dome), hpr tracks '
+                   f'{tuple(round(v, 2) for v in sky_cam_np.get_hpr())}')
+
+    pipeline.unregister_scene_camera(reg2)
+    base.camera.set_pos(0, -30, 0)
+    base.camera.set_hpr(0, 0, 0)
+    h.step(2)
+    subj_lum = common.avg_lum(h.capture(), h.win_w // 2, h.win_h // 2,
+                              half=3)
+    h.report.check('background_unregister_restores',
+                   subj_lum > 0.4,
+                   f'after the last background camera unregisters the '
+                   f'main region clears are restored — subject centre '
+                   f'reads {subj_lum:.3f} (lit white card, no stale '
+                   f'background state)')
 
     h.report.finish()
 

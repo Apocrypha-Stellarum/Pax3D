@@ -317,13 +317,14 @@ class _SceneCameraRegistration:
     """Internal record of an auxiliary camera attached to the scene buffer."""
 
     def __init__(self, camera_np, sort, clear_color, clear_depth, name,
-                 depth_range=None):
+                 depth_range=None, follow=None):
         self.camera_np = camera_np
         self.sort = sort
         self.clear_color = clear_color
         self.clear_depth = clear_depth
         self.name = name
         self.depth_range = depth_range
+        self.follow = follow
         self.display_region = None
         self.buffer = None
 
@@ -771,6 +772,9 @@ class Pipeline:
 
         # Auxiliary scene cameras (survive rebuilds) — R1 addition
         self._scene_cameras = []
+        # Main-region clear state before the first background camera
+        # flipped it (Session AK) — restored when the last one leaves.
+        self._main_region_saved_clears = None
 
         # Photo-mode snapshot chain (render_snapshot, Session AJ) —
         # lazily built on first use, inactive except during a shot,
@@ -969,7 +973,7 @@ class Pipeline:
 
     def register_scene_camera(self, camera_np, sort=-100,
                               clear_color=(0, 0, 0, 1), clear_depth=True,
-                              name='aux_scene_camera'):
+                              name='aux_scene_camera', follow=None):
         """Attach an auxiliary camera to the pipeline's scene buffer.
 
         The display region is owned by the pipeline and is automatically
@@ -979,20 +983,41 @@ class Pipeline:
 
         Args:
             camera_np: NodePath of a Camera node (caller owns lens, masks,
-                       scene root, and transform).
+                       scene root, and — unless follow= is set — transform).
             sort: display-region sort. Negative renders BEFORE the main
                   scene (background, e.g. a sky camera).
             clear_color: RGBA tuple to clear this region to, or None to
                          not clear color.
             clear_depth: whether this region clears depth before drawing.
+            follow: None (default — caller drives the camera transform),
+                'pose', or 'hpr' (Session AK, the far-field lane). The
+                pipeline then mirrors the MAIN camera onto this camera
+                every frame: 'pose' copies position AND rotation (a
+                world-anchored far scene — horizon rings, build-massing
+                imposters — parallaxes correctly as the player moves);
+                'hpr' copies rotation only (the classic origin-pinned
+                sky-dome idiom). The copied transform is main-camera-
+                relative-to-render, applied as this camera's LOCAL
+                transform — parent follow cameras at their scene root
+                (identity), with that root's coordinates == world
+                coordinates ('pose') or camera-centred ('hpr').
+                render_snapshot re-aims follow cameras to the SNAPSHOT
+                pose for its one frame and restores them — photo tours
+                get the correct background with no game-side hooks (the
+                Session-AJ "game-owned transforms" snapshot limit no
+                longer applies to follow cameras).
 
         For any background camera (sort < 0), the main scene region is set
-        to preserve background pixels: color clear off, depth clear on.
+        to preserve background pixels: color clear off, depth clear on
+        (restored when the last background camera unregisters).
 
         Returns an opaque registration handle for unregister_scene_camera().
         """
+        if follow not in (None, 'pose', 'hpr'):
+            raise ValueError(f'follow must be None, "pose" or "hpr", '
+                             f'got {follow!r}')
         reg = _SceneCameraRegistration(camera_np, sort, clear_color,
-                                       clear_depth, name)
+                                       clear_depth, name, follow=follow)
         self._scene_cameras.append(reg)
         self._attach_scene_camera(reg)
         return reg
@@ -1265,14 +1290,28 @@ class Pipeline:
 
     def _update_main_region_clears(self):
         """With a background camera present, the main region must preserve
-        the background's color output but still clear depth."""
+        the background's color output but still clear depth. When the
+        last background camera unregisters, the region's original clear
+        state is restored (Session AK — it used to stay flipped)."""
         main_dr = self._find_main_display_region()
         if main_dr is None:
             return
         has_background = any(r.sort < 0 for r in self._scene_cameras)
         if has_background:
+            if self._main_region_saved_clears is None:
+                self._main_region_saved_clears = (
+                    main_dr.get_clear_color_active(),
+                    main_dr.get_clear_depth_active())
             main_dr.set_clear_color_active(False)
             main_dr.set_clear_depth_active(True)
+        elif self._main_region_saved_clears is not None:
+            # Rebuild note: a chain rebuild creates a fresh main region
+            # with default FilterManager clears — the saved pair equals
+            # those defaults, so restoring onto the new region is exact.
+            color_active, depth_active = self._main_region_saved_clears
+            main_dr.set_clear_color_active(color_active)
+            main_dr.set_clear_depth_active(depth_active)
+            self._main_region_saved_clears = None
 
     def _reattach_scene_cameras(self):
         """Called after every _setup_tonemapping(): old buffer (and its
@@ -5732,6 +5771,24 @@ class Pipeline:
         # Camera world position for IBL reflections — raw Z-up, no CS conversion
         cam_pos = self.camera_node.get_pos(self.render_node)
         self.render_node.set_shader_input('camera_world_position', cam_pos)
+
+        # Aux scene cameras with follow= (Session AK, the far-field
+        # lane): mirror the main camera each frame — 'pose' for
+        # world-anchored far scenes, 'hpr' for origin-pinned sky domes.
+        # render_snapshot re-aims these to the snapshot pose per shot.
+        if self._scene_cameras:
+            cam_hpr = None
+            for reg in self._scene_cameras:
+                if (reg.follow is None
+                        or getattr(reg, 'is_viewmodel', False)
+                        or reg.camera_np is None
+                        or reg.camera_np.is_empty()):
+                    continue
+                if cam_hpr is None:
+                    cam_hpr = self.camera_node.get_hpr(self.render_node)
+                if reg.follow == 'pose':
+                    reg.camera_np.set_pos(cam_pos)
+                reg.camera_np.set_hpr(cam_hpr)
 
         # Orbital-atmosphere quads follow the camera (R5.5)
         if self._orbital_atmos:

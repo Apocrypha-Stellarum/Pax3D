@@ -41,9 +41,12 @@ pipeline recentres for the one frame and restores exactly.
 
 Known limits (documented, not defended by gates):
 - Registered aux scene cameras (sky-background pattern) are replicated
-  onto the snapshot buffer at their sorts, but their TRANSFORMS are
-  game-owned — a sky camera slaved to the main camera renders the main
-  view's sky orientation unless the game re-aims it for the shot.
+  onto the snapshot buffer at their sorts. Cameras registered with
+  follow='pose'/'hpr' (Session AK) are re-aimed to the SNAPSHOT pose
+  for the one frame and restored — photo tours get the right
+  background for free. Cameras WITHOUT follow keep their game-owned
+  transforms: a hand-slaved sky camera renders the main view's sky
+  orientation unless the game re-aims it for the shot.
 - The viewmodel is excluded (photo mode does not show the player's
   hands from a third-person pose).
 - App-owned buffers outside the pipeline chain stay active and render
@@ -458,6 +461,20 @@ class SnapshotRenderer:
         snap_pos = p3d.Vec3(*pos)
         main_cam_pos = pl.camera_node.get_pos(pl.render_node)
         pl.render_node.set_shader_input('camera_world_position', snap_pos)
+        # Follow cameras (Session AK): aim the aux background cameras at
+        # the snapshot pose for this one frame (restored in finally).
+        saved_follow = []
+        snap_hpr = p3d.VBase3(*hpr)
+        for reg in pl._scene_cameras:
+            if (getattr(reg, 'follow', None) is None
+                    or getattr(reg, 'is_viewmodel', False)
+                    or reg.camera_np is None or reg.camera_np.is_empty()):
+                continue
+            saved_follow.append((reg, p3d.Vec3(reg.camera_np.get_pos()),
+                                 p3d.VBase3(reg.camera_np.get_hpr())))
+            if reg.follow == 'pose':
+                reg.camera_np.set_pos(snap_pos)
+            reg.camera_np.set_hpr(snap_hpr)
         if pl._orbital_atmos:
             pl._update_orbital_atmos(snap_pos)
         if pl._halo_nodes:
@@ -501,6 +518,11 @@ class SnapshotRenderer:
                 pl.set_shadow_extent(saved_shadow[0],
                                      depth=saved_shadow[1],
                                      center=saved_shadow[2])
+            for reg, f_pos, f_hpr in saved_follow:
+                if reg.camera_np is not None \
+                        and not reg.camera_np.is_empty():
+                    reg.camera_np.set_pos(f_pos)
+                    reg.camera_np.set_hpr(f_hpr)
             pl.render_node.set_shader_input('camera_world_position',
                                             main_cam_pos)
             if pl._orbital_atmos:
