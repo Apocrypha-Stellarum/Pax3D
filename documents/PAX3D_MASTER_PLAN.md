@@ -1228,6 +1228,85 @@ in paxcraft ENGINE_NOTES.md.
 
 ---
 
+### 4.25 Session AL (2026-07-28) — the water surface promoted into the engine (LANDED, adopted by planetside same-day)
+
+The voxel game's Water Lane ask, filed the same day: the user directed
+BOTH games onto one water system (paxcraft ported planetside's
+`world/water.py` + shaders near-verbatim as `ocean.py`), so promote
+the surface into `pax3d_render` proper — engine-owned shader pair +
+follow grid, a `WaterParams` uniform block, a depth PROVIDER contract
+— and fold in two findings from the port. LOW urgency by their
+framing, but pure Python/GLSL and both game copies were already
+convergent, so it landed same-day.
+
+**Landed: `pax3d_render/water.py` + `shaders/water_surface.{vert,frag}`
+via `pipeline.build_water_surface(parent_np, water_z, params=,
+**geometry)`.** The shader pair is the field-proven planetside recipe
+(sessions 449-453 lineage + the Sea-of-Thieves shore pass: Gerstner
+swells with analytical normals + shoaling, noise-not-sine fragment
+normals, restrained Fresnel, Beer-Lambert body colour, depth-keyed
+shore melt, slope-gated contact foam + marching bands, crest-pinch
+whitecaps) with every game-specific deviation promoted to a uniform:
+`swell_scale`/`swell_fade` (voxel seas compress wavelengths and fade
+nearer), `whitecap`/`whitecap_gate` (their patches shrunk ~3x),
+`uncovered` policy (`'deep'` = planetside horizon ocean, `'dry'` =
+render NOTHING beyond the depth window — far-field land lives there;
+alpha exactly 0 via the melt multiplier, gate-checked byte-identical),
+`rim_fade` (their single-grid alpha rim; vertex-interpolated v_edge).
+Geometry kwargs cover both shapes: near grid + optional horizon
+annulus, or a windowed grid. `WaterParams` DEFAULTS are pinned
+literally to the planetside constants in-gate (migration honesty: a
+bare build IS their ocean).
+
+**The provider contract:** the game bakes seafloor depth however its
+world knows it (planetside: analytic heightfield bake; paxcraft:
+worldgen + resident-chunk overlay) and hands over an R32F world-z
+window via `set_seafloor(tex, origin_xy, size_m)` — or binds
+`u_seafloor`/`u_sf_origin_size` on `.root` directly; uniform names
+deliberately match the game copies so existing bakers migrate with
+zero changes. Underwater eye effects, swimming, audio stay game-side.
+
+**Both port findings are engine behavior now:**
+1. **Analytic haze, not exp fog** — the fragment stage carries the
+   exact pax_pbr.frag aerial-perspective block; `update()` feeds it
+   from `pipeline.atmo_*` each frame (atmosphere off / density 0 =
+   exact no-op). Sea, terrain and far-field ring haze as ONE system in
+   any consumer that drives `set_atmosphere_params`.
+2. **The HDR-sun luminance knee** — `water_sun(color, knee)` applied
+   inside `set_environment()` (s = 1/(1+0.25·max_c); their filed probe
+   points are the gate check). Day-night HDR sun multipliers no longer
+   blow the ~1.0-sun-tuned body recipe to white-cyan.
+
+**Gate: NEW test_water, 15 checks × @game + @directional, green both
+engines.** The noise-heavy shader is checked where the noise cancels:
+defaults-pinned, knee curve, shallow derivation, sun-black
+Beer-Lambert body analytic (uncovered-deep 40 m + provider-window
+1.5 m + 0.05 m melt), dry/rim byte-identical composites, uniform
+readback of the knee, and the headline — the haze block matched
+against an independent Python ray-evaluation (lens-extruded per-pixel
+geometry, three depths × side-sun / sun-lobe / param-change; worst
+error 0.002; the sun-black+sky-black configuration makes the pixel
+purely the analytic inscatter).
+
+**Adopted by planetside same-day** (game repo): `world/water.py`
+builds through the engine module by default — both findings live
+(their plain exp fog replaced by the atmosphere feed, which also means
+the surface now correctly tracks the underwater medium repurpose; noon
+sun 1.35+ rides the knee) — with `PS_LEGACY_WATER=1` keeping the old
+game-shader path for A/B until walk sign-off. Their SeafloorMap,
+UnderwaterFX and F5 env-tuning drive the engine surface unchanged
+through the shared uniform names. paxcraft migration map filed in the
+reply (~400 of their 658 lines retire; their frozen exe waits on the
+standing AJ/AK re-vendor, nothing new).
+
+Gate: Pax3D 92/7/143 · stock 89/7/146 (from AK 90/7/139 · 87/7/142:
++2 PASS +4 SKIP each — the test_water jobs; FAIL sets unchanged; logs
+`gate_al_*`). Docs: arch doc §9.1 water module, CLAUDE.md voxel-lane
+row, paxtest README row, reply inline in paxcraft ENGINE_NOTES.md,
+sfb2 WATER.md + USING_PAX3D_RENDER quick-ref (game-side commit).
+
+---
+
 ## 5. Risks
 
 | Risk | Mitigation |

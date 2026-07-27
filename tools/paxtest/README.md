@@ -523,6 +523,21 @@ surviving the main region, snapshot re-aim to the shot pose + exact
 restore, rotation-only 'hpr' mode, and main-region clear restoration
 when the last background camera unregisters.
 
+**`test_water.py`** (Session AL — the water-lane promotion) — the
+shared game-water as an engine module
+(`pipeline.build_water_surface()`): WaterParams defaults pinned
+literally to the planetside ocean, the `water_sun` HDR-knee curve at
+the filed probe points, shallow-tint derivation, uncovered-policy
+contract (`'dry'` composites byte-identically = alpha exactly 0;
+`'deep'` renders the analytic 40 m body), Beer-Lambert body colour +
+melt alpha exact through a provider seafloor window (sun-black
+configuration cancels every noise term but the 3%-weight Fresnel),
+rim fade, follow re-centring, knee uniform readback, cleanup restore
+— and the headline: the fragment stage's aerial-perspective block
+matched against an independent Python ray-evaluation (lens-extruded
+per-pixel geometry; sun-abeam, sun-lobe and live param-change rows,
+worst error ≤0.002 — water haze IS the pax_pbr atmosphere).
+
 **`test_ftl_blur.py`** — the FTL warp distortion pass (radial blur +
 chromatic aberration in tonemap); asserts zero-strength passthrough and
 effect behavior (added alongside the feature, post-Session-D).
@@ -548,11 +563,11 @@ the correct surface's favor and mimic a working depth buffer.
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Results snapshot (post Session AJ, 2026-07-27 — measured, gate logs on file)
+## Results snapshot (post Session AL, 2026-07-28 — measured, gate logs on file)
 
 The standard gate is both engines × the ONE `game` baseline (Session AC
-redefinition). Totals: **Pax3D 90 PASS / 7 FAIL / 139 SKIP · stock
-1.10.16 87 PASS / 7 FAIL / 142 SKIP** — the FAIL sets are IDENTICAL on
+redefinition). Totals: **Pax3D 92 PASS / 7 FAIL / 143 SKIP · stock
+1.10.16 89 PASS / 7 FAIL / 146 SKIP** — the FAIL sets are IDENTICAL on
 both engines and every one is pre-existing/by-design: `lighting/none`
 (fixed-function control under gl 3 2), `bloom` + `rebuild` on the
 retired `pax3d_simplepbr`, `rebuild/pax_pbr` (F4, by design of the old
@@ -571,8 +586,9 @@ upstream-inherited, recorded not gated); bind_pinned FAILed rc=1 on
 the pre-fix GVAD wheel, gate logs `gate_bind_*`. Session AI added the
 7 detail_maps jobs — +4 PASS +3 SKIP each (routed pax_pbr runs it
 too), gate logs `gate_er014_*`. Session AJ added the 6 snapshot jobs —
-+3 PASS +3 SKIP each: **totals now Pax3D 90/7/139 · stock 87/7/142,
-FAIL sets unchanged**, gate logs `gate_aj_*`.)
++3 PASS +3 SKIP each, gate logs `gate_aj_*`. Session AL added the 6
+water jobs — +2 PASS +4 SKIP each: **totals now Pax3D 92/7/143 ·
+stock 89/7/146, FAIL sets unchanged**, gate logs `gate_al_*`.)
 
 Note: with the game's `use_pax3d_render` flag flipped (Session D), the
 `pax_pbr` adapter routes to pax3d_render — its column mirrors
@@ -621,6 +637,7 @@ and rows whose harness scenes need pax3d_render-only hooks (skip).
 | spot_exponent | skip | skip | skip | **PASS (7 checks: cos^e analytics, exponent-0 no-op, default-50 trap, point immunity; +@directional)** |
 | detail_maps | skip | skip | PASS | **PASS (22–26 checks: selection/valve contract + Session-AJ append-only rows; +@directional +@directional@logdepth)** |
 | snapshot | skip | skip | PASS | **PASS (7+10 checks: pose freedom, player-view rms 0.0, full-pipeline parity rms 0.0, shadow contract; +@directional)** |
+| water | skip | skip | skip | **PASS (15 checks: planetside-pinned defaults, knee curve + readback, dry/rim byte-exact, Beer-Lambert melt analytics, haze vs independent ray-evaluation ≤0.002; +@directional)** |
 
 `pax3d_simplepbr` (retired) keeps its historical bloom/rebuild failures.
 `scale` failing is the DOCUMENTED baseline until R4 lands — see its entry

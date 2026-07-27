@@ -1850,6 +1850,44 @@ unregisters. Gate: test_snapshot section 9 (+6 checks — live sync,
 composite, snapshot re-aim + restore, 'hpr' mode, clear restoration),
 green both engines; full matrix totals unchanged from Session AJ.
 
+### Session AL — the water surface: `build_water_surface()` (LANDED)
+
+The shared game-water (planetside `world/water.py` → paxcraft
+`ocean.py` near-verbatim port) promoted into the engine on the water
+lane's ask — both games consume ONE module now.
+`pipeline.build_water_surface(parent_np, water_z,
+params=WaterParams(...), **geometry)` returns a
+`water.WaterSurface`: a Gerstner-swell follow grid (dense near grid +
+optional horizon annulus, or a single windowed grid with
+`rim_fade=True`) at world z = water_z, shaded by
+`shaders/water_surface.{vert,frag}` — the field-proven recipe
+(noise-not-sine fragment normals, restrained Fresnel, Beer-Lambert
+body colour over real seafloor depth, depth-keyed shore melt,
+slope-gated contact foam + marching bands, crest-pinch whitecaps) with
+every game-specific deviation promoted to a `WaterParams` uniform
+(defaults = the planetside ocean, pinned in-gate).
+
+The GAME is the depth PROVIDER: it bakes an R32F world-z seafloor
+window however its world knows it and hands it over via
+`set_seafloor(tex, origin_xy, size_m)` (or binds
+`u_seafloor`/`u_sf_origin_size` on `.root` — the uniform names match
+the pre-promotion game copies on purpose). `params.uncovered` sets
+the no-data policy: `'deep'` = open ocean (horizon games), `'dry'` =
+alpha exactly 0 (windowed coastal games — far-field land beyond the
+window). Per frame the game calls `update(x, y, camera_pos)` — which
+also feeds the fragment stage's aerial haze from `pipeline.atmo_*`
+(the EXACT pax_pbr.frag analytic block, so sea and terrain haze as
+one system; atmosphere off = exact no-op) — and
+`set_environment(sun_dir, sun_color, sky_horizon, sky_zenith)` on
+day-night ticks, which applies the `water_sun` HDR luminance knee
+(s = 1/(1+knee·max_c), default 0.25) before the push. Surface is
+transparent-bin, depth-write off, omni-bounds (follow meshes are
+never frustum-culled), and shadow-excluded when a caster mask is
+configured. Underwater eye effects, swimming and audio stay
+game-side. Gate: test_water (15 checks ×@game/@directional, both
+engines) — the analytic-haze rows match an independent Python
+ray-evaluation to ≤0.002.
+
 ## 10. Testing Contract
 
 - Every feature has (at least) one paxtest: gamma, lighting (×sun-modes),
