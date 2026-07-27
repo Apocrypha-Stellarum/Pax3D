@@ -1,247 +1,147 @@
-[![Build Status](https://github.com/panda3d/panda3d/workflows/Continuous%20Integration/badge.svg?branch=master)](https://github.com/panda3d/panda3d/actions?query=branch%3Amaster+workflow%3A%22Continuous+Integration%22)
-[![OpenCollective](https://opencollective.com/panda3d/backers/badge.svg)](https://opencollective.com/panda3d)
-[![OpenCollective](https://opencollective.com/panda3d/sponsors/badge.svg)](https://opencollective.com/panda3d)
+Pax3D
+=====
 
-Panda3D
-=======
+**A modern, verified 3D engine for Python — with a first-party physically-based
+rendering stack built in.**
 
-<img src="https://avatars2.githubusercontent.com/u/590956?v=3&s=500" align="right" width="200" />
+Pax3D is a sovereign game engine for Python and C++ programs. It began in
+February 2026 as a fork of Panda3D 1.11.0-dev and was deliberately made
+standalone in July 2026: Pax3D evolves on its own terms, driven by the
+shipping games built on it. It is free for any purpose, including commercial
+use, under the Modified BSD License.
 
-Panda3D is a game engine, a framework for 3D rendering and game development for
-Python and C++ programs.  Panda3D is open-source and free for any purpose,
-including commercial ventures, thanks to its
-[liberal license](https://www.panda3d.org/license/). To learn more about
-Panda3D's capabilities, visit the [gallery](https://www.panda3d.org/gallery/)
-and the [feature list](https://www.panda3d.org/features/).  To learn how to
-use Panda3D, check the [documentation](https://www.panda3d.org/documentation/)
-resources. If you get stuck, ask for help from our active
-[community](https://discourse.panda3d.org).
+What makes it different:
 
-Panda3D is licensed under the Modified BSD License.  See the LICENSE file for
-more details.
+- **A real renderer out of the box.** `pax3d_render/` is a first-party
+  Python/GLSL physically-based pipeline — sun, shadows, HDR bloom,
+  atmospheres, terrain, instancing, IBL — not an add-on you assemble.
+- **Every rendering claim is measured.** The `tools/paxtest/` harness runs
+  over a hundred offscreen render jobs with *analytic* checks (computed
+  expected values, not eyeballed screenshots) on every change — and runs the
+  same suite against stock Panda3D as a cross-reference. Features land with
+  their proofs.
+- **One modern reality.** Native GLSL 330 core profile, OpenGL core context
+  everywhere, C++17. Roughly 43,000 lines of dead legacy surface (DirectX 9,
+  GLES/WebGL, mobile targets) have been removed rather than maintained.
+- **Battle-tested by shipping games.** Pax3D is developed against a space
+  simulation and a voxel game in daily use; engine features arrive because a
+  real game needed them, and stability fixes come from real field crashes,
+  reproduced and gated.
 
-Installing Panda3D
+Feature Highlights
 ==================
 
-The latest Panda3D SDK can be downloaded from
-[this page](https://www.panda3d.org/download/sdk-1-10-16/).
-If you are familiar with installing Python packages, you can use
-the following command:
+Rendering (`pax3d_render/`)
+---------------------------
+
+- Physically-based pipeline with a linear color contract (sRGB-aware inputs),
+  ACES / Hejl-Dawson / other tonemap operators, all verified against their
+  analytic curves
+- True directional sun with shadow mapping — texel snapping, world-space
+  normal bias, per-node casting control
+- HDR bloom on float intermediates, lens flare and dirt, SSAO
+- Opt-in logarithmic depth for planetary-scale scenes
+- Atmospheres both ways: aerial haze on the ground, and orbital
+  limb/halo/terminator scattering seen from space (verified against an
+  independent integrator)
+- Image-based lighting: hemisphere / spherical-harmonic ambient, specular IBL
+  with a correctly prefiltered GGX mip ladder, per-node environment bindings,
+  env intensity / rotation controls
+- Terrain: splat-driven 4-layer texture arrays with macro variation,
+  stochastic hex-tiling (kills texture repetition), height-aware blending,
+  and a wet-sand waterline system
+- GPU instancing with correct instanced shadows; cutout alpha that fixes
+  glTF `MASK` content silently rendering opaque on core profiles
+- Characters: hardware skinning with per-node opt-outs, GPU morph targets at
+  crowd scale (dozens of independent faces, zero-copy bakes), per-geom
+  normal / occlusion detail maps
+- Ships & interiors: rigid-clip extraction from glTF (doors, ramps, gear),
+  powered display screens with flipbook / UV-scroll animation, nav-light
+  circuits with synced real lights and halos, a per-root light-budget warden
+- Baked effects: premultiplied flipbook explosions with one-shot lifecycle
+- Photo mode: `render_snapshot()` — full-pipeline renders from any pose into
+  a texture without disturbing the player's view
+- Stall-free visibility queries (depth-tap, no mid-frame readback)
+
+Engine core
+-----------
+
+- C++17 throughout; Python 3.13 wheels
+- Windows x64 + OpenGL core is the primary target; X11/GLX and a software
+  renderer (tinydisplay) are retained for headless and Linux futures
+- Stability beyond the inherited baseline, each fix reproduced and
+  permanently gated: cross-thread geometry churn heap corruption, foreign
+  thread binding lifetime, offscreen framebuffer GL errors (the suite now
+  enforces zero GL errors)
+- Optional double-precision build (`STDFLOAT_DOUBLE`) — validated at
+  solar-system coordinate scales
+- Loud diagnostics where the fixed-function past used to fail silently
+
+Where it's going
+----------------
+
+The roadmap is driven by the games: VR (OpenXR, seated PCVR) is planned and
+scoped, a Vulkan backend is under evaluation, and feature lanes (terrain,
+ships, characters, effects) advance on field evidence. See
+`documents/PAX3D_MASTER_PLAN.md` for the full program and
+[CHANGELOG.md](CHANGELOG.md) for what has landed.
+
+Games built on Pax3D
+====================
+
+| Game | Genre |
+|---|---|
+| **Pax Abyssi** | Space simulation — orbital to planetside, walkable ship interiors |
+| **Animal Crossfire** | Voxel building/combat game — chunk streaming, threaded meshing |
+
+Both file engine requests and field reports that turn into gated engine
+features, often same-day.
+
+Building Pax3D
+==============
+
+Pax3D is built with `makepanda` and ships as a Python wheel. The Python/GLSL
+rendering stack needs no engine build at all — it runs on an installed
+`panda3d` package.
+
+Windows (the primary platform):
 
 ```bash
-pip install panda3d
+python makepanda\makepanda.py --everything --no-fmod --no-ffmpeg --no-fftw --no-opencv --windows-sdk 10 --threads 20 --wheel
 ```
 
-The easiest way to install the latest development build of Panda3D
-into an existing Python installation is using the following command:
+See `documents/BUILDING_PAX3D.md` for toolchain details (MSVC / VS Build
+Tools, thirdparty libraries) and pitfalls. Run the verification suite with:
 
 ```bash
-pip install --pre --extra-index-url https://archive.panda3d.org/ panda3d
+python tools/paxtest/run.py
 ```
 
-If this command fails, please make sure your version of pip is up-to-date.
-
-If you prefer to install the full SDK with all tools, the latest development
-builds can be obtained from [this page](https://www.panda3d.org/download.php?version=devel&sdk).
-
-These are automatically kept up-to-date with the latest GitHub version of Panda.
-
-Building Panda3D
-================
-
-Windows
--------
-
-You can build Panda3D with the Microsoft Visual C++ 2017, 2019 or 2022
-compiler, which can be downloaded for free from the [Visual Studio site](https://visualstudio.microsoft.com/downloads/).
-You will also need to install the [Windows SDK](https://developer.microsoft.com/en-us/windows/downloads/windows-sdk),
-and if you intend to target Windows Vista, you will also need the
-[Windows 8.1 SDK](https://go.microsoft.com/fwlink/p/?LinkId=323507).
-
-You will also need the thirdparty dependency libraries available for
-the build scripts to use.  These are available from one of these two URLs,
-depending on whether you are on a 32-bit or 64-bit system, or you can
-[click here](https://github.com/rdb/panda3d-thirdparty) for instructions on
-building them from source.
-
-- https://www.panda3d.org/download/panda3d-1.10.16/panda3d-1.10.16-tools-win64.zip
-- https://www.panda3d.org/download/panda3d-1.10.16/panda3d-1.10.16-tools-win32.zip
-
-After acquiring these dependencies, you can build Panda3D from the command
-prompt using the following command.  Change the `--msvc-version` option based
-on your version of Visual C++; 2022 is 14.3, 2019 is 14.2, 2017 is 14.1, and
-2015 is 14.  Remove the `--windows-sdk=10` option if you need to support
-Windows Vista, which requires the Windows 8.1 SDK.
-
-```bash
-makepanda\makepanda.bat --everything --installer --msvc-version=14.3 --windows-sdk=10 --no-eigen --threads=2
-```
-
-When the build succeeds, it will produce an .exe file that you can use to
-install Panda3D on your system.
-
-**Note:** you may choose to remove `--no-eigen` and build with Eigen support in
-order to improve runtime performance.  However, this will cause the build to
-take hours to complete, as Eigen is a heavily template-based library, and the
-MSVC compiler does not perform well under those circumstances.
-
-Linux
------
-
-Building Panda3D on Linux is easy.  All you need is to invoke the makepanda
-script using the version of Python that you want Panda3D to be built against.
-
-Run makepanda.py with the --help option to see which options are available.
-Usually, you will want to specify the --everything option (which builds with
-support for all features for which it detects the prerequisite dependencies)
-and the --installer option (which produces an installable .deb or .rpm file
-for you to install, depending on your distribution).
-
-The following command illustrates how to build Panda3D with some common
-options:
-```bash
-python3 makepanda/makepanda.py --everything --installer --no-egl --no-gles --no-gles2 --no-opencv
-```
-
-You will probably see some warnings saying that it's unable to find several
-dependency packages.  You should determine which ones you want to include in
-your build and install the respective development packages.  You may visit
-[this manual page](https://docs.panda3d.org/1.11/python/distribution/thirdparty-licenses)
-for an overview of the various dependencies.
-
-If you are on Ubuntu, this command should cover the most frequently
-used third-party packages:
-
-```bash
-sudo apt-get install build-essential pkg-config fakeroot python3-dev libpng-dev libjpeg-dev libtiff-dev zlib1g-dev libssl-dev libx11-dev libgl1-mesa-dev libxrandr-dev libxxf86dga-dev libxcursor-dev bison flex libfreetype6-dev libvorbis-dev libeigen3-dev libopenal-dev libode-dev libbullet-dev nvidia-cg-toolkit libgtk-3-dev libassimp-dev libopenexr-dev
-```
-
-Once Panda3D has built, you can either install the .deb or .rpm package that
-is produced, depending on which Linux distribution you are using.  For example,
-to install the package on Debian or Ubuntu, use this:
-
-```bash
-sudo dpkg -i panda3d*.deb
-```
-
-If you are not using a Linux distribution that supports .deb or .rpm packages, you
-may have to use the installpanda.py script instead, which will directly copy the
-files into the appropriate locations on your computer.  You may have to run the
-`ldconfig` tool in order to update your library cache after installing Panda3D.
-
-Alternatively, you can add the `--wheel` option, which will produce a .whl
-file that can be installed into a Python installation using `pip`.
-
-macOS
------
-
-On macOS, you will need to download a set of precompiled thirdparty packages in order to
-compile Panda3D, which can be acquired from [here](https://www.panda3d.org/download/panda3d-1.10.16/panda3d-1.10.16-tools-mac.tar.gz).
-
-After placing the thirdparty directory inside the panda3d source directory,
-you may build Panda3D using a command like the following:
-
-```bash
-python makepanda/makepanda.py --everything --installer
-```
-
-If the build was successful, makepanda will have generated a .dmg file in
-the source directory containing the installer.  Simply open it and run the
-package file in order to install the SDK onto your system.
-
-FreeBSD
--------
-
-Building on FreeBSD is very similar to building on Linux.  You will need to
-install the requisite packages using the system package manager.  To install
-the recommended set of dependencies, you can use this command:
-
-```bash
-pkg install pkgconf bison png jpeg-turbo tiff freetype2 harfbuzz eigen squish openal opusfile libvorbis libX11 mesa-libs ode bullet assimp openexr
-```
-
-You will also need to choose which version of Python you want to use.
-Install the appropriate package for it (such as `python37` or `python38`) and
-run the makepanda script with your chosen Python version:
-
-```bash
-python3.11 makepanda/makepanda.py --everything --installer --no-egl --no-gles --no-gles2
-```
-
-If successful, this will produce a .pkg file in the root of the source
-directory which you can install using `pkg install`.
-
-Android
--------
-
-Although it's possible to build Panda3D on an Android device using the
-[termux](https://termux.com/) shell, the recommended route is to cross-compile
-.whl files using the SDK and NDK, which can then be used by the `build_apps`
-command to build a Python application into an .apk or .aab bundle.  You will
-need to get the latest thirdparty packages, which can be obtained from here:
-
-https://rdb.name/thirdparty-android.tar.gz
-
-This includes a copy of Python 3.13 compiled for Android.  You will need to
-use Python 3.13 on the host as well.
-
-These commands show how to compile wheels for the supported Android ABIs:
-
-```bash
-export ANDROID_SDK_ROOT=/home/rdb/local/android
-python3.13 makepanda/makepanda.py --everything --outputdir built-droid-arm64 --arch arm64 --target android-21 --threads 6 --wheel
-python3.13 makepanda/makepanda.py --everything --outputdir built-droid-armv7a --arch arm --target android-21 --threads 6 --wheel
-python3.13 makepanda/makepanda.py --everything --outputdir built-droid-x86_64 --arch x86_64 --target android-21 --threads 6 --wheel
-python3.13 makepanda/makepanda.py --everything --outputdir built-droid-x86 --arch x86 --target android-21 --threads 6 --wheel
-```
-
-It is now possible to use the generated wheels with `build_apps`, as explained
-on this page:
-
-https://discourse.panda3d.org/t/deployment-for-android/28226
-
-Running Tests
+Documentation
 =============
 
-Install [PyTest](https://docs.pytest.org/en/latest/getting-started.html#installation)
-and run the `pytest` command.  If you have not installed Panda3D, you will
-need to configure your environment by pointing the `PYTHONPATH` variable at
-the `built` directory.  On Linux, you will also need to point the
-`LD_LIBRARY_PATH` variable at the `built/lib` directory.
+| Document | Contents |
+|---|---|
+| `documents/PAX3D_MASTER_PLAN.md` | The phased engineering program and session log |
+| `documents/PAX3D_RENDER_ARCHITECTURE.md` | How the rendering pipeline works: passes, sun modes, shadows, invariants, API |
+| `documents/ENGINE_INTERNALS.md` | Deep dives into engine mechanisms |
+| `tools/paxtest/README.md` | The verification harness: running and extending it |
+| `documents/README.md` | Full documentation index |
 
-As a convenience, you can alternatively pass the `--tests` option to makepanda.
+Heritage & License
+==================
 
-Reporting Issues
-================
+Pax3D exists because **Panda3D** was good enough to build a space simulation
+on. It descends from Panda3D 1.11.0-dev, and this repository preserves the
+full upstream commit history and the Panda3D backers list ([BACKERS.md](BACKERS.md))
+as a matter of record and respect. We are grateful to Carnegie Mellon
+University, the Panda3D maintainers, and two decades of contributors.
 
-If you encounter any bugs when using Panda3D, please report them in the bug
-tracker.  This is hosted at:
+Pax3D is an independent project. It is not affiliated with or endorsed by
+the Panda3D project or Carnegie Mellon University. If you want the
+general-purpose, multi-platform, community-driven engine, Panda3D lives at
+[panda3d/panda3d](https://github.com/panda3d/panda3d) and deserves your
+contributions.
 
-  https://github.com/panda3d/panda3d/issues
-
-Make sure to first use the search function to see if the bug has already been
-reported.  When filling out a bug report, make sure that you include as much
-information as possible to help the developers track down the issue, such as
-your version of Panda3D, operating system, architecture, and any code and
-models that are necessary for the developers to reproduce the issue.
-
-If you're unsure whether you've encountered a bug, feel free to ask in the [forums](https://discourse.panda3d.org) or the [IRC channel](https://web.libera.chat/#panda3d) before opening an issue.
-
-
-Supporting the Project
-======================
-
-If you would like to support the project financially, visit
-[our campaign on OpenCollective](https://opencollective.com/panda3d).  Your
-contributions help us accelerate the development of Panda3D.
-
-For the complete list of backers, see the [BACKERS.md](BACKERS.md) file or
-visit the [Sponsors page](https://www.panda3d.org/sponsors) on our web site.
-Thank you to everyone who has donated!
-
-[<img src="https://www.panda3d.org/wp-content/uploads/2024/08/Route4MeLogo1185x300-2-1-1024x259.png" alt="Route4Me" height="48">](https://route4me.com/)
-[<img src="https://www.panda3d.org/wp-content/uploads/2026/01/black-logo-1-e1768931551108.png" alt="TestMu AI" height="48">](https://www.testmu.ai/?utm_source=panda3d&utm_medium=sponsor)
-
-<a href="https://opencollective.com/panda3d" target="_blank">
-  <img src="https://opencollective.com/panda3d/contribute/button@2x.png?color=blue" width=300 />
-</a>
+Pax3D is licensed under the Modified BSD License. See the [LICENSE](LICENSE)
+file for details.
