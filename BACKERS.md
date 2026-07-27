@@ -1,6 +1,11 @@
 # Panda3D Backers
 
-This is a list of all the people who are contributing financially to Panda3D.  If you'd like to join them, visit [our campaign on OpenCollective](https://opencollective.com/panda3d)!
+> This file is preserved from the Panda3D project, which Pax3D descends
+> from. The people and sponsors below funded Panda3D, not Pax3D; the list
+> is kept here as a matter of record and respect. To support Panda3D,
+> visit [their campaign on OpenCollective](https://opencollective.com/panda3d).
+
+This is a list of all the people who are contributing financially to Panda3D.
 
 ## Bronze Sponsors
 

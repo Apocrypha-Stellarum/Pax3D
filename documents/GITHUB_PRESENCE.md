@@ -60,6 +60,14 @@ CalVer `v2026.07`.
 
 ## 4. Future-session queue (rough value order)
 
+0. **Great screenshots, then restore the gallery** — the 2026-07-28
+   first-round shots were judged not strong enough (user) and the README
+   gallery section was REMOVED pending better ones; the images remain in
+   `documents/media/`. Ideas for stronger shots: brighter sun angle (the
+   selftest pins az -50 el 18 — add a CLI sun-angle arg to the testbed),
+   bloom + lens flare on, orbital limb at a grazing sunrise angle, higher
+   supersampled resolution, better-lit hero assets. Also revisit
+   `social_preview.png` (same source material) when new shots exist.
 1. **README GIF** — 10–20 s of motion (station orbit, nav-light circuits
    blinking [testbed key C], or the clip door [Y]); frames via repeated
    offscreen steps + screenshots, assemble with PIL. Motion outsells stills.

@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a defect — evidence beats description
+about: Report a defect. Evidence beats description.
 labels: bug
 ---
 
@@ -10,11 +10,11 @@ labels: bug
 
 **Minimal reproduction**
 
-<!-- The single most valuable thing you can provide. A short script that
-shows the defect on a fresh scene is ideal — bonus points if it could
-become a tools/paxtest check. This project has killed many plausible-
-sounding rendering bugs with measurement (see the hard-won facts in
-CLAUDE.md), so concrete repro > detailed prose. -->
+<!-- The most valuable thing you can provide. A short script that shows
+the defect on a fresh scene is ideal. Bonus points if it could become a
+tools/paxtest check. This project has killed many plausible-sounding
+rendering bugs with measurement (see the hard-won facts in CLAUDE.md), so
+a concrete repro is worth more than detailed prose. -->
 
 ```python
 # repro here
