@@ -3801,6 +3801,18 @@ class Pipeline:
         Re-calling with different normal=/occlusion= reconfigures in
         place. `enabled=False` restores the saved geom states
         byte-identically.
+
+        Registration is APPEND-ONLY (2026-07-27, the paxcraft
+        streaming-chunks ask): registering model N stamps ONLY model
+        N's geoms — models 1..N-1 are never re-stamped, and with no
+        skinning valves anywhere removal is O(this entry) too. The
+        old always-global refresh made per-attach registration on a
+        ~300-chunk streaming terrain O(total registered) per call
+        (measured game-side: gatling remesh fps 60→32). The global
+        refresh still runs where the valve registry can interact
+        (reconfigure-in-place, removal while valves exist, valve
+        flips, recompiles) — all character-lane events, never the
+        chunk-attach path.
         """
         normal = bool(normal)
         occlusion = bool(occlusion)
@@ -3813,7 +3825,13 @@ class Pipeline:
             for gnode_np, geom_i, orig_state, _un, _uo in entries:
                 if not gnode_np.is_empty():
                     gnode_np.node().set_geom_state(geom_i, orig_state)
-            self._refresh_detail_valve_stamps()
+            if self._skinning_valves or self._detail_tagged_valves:
+                # A valve might have been held active only by this
+                # entry — recompute tags (and with them the caster tag
+                # states). With both registries empty the refresh is a
+                # semantic no-op over the survivors: skip it (the
+                # streaming-detach fast path).
+                self._refresh_detail_valve_stamps()
             return len(entries)
         if idx is not None:
             _np, entries, prev_n, prev_o = self._detail_map_entries[idx]
@@ -3825,12 +3843,42 @@ class Pipeline:
             for gnode_np, geom_i, orig_state, _un, _uo in entries:
                 if not gnode_np.is_empty():
                     gnode_np.node().set_geom_state(geom_i, orig_state)
+            entries = self._find_detail_map_geoms(model_np, normal,
+                                                  occlusion)
+            if entries:
+                self._detail_map_entries.append(
+                    (model_np, entries, normal, occlusion))
+                self._refresh_detail_valve_stamps()
+            return len(entries)
         entries = self._find_detail_map_geoms(model_np, normal, occlusion)
         if entries:
             self._detail_map_entries.append(
                 (model_np, entries, normal, occlusion))
-            self._refresh_detail_valve_stamps()
+            self._stamp_detail_entry(entries)
         return len(entries)
+
+    def _stamp_detail_entry(self, entries):
+        """Stamp ONE freshly appended entry's geoms — the append-only
+        fast path (existing stamps cannot be affected by a new entry).
+        Valve interplay is still handled: a new geom under a valve is
+        stamped at the valve override, and a valve tagged for the first
+        time gets the shadow-camera rescue trued up (rare —
+        character-lane; streaming terrain has no Characters, so the
+        common case is a plain O(new geoms) stamp loop)."""
+        tagged_new = []
+        for gnode_np, geom_i, orig_state, use_n, use_o in entries:
+            valve_np = self._apply_detail_map_state(
+                gnode_np, geom_i, orig_state, use_n, use_o)
+            if valve_np is not None and all(valve_np != t
+                                            for t in tagged_new):
+                tagged_new.append(valve_np)
+        fresh = [t for t in tagged_new
+                 if all(t != s for s in self._detail_tagged_valves)]
+        if fresh:
+            for t in fresh:
+                t.set_tag(self._SHADOW_TAG_KEY, self._SHADOW_TAG_STATE)
+            self._detail_tagged_valves.extend(fresh)
+            self._refresh_shadow_tag_states()
 
     def _reapply_detail_maps(self):
         """Re-push the (freshly invalidated) detail variants onto every

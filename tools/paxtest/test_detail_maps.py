@@ -45,6 +45,14 @@ Checks:
      rescue, bit-identical restore + no attrib residue after
      clear_hardware_skinning.
   8. Opt-out restores the pre-API capture byte-identically.
+  9. APPEND-ONLY registration (2026-07-27, the paxcraft
+     streaming-chunks ask): registering model N stamps only model N's
+     geoms (counted via the stamp hook — the old path re-stamped
+     every registered geom, O(total) per attach; a 300-chunk
+     streaming terrain measured gatling fps 60→32 game-side), and
+     with no skinning valves removal restamps nothing. The survivor
+     entry renders bit-identically through the whole add/remove
+     cycle.
 
 Directional-variant run (--sun-mode directional, from run.py) adds the
 shadow interplay: with shadows enabled, flipping the valve on a
@@ -588,6 +596,52 @@ def main():
                    f'set_detail_maps(False) -> {n_off}, rms vs pre-API '
                    f'= {rms:.2e} (the baked detail goes back to being '
                    f'unsampled — exact restore is the contract)')
+
+    # --- 9. Append-only registration (paxcraft streaming chunks) ----------
+    # Rebuild the post-API state, counting every geom stamp: model is
+    # entry 1; a second loaded copy is entry 2 (the "next chunk").
+    stamps = []
+    orig_apply = pipeline._apply_detail_map_state
+
+    def counting_apply(*a, **kw):
+        stamps.append(a[0])
+        return orig_apply(*a, **kw)
+
+    pipeline._apply_detail_map_state = counting_apply
+    pipeline.apply_alpha_masks(model)
+    n_a = pipeline.set_detail_maps(model)
+    first_stamps = len(stamps)
+
+    model2 = base.loader.load_model(
+        p3d.Filename.from_os_specific(glb_path).get_fullpath())
+    model2.reparent_to(base.render)
+    model2.set_pos(0, 25, 0)            # behind the originals on screen
+    stamps.clear()
+    n_b = pipeline.set_detail_maps(model2)   # no alpha-mask claim: 3
+    h.report.check('append_only_stamps',
+                   n_a == 2 and first_stamps == n_a
+                   and n_b == 3 and len(stamps) == n_b,
+                   f'entry 1: {n_a} geoms / {first_stamps} stamps; '
+                   f'appending entry 2: {n_b} geoms / {len(stamps)} '
+                   f'stamps (want exactly the NEW geoms — the old path '
+                   f're-stamped every registered geom per attach)')
+
+    stamps.clear()
+    n_off2 = pipeline.set_detail_maps(model2, enabled=False)
+    h.report.check('removal_no_restamp',
+                   n_off2 == 3 and len(stamps) == 0,
+                   f'removing entry 2 -> {n_off2} restored, '
+                   f'{len(stamps)} re-stamps of the survivor (want 0: '
+                   f'no skinning valves anywhere = O(entry) detach)')
+    pipeline._apply_detail_map_state = orig_apply
+    model2.remove_node()
+    h.step(5)
+    rms = common.image_rms_diff(img_post, h.capture(), step=1)
+    h.report.check('append_only_renders',
+                   rms == 0.0,
+                   f'survivor entry after the add/remove cycle vs the '
+                   f'post-API capture: rms={rms:.2e} (the fast path is '
+                   f'behavior-identical)')
 
     h.report.finish()
 
