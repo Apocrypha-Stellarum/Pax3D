@@ -58,6 +58,18 @@ Thumbs.db
 ehthumbs.db
 .DS_Store
 
+# PAX3D: local session artifacts — evidence logs and wheel archives stay on
+# disk (referenced by CLAUDE.md / session log) but never enter git
+/build_*.log
+/doubles_build.log
+/gate_*
+/*_smoke*.log
+/wheels_*/
+/how_to_run.txt
+/claude comments.txt
+/.claude/settings.local.json
+/.claude/worktrees/
+
 # macOS
 .DS_Store
 
