@@ -772,6 +772,12 @@ class Pipeline:
         # Auxiliary scene cameras (survive rebuilds) — R1 addition
         self._scene_cameras = []
 
+        # Photo-mode snapshot chain (render_snapshot, Session AJ) —
+        # lazily built on first use, inactive except during a shot,
+        # released on rebuild-class toggles (its structure mirrors the
+        # main chain's).
+        self._snapshot = None
+
         # FilterManager for tonemapping
         self._filtermgr = FilterManager(self.window, self.camera_node)
         if self._filtermgr.nextsort == -1000:
@@ -1167,6 +1173,58 @@ class Pipeline:
             self.render_node.show(vm_bit)
         if not reg.vm_root.is_empty():
             reg.vm_root.hide()
+
+    def render_snapshot(self, pos, hpr, size=(1280, 720), fov=None,
+                        near=None, far=None, shadow_center=None,
+                        shadow_extent=None, filename=None):
+        """One-shot full-pipeline render from an arbitrary camera pose
+        (2026-07-27, the paxcraft "photo mode" ask — AI-building
+        feedback loop; also planetside photo mode / kill-cam).
+
+        Renders ONE frame of the scene — PBR, shadows, atmosphere,
+        SSAO, bloom, lens flare, tonemap, mirroring the pipeline's
+        current configuration — into an offscreen buffer at `size`,
+        WITHOUT perturbing the player's view (the player chain is
+        deactivated for the one engine frame; the window keeps its
+        last presented image). Returns a RAM-backed Texture
+        (RGBA8, ready to peek or `.write()`); `filename=` also writes
+        it (PNG by extension).
+
+        Args:
+            pos, hpr: world-space camera pose (tuples or Vec3/VBase3).
+            size: (w, h) pixels. Chain resources are persistent per
+                size — repeat shots cost one extra rendered frame.
+            fov: horizontal FOV degrees; None copies the main lens.
+            near/far: lens planes; None copies the main lens (so
+                log-depth games keep their wide frustum by default).
+            shadow_center/shadow_extent: THE SHADOW CONTRACT — games
+                recentre the sun shadow frustum on the main camera, so
+                a snapshot far away sees absent shadow coverage. Pass
+                shadow_center (usually `pos`) and optionally a radius
+                to recentre for this frame only (restored exactly);
+                or leave None and recentre yourself around the call.
+
+        Known limits (see snapshot.py header): aux scene cameras (sky
+        pattern) render with their game-owned transforms; the
+        viewmodel is excluded; app-owned buffers outside the pipeline
+        chain render one extra frame; no TAA on snapshots (single
+        frame). Resources release on rebuild-class toggles and
+        cleanup(), or explicitly via release_snapshot_resources()."""
+        if self._snapshot is None:
+            from .snapshot import SnapshotRenderer
+            self._snapshot = SnapshotRenderer(self)
+        return self._snapshot.render(
+            pos, hpr, size=size, fov=fov, near=near, far=far,
+            shadow_center=shadow_center, shadow_extent=shadow_extent,
+            filename=filename)
+
+    def release_snapshot_resources(self):
+        """Free the persistent render_snapshot chain (buffers, camera).
+        The next render_snapshot() lazily rebuilds. Called
+        automatically on rebuild-class toggles and cleanup()."""
+        if self._snapshot is not None:
+            self._snapshot.release()
+            self._snapshot = None
 
     def _scene_buffer(self):
         buffers = getattr(self._filtermgr, 'buffers', None)
@@ -1644,6 +1702,9 @@ class Pipeline:
         Needed when structural parameters change (enable_bloom, bloom_levels,
         enable_taa). Registered scene cameras are re-attached automatically.
         """
+        # The snapshot chain mirrors this chain's structure — rebuild
+        # it lazily too (Session AJ)
+        self.release_snapshot_resources()
         self._filtermgr.cleanup()
         self._filtermgr = FilterManager(self.window, self.camera_node)
         if self._filtermgr.nextsort == -1000:
@@ -5849,6 +5910,7 @@ class Pipeline:
     def cleanup(self):
         """Remove the pipeline task, sun light, aux cameras, FilterManager."""
         self.taskmgr.remove('pax3d_render_update')
+        self.release_snapshot_resources()
         self._destroy_sun_light()
         for reg in list(self._scene_cameras):
             self.unregister_scene_camera(reg)
