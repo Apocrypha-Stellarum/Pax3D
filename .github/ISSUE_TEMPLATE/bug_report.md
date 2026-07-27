@@ -13,8 +13,8 @@ labels: bug
 <!-- The most valuable thing you can provide. A short script that shows
 the defect on a fresh scene is ideal. Bonus points if it could become a
 tools/paxtest check. This project has killed many plausible-sounding
-rendering bugs with measurement (see the hard-won facts in CLAUDE.md), so
-a concrete repro is worth more than detailed prose. -->
+rendering bugs with measurement, so a concrete repro is worth more than
+detailed prose. -->
 
 ```python
 # repro here

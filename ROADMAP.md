@@ -26,7 +26,8 @@ platform surgery (43k lines removed). See [CHANGELOG.md](CHANGELOG.md).
 ## Engine queue (lands on evidence, in scheduled build windows)
 
 C++ changes are batched into build windows and only promoted when a
-measurement demands them. See the Language Canon in `CLAUDE.md`.
+measurement demands them. See the Language Canon in
+`documents/PAX3D_MASTER_PLAN.md`.
 
 - **Texture-palette skinning.** Joint matrices in a texture/UBO, removing
   the bone cap entirely (full 343-bone rigs verbatim). Deprioritized on

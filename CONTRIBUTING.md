@@ -11,8 +11,8 @@ Bug reports are welcome via GitHub Issues. The most valuable thing you can
 include is a **minimal reproduction**, ideally one that could become a
 `tools/paxtest/` check. This project's history is a graveyard of
 plausible-sounding rendering bugs that measurement disproved (see the
-"hard-won facts" in `CLAUDE.md` and `documents/PAX3D_MASTER_PLAN.md`), so
-evidence beats description.
+established facts in `documents/PAX3D_MASTER_PLAN.md`), so evidence beats
+description.
 
 ## Pull requests
 
