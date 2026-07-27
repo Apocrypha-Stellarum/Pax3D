@@ -1,6 +1,9 @@
-# Pax3D VR Plan — Quest 2/3 Seated PCVR
+# Pax3D VR Plan — Quest 2 Seated PCVR
 
-**Status: DIRECTION RATIFIED (user, 2026-07-26). No code yet — VR0 not started.**
+**Status: PARKED (user decision, 2026-07-27).** Direction ratified
+2026-07-26; dev-machine bring-up VERIFIED same day (§0); **VR0 (the first
+code spike) NOT STARTED — zero VR code exists in the repo.** §0 is the
+resume checklist; everything below it is the plan as ratified.
 
 User direction: build VR for the market leader, **Meta Quest 2 and 3**, as a
 **seated simulation experience** — keyboard + mouse + headset are the primary
@@ -16,11 +19,69 @@ the fallback-path reference.
 
 ---
 
+## 0. Parked state (2026-07-27) — resume here
+
+Verified on the dev machine before parking (all MEASURED, none assumed):
+
+- **pyopenxr 1.1.5301** (speaks OpenXR API 1.1.53) + **PyOpenGL 3.1.10**
+  (needed for the blit path anyway) + glfw installed in
+  `C:\python\pax3d-env`; import verified.
+- **SteamVR installed and self-registered as the active OpenXR runtime** —
+  `HKLM\SOFTWARE\Khronos\OpenXR\1\ActiveRuntime` →
+  `...\SteamVR\steamxr_win64.json`. Nothing was clicked; the installer did
+  it. (The manual button lives at SteamVR ≡ → Settings → OpenXR → "Set
+  SteamVR as OpenXR runtime" — needed only if another runtime steals the
+  slot later.)
+- **Live probe from the venv: the runtime answers; 41 extensions;
+  `XR_KHR_opengl_enable` PRESENT** — the plan's load-bearing assumption is
+  measured fact on this machine. Also present:
+  `XR_KHR_composition_layer_depth` (depth-layer submission available when
+  wanted), `XR_KHR_D3D11_enable`/`D3D12`, `XR_KHR_vulkan_enable`/`2`.
+- **User's headset = Quest 2** (90 Hz standard, 72 default, 120
+  experimental; recommended render target ≈ 1832×1920/eye — this is the
+  VR1 perf budget).
+- **Transport NOT yet set up** — the only missing link to
+  pixels-in-headset. Recommendation on record: **Steam Link** (free, Valve,
+  Quest-store app) — launches straight into SteamVR, zero Meta PC
+  software, no runtime-slot hijack. Finding from the last exchange: the
+  user's owned **"Virtual Desktop Classic" (Steam, 2016) is the tethered
+  desktop viewer, NOT the Quest streaming product** — it cannot stream
+  PCVR to a Quest; the streaming "Virtual Desktop" is a separate ~$25
+  Quest-store app (best encoder; only worth it if streaming quality ever
+  becomes the complaint).
+
+Resume checklist, in order:
+
+1. Headset: install **Steam Link** from the Quest store; Steam running on
+   the PC; pair. (If Air Link is used instead: the Meta PC app's installer
+   steals the ActiveRuntime slot — flip it back per above, and enable
+   Settings → General → Unknown Sources in the Meta app.)
+2. Re-run the bring-up probes (should still pass):
+   ```powershell
+   (Get-ItemProperty 'HKLM:\SOFTWARE\Khronos\OpenXR\1').ActiveRuntime
+   ```
+   ```bash
+   C:/python/pax3d-env/Scripts/python.exe -c "
+   import xr
+   names = [p.extension_name.decode() for p in xr.enumerate_instance_extension_properties()]
+   print(len(names), 'extensions; GL:', 'XR_KHR_opengl_enable' in names)"
+   ```
+3. With the headset connected and SteamVR showing it: a live `xrGetSystem`
+   probe should report the HMD form factor (until then it raises
+   FormFactorUnavailable — expected, not a defect).
+4. Start VR0 (§4). Re-clone the reference
+   (`git clone https://github.com/el-dee/panda3d-openxr` — the studied
+   copy lived in a session scratchpad, now gone) and build the session
+   layer in `pax3d_render/xr/`.
+
+---
+
 ## 1. Decision register
 
 | Decision | Choice | Status |
 |---|---|---|
-| Target hardware | Meta Quest 2 + Quest 3, PCVR (streamed) | **Ratified 2026-07-26** |
+| Target hardware | Meta Quest 2 + Quest 3, PCVR (streamed); **user's actual device = Quest 2** | **Ratified 2026-07-26** |
+| Transport | **Steam Link recommended** (free, no Meta PC software, no runtime hijack); Air Link workable; owned "Virtual Desktop Classic" ≠ the Quest product (§0) | Recommended — user picks at resume |
 | Experience model | Seated sim; kb+m primary; HMD owns view orientation | **Ratified 2026-07-26** |
 | Controllers | Stretch goal: interact + interior locomotion only | **Ratified 2026-07-26** |
 | VR API | **OpenXR** (via pyopenxr); OpenVR (pyopenvr + panda3d-openvr reference) stays the documented fallback if VR0 hits GL trouble on the SteamVR OpenXR runtime | **DECIDED 2026-07-26** (user delegated the call) |
@@ -54,10 +115,8 @@ Two independent layers for Quest PCVR — do not conflate them:
 | VDXR (Virtual Desktop) | Almost certainly NO (unverified — README silent; same-author family is D3D11/12+Vulkan) | Same |
 | WMR | NO (and WMR is dead) | — |
 
-User setup prerequisite (dev machine): SteamVR installed, Quest connected
-via any transport, **SteamVR set as the active OpenXR runtime** (SteamVR
-Settings → OpenXR → "Set SteamVR as OpenXR runtime"). This is a completely
-standard consumer Quest-PCVR configuration.
+Dev-machine prerequisites: **DONE except the transport** — see §0 for the
+verified state and the remaining step (Steam Link in the headset).
 
 ## 3. What we take from panda3d-openxr, and what we do differently
 
