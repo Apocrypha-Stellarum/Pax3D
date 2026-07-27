@@ -351,7 +351,7 @@ deleted 35k lines of never-shipped backends.
 | | |
 |---|---|
 | Upstream (reference only) | `panda3d/panda3d` (GitHub) |
-| Our engine | `Apocrypha-Stellarum/Pax3D` |
+| Our engine | `Apocrypha-Stellarum/Pax3D` — **standalone public repo since 2026-07-28** (fork-network link severed; old fork archived as `Pax3D-fork-archive`). The public-repo program (rebrand, gallery, releases, recipes, future queue) lives in `documents/GITHUB_PRESENCE.md`. **Author identity for ALL new commits: `Rob de la Selva <actualhuman2025@proton.me>`** (global git config; old history exempt by user decision) |
 | Divergence point | 2026-02-26 (`2d2bdc9a`), upstream 1.11.0-dev |
 | Sync cadence | **None — severed 2026-07-17** |
 
