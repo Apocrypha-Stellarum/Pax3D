@@ -1826,6 +1826,30 @@ Gated by NEW test_snapshot (8 checks + 3 @directional shadow-contract
 rows + SSAO flat-identity) and the extended visibility/detail tests —
 identical on both engines.
 
+### Session AK — follow= scene cameras: the far-field lane (LANDED)
+
+The voxel game's builder lane asked how to render a 2–6 km horizon
+ring (baked worldgen heightfield + build-massing imposters) behind a
+~160 m streamed world, with log depth unavailable (their viewmodel
+runs depth_mode='range'). The answer is §6's background regions plus
+one new flag — `register_scene_camera(..., follow='pose'|'hpr')` (§6
+has the full semantics): the pipeline mirrors the main camera onto
+follow cameras each frame in `_update`, and `render_snapshot` re-aims
+them to the snapshot pose for its one frame with exact restore. Depth
+story: each region clears depth, so the ring camera's own lens (e.g.
+near 50 / far 6000 — 24-bit depth resolves ~1 cm at 3 km) coexists
+with any world far plane; no log depth, no reversed-z. Recommended
+layering: sky (sort −100, 'hpr') → ring (sort −50, 'pose',
+clear_color=None, own graph + own ~20-line shader — no PBR inputs, no
+shadow-cascade traversal by construction) → world (sort 0). Documented
+interaction: background regions never write the main scene depth, so
+visibility queries cannot see the ring (games gate sun flares from
+their own horizon data if they care). Also fixed here: the main
+region's clears are saved/restored when the last background camera
+unregisters. Gate: test_snapshot section 9 (+6 checks — live sync,
+composite, snapshot re-aim + restore, 'hpr' mode, clear restoration),
+green both engines; full matrix totals unchanged from Session AJ.
+
 ## 10. Testing Contract
 
 - Every feature has (at least) one paxtest: gamma, lighting (×sun-modes),

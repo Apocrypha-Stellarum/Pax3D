@@ -1505,3 +1505,49 @@ Served + voxel-lane status row, master plan §4.23, arch doc §6.1 +
 §9 Session AJ, paxtest README (incl. the missing Session-AI
 detail_maps block, trued up), ENGINE_NOTES.md inline reply, sfb2
 USING_PAX3D_RENDER §8 quick-ref (game commit `bc35e24`).
+
+**Session AK update (2026-07-28, the far-field consult — three answers
++ one flag, landed same-day):** The Animal Crossfire builder lane
+(cliff-monastery dev) filed the far-field ask in ENGINE_NOTES.md:
+megastructures are invisible beyond the ~160 m chunk stream; they plan
+a game-side horizon ring (worldgen-baked heightfield + build-massing
+imposters) and needed the depth story, a cheap material lane, and a
+haze hook confirmed first. All three answered in-channel: (1) NO depth
+problem exists — background regions via `register_scene_camera` clear
+depth per-region, so a near-50/far-6000 ring lens (24-bit ⇒ ~1 cm at
+3 km) coexists with the short world far plane; no log depth (their
+'range'-viewmodel constraint untouched), no reversed-z (not wired, not
+needed); composite order = ascending region sort, recommended layering
+sky (−100, follow='hpr') → ring (−50, follow='pose', clear_color=None)
+→ world (0). (2) Own graph + own ~20-line shader: never traversed by
+the main camera, no PBR inputs, never rasterized into the shadow
+cascade — zero cost, no flags; the Session-7 ORM trap structurally
+impossible. (3) Haze: `set_enable_atmosphere` once,
+`set_atmosphere_params` per frame from their daynight keys
+(uniform-only), the analytic aerial-perspective form quoted verbatim
+for their ring shader so near-haze and far-haze are one system.
+Documented interaction: the ring never writes the main scene depth →
+visibility queries can't see it (a ~20-line game-side horizon-altitude
+flare gate prescribed). LANDED to complete the recipe:
+`register_scene_camera(follow='pose'|'hpr')` — per-frame main-camera
+mirroring in `_update`; `render_snapshot` re-aims follow cameras to
+the shot pose and restores exactly (closes the Session-AJ
+"game-owned transforms" snapshot limit for follow cameras; retires
+their apiserver sky-reparent hack once the sky migrates off
+app.camera, which the layering requires anyway); plus the main-region
+clear state now restores when the last background camera unregisters.
+Gate: test_snapshot §9 +6 checks; full matrix `gate_ak_*` — Pax3D
+90/7/139 · stock 87/7/142, identical totals to Session AJ, FAIL sets
+unchanged. Their photo-mode "+1" answered as already-shipped (Session
+AJ; workaround-stack → API map). MSAA edge-on hairline seams triaged:
+watertightness hypothesis (per-chunk transforms ⇒ ulp cracks at
+grazing collapse; resolve can't invent coverage) — game-side
+single-root world-space-verts A/B prescribed before any engine work;
+2× snapshot SSAA offered as the photography workaround today. Their
+same-day async-readback ask (F9 recorder: sync RTM_copy_ram +4.7
+ms/frame @1600×900) QUEUED as a build-window row (PBO round-robin,
+C++/GSG class, LOW per their filing), not landed. Docs: master plan
+§4.24, arch doc §6 + §9 Session AK, CLAUDE.md voxel-lane row +
+build-window queue row, paxtest README, ENGINE_NOTES.md inline reply
+(paxcraft `b2e5d55`), sfb2 USING_PAX3D_RENDER §3 quick-ref (game
+commit `8cff0c3`).
