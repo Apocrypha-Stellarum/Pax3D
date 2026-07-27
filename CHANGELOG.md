@@ -2,7 +2,8 @@
 
 A curated record of what has landed, newest first. Every entry below
 shipped with paxtest coverage. The full evidence trail lives in
-`documents/PAX3D_MASTER_PLAN.md` (session log) and the commit history.
+[`documents/PAX3D_MASTER_PLAN.md`](documents/PAX3D_MASTER_PLAN.md)
+(session log) and the commit history.
 
 ## 2026-07-27
 

@@ -91,8 +91,8 @@ The roadmap is driven by the games. VR (OpenXR, seated PCVR) is planned
 and scoped, a Vulkan backend is under evaluation, and the feature lanes
 (terrain, ships, characters, effects) advance on field evidence. See
 [ROADMAP.md](ROADMAP.md) for the public roadmap,
-`documents/PAX3D_MASTER_PLAN.md` for the full program, and
-[CHANGELOG.md](CHANGELOG.md) for what has landed.
+[`documents/PAX3D_MASTER_PLAN.md`](documents/PAX3D_MASTER_PLAN.md) for the
+full program, and [CHANGELOG.md](CHANGELOG.md) for what has landed.
 
 Games built on Pax3D
 ====================
@@ -118,8 +118,9 @@ Windows (the primary platform):
 python makepanda\makepanda.py --everything --no-fmod --no-ffmpeg --no-fftw --no-opencv --windows-sdk 10 --threads 20 --wheel
 ```
 
-See `documents/BUILDING_PAX3D.md` for toolchain details (MSVC / VS Build
-Tools, thirdparty libraries) and pitfalls. Run the verification suite with:
+See [`documents/BUILDING_PAX3D.md`](documents/BUILDING_PAX3D.md) for
+toolchain details (MSVC / VS Build Tools, thirdparty libraries) and
+pitfalls. Run the verification suite with:
 
 ```bash
 python tools/paxtest/run.py
@@ -130,13 +131,13 @@ Documentation
 
 | Document | Contents |
 |---|---|
-| `documents/USING_PAX3D_RENDER.md` | **Using the renderer**: the adopter's guide to `pax3d_render/`. Init, sun modes, shadows, and the full API quick reference |
-| [ROADMAP.md](ROADMAP.md) | Where the engine is going: active lanes, the engine queue, VR, Vulkan |
-| `documents/PAX3D_MASTER_PLAN.md` | The phased engineering program and session log |
-| `documents/PAX3D_RENDER_ARCHITECTURE.md` | How the rendering pipeline works: passes, sun modes, shadows, invariants, API |
-| `documents/ENGINE_INTERNALS.md` | Deep dives into engine mechanisms |
-| `tools/paxtest/README.md` | The verification harness: running and extending it |
-| `documents/README.md` | Full documentation index |
+| [`documents/USING_PAX3D_RENDER.md`](documents/USING_PAX3D_RENDER.md) | **Using the renderer**: the adopter's guide to `pax3d_render/`. Init, sun modes, shadows, and the full API quick reference |
+| [`ROADMAP.md`](ROADMAP.md) | Where the engine is going: active lanes, the engine queue, VR, Vulkan |
+| [`documents/PAX3D_MASTER_PLAN.md`](documents/PAX3D_MASTER_PLAN.md) | The phased engineering program and session log |
+| [`documents/PAX3D_RENDER_ARCHITECTURE.md`](documents/PAX3D_RENDER_ARCHITECTURE.md) | How the rendering pipeline works: passes, sun modes, shadows, invariants, API |
+| [`documents/ENGINE_INTERNALS.md`](documents/ENGINE_INTERNALS.md) | Deep dives into engine mechanisms |
+| [`tools/paxtest/README.md`](tools/paxtest/README.md) | The verification harness: running and extending it |
+| [`documents/README.md`](documents/README.md) | Full documentation index |
 
 Heritage & License
 ==================

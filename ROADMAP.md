@@ -3,7 +3,8 @@
 The roadmap is driven by the games shipping on the engine. Features land
 because a game filed a request with field evidence, and everything below
 is gated by the paxtest harness before it merges. The detailed program,
-with its evidence trail, lives in `documents/PAX3D_MASTER_PLAN.md`; this
+with its evidence trail, lives in
+[`documents/PAX3D_MASTER_PLAN.md`](documents/PAX3D_MASTER_PLAN.md); this
 is the public summary.
 
 ## Recently completed (July 2026)
@@ -21,13 +22,14 @@ platform surgery (43k lines removed). See [CHANGELOG.md](CHANGELOG.md).
 - **VR (parked, scoped).** OpenXR seated PCVR for Quest-class headsets via
   the SteamVR runtime. Direction ratified, dev-machine bring-up verified
   (`XR_KHR_opengl_enable` measured present). The first code spike is next
-  when the lane resumes. Plan: `documents/PAX3D_VR_PLAN.md`.
+  when the lane resumes. Plan:
+  [`documents/PAX3D_VR_PLAN.md`](documents/PAX3D_VR_PLAN.md).
 
 ## Engine queue (lands on evidence, in scheduled build windows)
 
 C++ changes are batched into build windows and only promoted when a
 measurement demands them. See the Language Canon in
-`documents/PAX3D_MASTER_PLAN.md`.
+[`documents/PAX3D_MASTER_PLAN.md`](documents/PAX3D_MASTER_PLAN.md).
 
 - **Texture-palette skinning.** Joint matrices in a texture/UBO, removing
   the bone cap entirely (full 343-bone rigs verbatim). Deprioritized on
