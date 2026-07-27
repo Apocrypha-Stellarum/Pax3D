@@ -26,7 +26,7 @@ ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows',
              'rigid_clips', 'screen', 'alpha_mask', 'viewmodel',
              'gl_clean', 'light_priority', 'effects', 'light_halo',
              'visibility_query', 'spot_exponent', 'gvad_churn',
-             'thread_bind', 'detail_maps', 'snapshot']
+             'thread_bind', 'detail_maps', 'snapshot', 'water']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 
@@ -142,6 +142,12 @@ def main():
             if test == 'snapshot' and pipeline == 'pax3d_render':
                 # Session AJ: the shadow-extent contract rows need a
                 # real directional sun
+                jobs.append((test, pipeline,
+                             passthrough + ['--sun-mode', 'directional']))
+            if test == 'water' and pipeline == 'pax3d_render':
+                # 2026-07-28 water promotion: the surface is self-lit
+                # (own sun uniforms) — the directional leg proves no
+                # interference with the real-sun machinery either way
                 jobs.append((test, pipeline,
                              passthrough + ['--sun-mode', 'directional']))
             if test == 'detail_maps' and pipeline == 'pax3d_render':

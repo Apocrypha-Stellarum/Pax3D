@@ -1251,6 +1251,28 @@ class Pipeline:
             self._snapshot.release()
             self._snapshot = None
 
+    def build_water_surface(self, parent_np, water_z, params=None,
+                            **geometry):
+        """The shared game-water surface as an engine module (2026-07-28,
+        the voxel-lane ask: planetside + paxcraft ran near-verbatim
+        copies of one recipe — now both consume this).
+
+        Returns a water.WaterSurface: Gerstner-swell follow grid at
+        world z = water_z, Beer-Lambert body colour over a game-provided
+        seafloor depth texture, shore melt/foam, the engine-analytic
+        aerial haze (rides set_atmosphere_params), and the HDR-sun
+        luminance knee.  The GAME drives it per frame: .update(x, y,
+        camera_pos) + .set_environment(sun, sky) on day-night ticks, and
+        feeds depth via .set_seafloor() (the provider contract — see
+        water.py's module docstring).
+
+        params: water.WaterParams (defaults = the planetside ocean).
+        geometry kwargs: near_half_extent, near_resolution, far_annulus
+        (None for windowed seas), rim_fade, bin_sort."""
+        from .water import WaterSurface
+        return WaterSurface(self, parent_np, water_z, params=params,
+                            **geometry)
+
     def _scene_buffer(self):
         buffers = getattr(self._filtermgr, 'buffers', None)
         return buffers[0] if buffers else None
