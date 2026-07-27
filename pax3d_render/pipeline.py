@@ -292,15 +292,25 @@ class VisibilityQuery:
     the scene depth does NOT occlude the target (0.0 fully blocked ..
     1.0 fully visible), ~2 frames latent (the query pass reads last
     frame's depth and the RAM copy is read the frame after). Multiply
-    your sprite flare / glow intensity by it."""
+    your sprite flare / glow intensity by it.
 
-    __slots__ = ('np', 'radius_px', 'max_occluder_depth', 'visibility')
+    `valid` (2026-07-27, the paxcraft loud-failure ask): False while
+    the query's depth source is compromised — a viewmodel region in
+    depth_mode='clear' stomps the scene depth buffer full-screen every
+    frame, so the taps would confidently read "open sky everywhere"
+    (flare through mountains). While invalid, `visibility` is forced
+    to 0.0 (fail closed: no flare) instead of the garbage read. Also
+    queryable pipeline-wide as Pipeline.visibility_query_valid."""
+
+    __slots__ = ('np', 'radius_px', 'max_occluder_depth', 'visibility',
+                 'valid')
 
     def __init__(self, np, radius_px, max_occluder_depth):
         self.np = np
         self.radius_px = radius_px
         self.max_occluder_depth = max_occluder_depth
         self.visibility = 0.0
+        self.valid = True
 
 
 class _SceneCameraRegistration:
@@ -511,6 +521,10 @@ class Pipeline:
         self._vis_pta = None
         self._vis_far_pta = None
         self._scene_depth_tex = None
+        # Loud-failure latch (2026-07-27, paxcraft ask): warn ONCE per
+        # transition into the invalid state, re-arm when validity is
+        # restored — never per-frame spam, never silent.
+        self._vis_invalid_warned = False
 
         # Light halo billboards (Session AF, ER-013): camera-facing
         # additive sprites with a minimum on-screen size, so blinking
@@ -989,7 +1003,7 @@ class Pipeline:
 
     def register_viewmodel_camera(self, vm_root, near=0.02, far=8.0,
                                   fov=None, sort=100, depth_mode='clear',
-                                  name='viewmodel'):
+                                  name='viewmodel', on_depth_degrade='warn'):
         """Foreground viewmodel region: the standard FPS solution for
         hands/weapons closer than the world camera's near plane.
 
@@ -1026,6 +1040,17 @@ class Pipeline:
                 rescales) to the region's depth range — self-occlusion
                 inside the viewmodel would flatten. Falls back to 'clear'
                 with a warning in that case.
+            on_depth_degrade: what to do when a 'range' request cannot be
+                honored (log depth on, or no per-region depth range on
+                stock 1.10). 'warn' (default) falls back to 'clear' with
+                a loud boot warning; 'raise' raises RuntimeError instead —
+                pass it when downstream systems (visibility queries, SSAO)
+                depend on the world depth surviving, so a config change
+                (e.g. enable_log_depth flipping on) fails at init instead
+                of shipping a silent regression (the paxcraft Session-5
+                three-session trap, filed 2026-07-27). Either way the
+                degrade also flips `visibility_query_valid` False and
+                forces every VisibilityQuery to fail closed (0.0).
 
         Returns a registration handle (reg.camera_np is the created
         viewmodel camera — parented under the main camera at identity;
@@ -1042,18 +1067,32 @@ class Pipeline:
         if depth_mode not in ('clear', 'range'):
             raise ValueError(f'depth_mode must be "clear" or "range", '
                              f'got {depth_mode!r}')
+        if on_depth_degrade not in ('warn', 'raise'):
+            raise ValueError(f'on_depth_degrade must be "warn" or '
+                             f'"raise", got {on_depth_degrade!r}')
+        requested_depth_mode = depth_mode
+        degrade_reason = None
         if depth_mode == 'range' and self.enable_log_depth:
-            print('[Pax3DRender] viewmodel depth_mode="range" is '
-                  'incompatible with enable_log_depth (gl_FragDepth is '
-                  'clamped, not rescaled, by the region depth range) — '
-                  'falling back to "clear"')
-            depth_mode = 'clear'
-        if (depth_mode == 'range'
+            degrade_reason = ('incompatible with enable_log_depth '
+                              '(gl_FragDepth is clamped, not rescaled, '
+                              'by the region depth range)')
+        elif (depth_mode == 'range'
                 and not hasattr(p3d.DisplayRegion, 'set_depth_range')):
             # Stock 1.10 has no per-region depth range (1.11 API)
-            print('[Pax3DRender] viewmodel depth_mode="range" needs '
-                  'DisplayRegion.set_depth_range (Panda3D 1.11+) — '
-                  'falling back to "clear"')
+            degrade_reason = ('needs DisplayRegion.set_depth_range '
+                              '(Panda3D 1.11+)')
+        if degrade_reason is not None:
+            msg = (f'[Pax3DRender] viewmodel depth_mode="range" '
+                   f'{degrade_reason} — degrading to "clear"')
+            if self.enable_visibility_query:
+                msg += ('. VISIBILITY QUERIES ARE NOW BLIND: the '
+                        'viewmodel region clears the scene depth '
+                        'full-screen, so every query fails CLOSED '
+                        '(visibility 0.0, .valid False; '
+                        'pipeline.visibility_query_valid False)')
+            if on_depth_degrade == 'raise':
+                raise RuntimeError(msg + ' — on_depth_degrade="raise"')
+            print(msg)
             depth_mode = 'clear'
         if not self.render_node.is_ancestor_of(vm_root):
             print(f'[Pax3DRender] WARNING: viewmodel root '
@@ -1100,6 +1139,7 @@ class Pipeline:
             depth_range=(self.VIEWMODEL_DEPTH_RANGE
                          if depth_mode == 'range' else None))
         reg.is_viewmodel = True
+        reg.requested_depth_mode = requested_depth_mode
         reg.vm_root = vm_root
         reg.prev_main_camera_mask = prev_main_mask
         self._scene_cameras.append(reg)
@@ -1791,6 +1831,27 @@ class Pipeline:
     # Depth-tap visibility queries (Session AF — flare occluder retirement)
     # ------------------------------------------------------------------
 
+    @property
+    def visibility_query_valid(self):
+        """True while visibility queries have a trustworthy depth source
+        (2026-07-27, the paxcraft loud-failure ask).
+
+        False when the feature is off, OR when any registered post-main
+        region clears the scene depth full-screen — in practice a
+        viewmodel in depth_mode='clear' (by request or by the 'range'
+        degrade under log depth / stock 1.10). A cleared depth buffer
+        reads as "open sky everywhere": the queries would confidently
+        report 1.0 through mountains (flare through terrain, SSAO
+        blind). While False, every VisibilityQuery reports
+        visibility 0.0 with .valid False (fail closed) instead of the
+        garbage read. Poll this to disable a flare cleanly, or pass
+        on_depth_degrade='raise' to register_viewmodel_camera to make
+        the degrade fatal at init."""
+        if not self.enable_visibility_query:
+            return False
+        return not any(r.clear_depth and r.sort > 0
+                       for r in self._scene_cameras)
+
     def _build_vis_query_pass(self, depth_tex):
         """The VIS_MAX_QUERIES x 1 query buffer + quad. Sorted BEFORE
         every FilterManager buffer so it reads LAST frame's depth — the
@@ -1894,9 +1955,34 @@ class Pipeline:
 
     def _step_visibility_queries(self):
         """Per-frame: read last frame's query results from the RAM copy,
-        then project each target and push this frame's uniforms."""
+        then project each target and push this frame's uniforms.
+
+        Degraded depth source (2026-07-27, paxcraft ask): when a
+        post-main region stomps the scene depth (viewmodel
+        depth_mode='clear'), skip the read entirely and fail CLOSED —
+        visibility 0.0, .valid False, one loud print per transition.
+        The old behavior (confidently reporting the cleared buffer as
+        open sky everywhere) cost a downstream game three sessions."""
         self._vis_queries = [q for q in self._vis_queries
                              if not q.np.is_empty()]
+        if not self.visibility_query_valid:
+            if not self._vis_invalid_warned:
+                self._vis_invalid_warned = True
+                print('[Pax3DRender] visibility queries INVALID: a '
+                      'post-main region clears the scene depth '
+                      '(viewmodel depth_mode="clear"?) — all queries '
+                      'fail closed (visibility 0.0, .valid False) '
+                      'until it is unregistered')
+            for query in self._vis_queries:
+                query.visibility = 0.0
+                query.valid = False
+            return
+        if self._vis_invalid_warned:
+            self._vis_invalid_warned = False
+            print('[Pax3DRender] visibility queries valid again — '
+                  'depth source restored')
+        for query in self._vis_queries:
+            query.valid = True
         peeker = self._vis_tex.peek()
         if peeker is not None:
             col = p3d.LColor()
@@ -4892,10 +4978,38 @@ class Pipeline:
     def set_enable_log_depth(self, enabled):
         """Toggle logarithmic depth at runtime (R4.1). Recompiles the PBR
         shader. The caller owns the lens: widen near/far (e.g. 0.1 / 1e9)
-        when enabling, restore when disabling."""
+        when enabling, restore when disabling.
+
+        A live viewmodel in depth_mode='range' is DEGRADED to 'clear'
+        when log depth turns on (gl_FragDepth is clamped, not rescaled,
+        by the region depth range — 'range' cannot work under
+        LOG_DEPTH), loudly: the same warning as the registration-time
+        fallback, and `visibility_query_valid` flips False so queries
+        fail closed (2026-07-27, paxcraft ask). The degrade is one-way —
+        re-register the viewmodel to get 'range' back after turning log
+        depth off."""
         if enabled == self.enable_log_depth:
             return
         self.enable_log_depth = enabled
+        if enabled:
+            for reg in self._scene_cameras:
+                if not (getattr(reg, 'is_viewmodel', False)
+                        and reg.depth_range is not None):
+                    continue
+                reg.depth_range = None
+                reg.clear_depth = True
+                if reg.display_region is not None:
+                    reg.display_region.set_depth_range(0.0, 1.0)
+                    reg.display_region.set_clear_depth_active(True)
+                msg = (f'[Pax3DRender] enable_log_depth: live viewmodel '
+                       f'"{reg.name}" depth_mode="range" DEGRADED to '
+                       f'"clear" (gl_FragDepth is clamped, not '
+                       f'rescaled, by the region depth range)')
+                if self.enable_visibility_query:
+                    msg += (' — VISIBILITY QUERIES ARE NOW BLIND and '
+                            'fail closed (visibility 0.0, .valid '
+                            'False)')
+                print(msg)
         self._recompile_pbr()
 
     def set_double_sided_lighting(self, enabled):

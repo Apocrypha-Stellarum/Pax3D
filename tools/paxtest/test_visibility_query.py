@@ -30,6 +30,20 @@ therefore exact by construction:
      frame byte-identical (the query buffer never touches the visible
      chain).
   7. latency INFO — frames from a scene change to the value flip.
+  8. LOUD FAILURE on depth-source degrade (2026-07-27, the paxcraft
+     Session-5 trap promoted to contract): a viewmodel region in
+     depth_mode='clear' stomps the scene depth full-screen, so the
+     query taps would confidently read "open sky everywhere" (flare
+     through mountains). Now: pipeline.visibility_query_valid flips
+     False, every query fails CLOSED (visibility 0.0, .valid False),
+     and unregistering restores validity + real readings. A 'range'
+     request that degrades ('clear' fallback under log depth or on
+     stock 1.10) invalidates the same way, and
+     on_depth_degrade='raise' makes the degrade fatal at
+     registration. Where 'range' is honored (Pax3D 1.11, linear
+     depth), queries stay valid THROUGH a registered viewmodel — and
+     flipping enable_log_depth on mid-session degrades it live,
+     loudly.
 
 The @logdepth variant (run.py) reruns the row with enable_log_depth
 (the linear_depth decode's other branch). Only meaningful for
@@ -171,6 +185,94 @@ def main():
                   f'value flipped {before:.2f} -> '
                   f'{q.visibility:.2f} in {frames} frames after the '
                   f'target moved (contract: ~2, depth is one frame old)')
+
+    # --- 8. Loud failure when the depth source degrades ------------------
+    # (2026-07-27, paxcraft ask — the Session-5 three-session trap.)
+    open_np.set_pos(2.0, 50, 0)                    # back to open sky
+    h.step(6)
+    h.report.check('healthy_state_valid',
+                   pipeline.visibility_query_valid and q.valid
+                   and q.visibility > 0.95,
+                   f'no depth stomper: visibility_query_valid='
+                   f'{pipeline.visibility_query_valid}, q.valid='
+                   f'{q.valid}, visibility {q.visibility:.3f}')
+
+    # A 'clear'-mode viewmodel stomps the scene depth: the OLD behavior
+    # was a confident 1.0 everywhere; the contract is now fail-closed.
+    vm_root = base.render.attach_new_node('paxtest_vis_vm_root')
+    reg = pipeline.register_viewmodel_camera(vm_root, depth_mode='clear')
+    h.step(6)
+    h.report.check('clear_viewmodel_invalidates',
+                   not pipeline.visibility_query_valid
+                   and not q.valid and q.visibility == 0.0,
+                   f'viewmodel depth_mode="clear" registered: '
+                   f'visibility_query_valid='
+                   f'{pipeline.visibility_query_valid}, q.valid='
+                   f'{q.valid}, visibility {q.visibility:.3f} '
+                   f'(fail closed — NOT the garbage open-sky read)')
+    pipeline.unregister_viewmodel_camera(reg)
+    h.step(6)
+    h.report.check('unregister_restores_valid',
+                   pipeline.visibility_query_valid and q.valid
+                   and q.visibility > 0.95,
+                   f'viewmodel unregistered: visibility_query_valid='
+                   f'{pipeline.visibility_query_valid}, q.valid='
+                   f'{q.valid}, visibility {q.visibility:.3f}')
+
+    has_range = hasattr(p3d.DisplayRegion, 'set_depth_range')
+    range_degrades = args.log_depth or not has_range
+    if range_degrades:
+        # The trap case: 'range' requested but not honorable (log depth
+        # on, or stock 1.10). Must invalidate — and 'raise' must be
+        # fatal at registration.
+        raised = False
+        try:
+            pipeline.register_viewmodel_camera(
+                vm_root, depth_mode='range', on_depth_degrade='raise')
+        except RuntimeError:
+            raised = True
+        h.report.check('range_degrade_raises', raised,
+                       'on_depth_degrade="raise": degraded "range" '
+                       'request raised RuntimeError at registration')
+        reg = pipeline.register_viewmodel_camera(vm_root,
+                                                 depth_mode='range')
+        h.step(3)
+        h.report.check('range_degrade_invalidates',
+                       not pipeline.visibility_query_valid
+                       and q.visibility == 0.0,
+                       f'degraded "range" viewmodel: '
+                       f'visibility_query_valid='
+                       f'{pipeline.visibility_query_valid}, visibility '
+                       f'{q.visibility:.3f} (fail closed)')
+        pipeline.unregister_viewmodel_camera(reg)
+        h.step(3)
+    else:
+        # 'range' honored: world depth survives outside the viewmodel
+        # silhouette — queries stay VALID through a live viewmodel.
+        reg = pipeline.register_viewmodel_camera(vm_root,
+                                                 depth_mode='range')
+        h.step(6)
+        h.report.check('range_mode_stays_valid',
+                       pipeline.visibility_query_valid and q.valid
+                       and q.visibility > 0.95,
+                       f'honored "range" viewmodel: '
+                       f'visibility_query_valid='
+                       f'{pipeline.visibility_query_valid}, visibility '
+                       f'{q.visibility:.3f}')
+        # The exact Session-5 shape: log depth flips ON with the
+        # 'range' viewmodel live — must degrade loudly, not silently.
+        pipeline.set_enable_log_depth(True)
+        base.camLens.set_near_far(0.1, 1e6)
+        h.step(3)
+        h.report.check('logdepth_flip_degrades_live',
+                       not pipeline.visibility_query_valid
+                       and q.visibility == 0.0,
+                       f'enable_log_depth flipped on under a live '
+                       f'"range" viewmodel: visibility_query_valid='
+                       f'{pipeline.visibility_query_valid}, visibility '
+                       f'{q.visibility:.3f} (degraded to "clear", '
+                       f'fail closed)')
+        pipeline.unregister_viewmodel_camera(reg)
 
     h.report.finish()
 
