@@ -13,6 +13,32 @@ first-party rendering stack, built for the Pax Abyssi space simulation.
 
 ---
 
+## Games Served (priority order) & Feedback Channels
+
+Pax3D now serves TWO shipping games plus historical testbeds. Engine
+devs receive feature requests from all of them — this is by design
+(user-ratified 2026-07-27).
+
+| Priority | Game | Where | Channel |
+|---|---|---|---|
+| 1 | **Pax Abyssi** (space sim — the reason this engine exists) | `C:\python\sfb2` | `sfb2/documents/ENGINE_REQUESTS/` (numbered ERs) + engine-update notes written back into `sfb2/documents/`; per-lane consults in the master plan session log |
+| 2 | **Animal Crossfire** (Minecraft-style voxel game, dir/package `paxcraft`) | `C:\python\paxcraft` | **`C:\python\paxcraft\docs\ENGINE_NOTES.md`** — they file asks/reports there; the engine dev REPLIES INLINE in the same file (the bind_thread exchange set the pattern). Engine-side record: master plan session log + this file's status table |
+| — | openworld (ITHappy walking sim, historical testbed) | `C:\python\openworld` | `PAX3D_FEEDBACK.md` (repo root) — dormant but the character lane still posts there |
+
+**The voxel game's standing:** started 2026-07 as a proof-of-concept to
+stress the engine (chunk streaming, threaded meshing, bulk scene churn)
+and it earned its keep immediately — the bind_thread dangle fix, the
+GVAD stability envelope, and the Session-AJ trio all came from its
+field reports. **Space sim first**, always — but treat voxel asks
+seriously: they have consistently played straight into planetside
+requirements. That is the **concordance policy**: when either game asks
+for a capability, prefer a shape the other gets for free (photo mode ↔
+kill-cam; streaming detail maps ↔ terrain chunks; visibility loudness ↔
+flare correctness). The user will also relay messages to/from the
+paxcraft AI dev team directly on request.
+
+---
+
 ## Read These First
 
 | Priority | Document | What it gives you |
@@ -45,6 +71,7 @@ The rendering program runs in gated phases (see the master plan):
 | ER (character lane) | NPC visual quality: ER-014 character detail maps | **ER-014 IMPLEMENTED ENGINE-SIDE + GATED (Session AI, 2026-07-26, pure Python/GLSL):** `set_detail_maps(model_np, enabled=, normal=, occlusion=)` — per-geom USE_NORMAL_MAP/USE_OCCLUSION_MAP composition on the apply_alpha_masks pattern (the ER proposal's API verbatim, so the game's s695 hasattr wiring lights up with zero change). NORMAL needs a bound normal-map stage AND a tangent column (NaN-black guard, gate-measured on a tangentless M_normal card); OCCLUSION needs a metal-rough/ORM stage (`.r` = AO, analytic-exact in-gate); variant-carrying geoms (ALPHA_MASK hair, GLASS, GPU_MORPHS) skipped — call it last. **Composes with the face-range CPU valve** (fact #23's override rock-paper-scissors): `set_hardware_skinning` re-stamps covered geoms at the valve override with the flag folded in + shadow casters get a per-camera tag-state rescue (without it the depth pass ASSERTS — falsified in-gate); `clear_hardware_skinning` no longer leaves the empty-attrib blanket behind. NEW test_detail_maps (18 default + 4 shadow checks; @directional and @directional@logdepth legs = the leak detector), green both engines; stock-1.10 import guarded (M_occlusion_metallic_roughness getattr). **ADOPTED GAME-SIDE same day (game s737): boot counts 10/14/12 geoms, juno A/B frames close the promo gap with the CPU valve ON throughout (valve composition field-proven), PS_BENCH unmeasurable per envelope, `PS_NO_DETAIL_MAPS` kill switch game-side — TERMINAL.** Next expected filing from that lane: SSS skin. See master plan §4.22 |
 | VFX lane | Baked explosion footage (CGVision air/space pack, 28 ProRes 4444 MOVs at `C:\python\asset_sources\Explosions\`) | **`spawn_effect()` LANDED + GATED (Session AD, 2026-07-23):** premultiplied flipbook quads via set_screen(metallic-1-black = analytically unlit) + set_glass + play_flipbook, one-shot self-reaping; footage MEASURED premultiplied; `gen_flipbook.py` alpha-aware (RGB path byte-identical). test_effects 13 checks ×@directional both engines. **First adoption same day (sfb2, uncommitted): planetside non-ground detonations (launcher/grenade airbursts) play the baked fireball; ground hits keep the corona.** `spawn_effect(fade_out=N)` one-shot end-ramp (coverage + emission to zero over the last N s — non-transparent final frames no longer ghost-then-pop; +3 test_effects checks) built by a prior session, committed + gate-proven Session AI. Slice 2 (evidence-gated): soft-particle depth fade, multi-angle bakes. Master plan §4.16 |
 
+| ER (voxel lane) | Animal Crossfire requests (`C:\python\paxcraft\docs\ENGINE_NOTES.md` — see Games Served above) | **ALL THREE SESSION-AJ ITEMS IMPLEMENTED + GATED (2026-07-27, pure Python, no build window):** (1) **`render_snapshot(pos, hpr, size, ..., shadow_center=)` photo mode** — one-shot full-pipeline render (PBR/shadows/atmosphere/SSAO/bloom/flare/tonemap) from any pose into a RAM-backed texture WITHOUT perturbing the player's view (player chain deactivated for the one engine frame; window keeps its last image, gated rms 0.0); persistent chain in new `pax3d_render/snapshot.py`, repeat shots 3–24 ms (their fallback was ~30 s subprocess boots — the AI-building loop is now interactive); the shadow-extent coupling is a first-class param (`shadow_center=`/`shadow_extent=`, one-frame recentre + exact restore, gated both ways); NEW test_snapshot 8/11 checks ×@directional, green both engines; planetside gets photo mode/kill-cam free (concordance). (2) **Visibility query fails LOUDLY** — `pipeline.visibility_query_valid`, per-query `.valid`, fail-CLOSED 0.0 while a depth stomper is registered (was: confident open-sky garbage, their three-session trap), `register_viewmodel_camera(on_depth_degrade='raise')`, live-flip degrade in set_enable_log_depth; +9 test_visibility_query checks. (3) **`set_detail_maps` append-only registration** — new entries stamp only their own geoms (was O(total registered) per call — their 300-chunk terrain measured gatling 60→32 fps; their 2 s deferred-batch workaround can retire), no-valve removal O(entry); +3 test_detail_maps checks. Reply filed in their ENGINE_NOTES.md |
 **Engine C++ changes so far: a handful of surgical, gate-proven fixes**
 (build-system fix; Session-R combine-mode warning; Session-X offscreen GL
 fixes; the 2026-07-24 GVAD stability window — DeletedChain restored +

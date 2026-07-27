@@ -499,7 +499,11 @@ What it owns (measured, test_viewmodel — 15 checks, 17 @directional):
   'clear' on stock 1.10 with a warning) and is incompatible with
   `enable_log_depth` (the PBR shader writes gl_FragDepth, which GL
   CLAMPS — not rescales — to the region's depth range; the API falls
-  back to 'clear' and says so).
+  back to 'clear' and says so). **Session AJ:** pass
+  `on_depth_degrade='raise'` to make that fallback fatal at
+  registration instead — and either way the degrade flips
+  `pipeline.visibility_query_valid` False and visibility queries fail
+  closed (see the Session AJ section), never silently confident.
 - Caveats: TAA jitters only the main lens (viewmodel unjittered — no
   ghosting, marginally less temporal AA on hands); one viewmodel
   registration at a time is the supported shape.
@@ -1727,6 +1731,83 @@ Gated by test_light_halo (10 checks + @directional shadow-mask row),
 test_visibility_query (7 checks + latency INFO, +@logdepth), and
 test_spot_exponent (7 checks, +@directional) — identical on both
 engines.
+
+### Session AJ — the voxel-lane trio: photo mode, loud visibility, streaming detail maps (LANDED)
+
+Three Animal Crossfire asks (`C:\python\paxcraft\docs\ENGINE_NOTES.md`,
+2026-07-27), all pure Python, all serving planetside too (concordance).
+
+**1. Photo-mode snapshots — `render_snapshot` (`snapshot.py`).**
+
+```python
+tex = pipe.render_snapshot((x, y, z), (h, p, r), size=(1280, 720),
+                           fov=None, near=None, far=None,      # copy main lens
+                           shadow_center=None, shadow_extent=None,
+                           filename='shot.png')                # optional write
+pipe.release_snapshot_resources()                              # optional; auto on rebuilds
+```
+
+One frame of the FULL pipeline (PBR, shadows, atmosphere, SSAO, bloom,
+flare, tonemap — mirroring the pipeline's current config) from an
+arbitrary pose into a RAM-backed RGBA8 texture, WITHOUT perturbing the
+player's view. `SnapshotRenderer` keeps a persistent offscreen mirror
+of the post chain (scene HDR buffer → SSAO pair → bloom
+extract/down/up + flare → tonemap into an `RTM_copy_ram` buffer), all
+buffers inactive except during a shot: the call deactivates the player
+chain (window + FilterManager buffers + vis-query buffer), renders one
+engine frame, restores everything — the window keeps its last
+presented image (gated rms 0.0), and a same-pose snapshot matches the
+window capture at rms 0.0 (full-pipeline parity, gated). Repeat shots
+measured 3–24 ms — the AI-building feedback loop this was filed for
+runs interactively (the pre-API fallback was ~30 s subprocess boots).
+Camera-coupled state is swapped per shot: `camera_world_position`,
+orbital-atmosphere quad placement, halo viewport height, the log-depth
+coefficient (snapshot lens defaults COPY the main lens, so log-depth
+games keep their wide frustum for free). **The shadow-extent
+contract:** games recentre the sun shadow frustum on the main camera,
+so a far-away snapshot sees absent coverage — pass
+`shadow_center=`(usually the pose)/`shadow_extent=` for a one-frame
+recentre with exact restore (gated both ways), or recentre yourself
+around the call. Known limits (header of `snapshot.py`): aux scene
+cameras render with their game-owned transforms (re-aim the sky camera
+yourself for off-pose shots); the viewmodel is excluded; no TAA on
+single frames. Chain releases on every rebuild-class toggle and
+rebuilds lazily at the next shot (gated through a set_enable_bloom
+flip).
+
+**2. Visibility queries fail LOUDLY — `visibility_query_valid`.**
+
+The Session-AF query read the scene depth texture; a viewmodel region
+in `depth_mode='clear'` stomps that texture full-screen, and the
+queries then confidently reported "open sky everywhere" (flare through
+mountains — a downstream game lost three sessions to it). Now:
+`pipe.visibility_query_valid` is False whenever a post-main region
+clears depth; while invalid every query reports `visibility 0.0` with
+`.valid False` (fail CLOSED, one loud print per transition, restored
+automatically on unregister). `register_viewmodel_camera(...,
+on_depth_degrade='raise')` makes a degraded 'range' request fatal at
+registration (log depth on, or stock 1.10), and
+`set_enable_log_depth(True)` degrades a live 'range' viewmodel
+properly (region clear flipped on) and loudly, instead of leaving it
+silently broken. +9 test_visibility_query checks across the legs.
+
+**3. `set_detail_maps` append-only registration.**
+
+Registering model N now stamps ONLY model N's geoms
+(`_stamp_detail_entry`); the old path ended every call in the global
+valve refresh — O(total registered geoms) per call, which made
+per-attach registration on a ~300-chunk streaming terrain a
+full-registry restamp per weapon-fire remesh (measured game-side:
+60→32 fps). Removal with no skinning valves anywhere is O(entry).
+The global refresh still runs where the valve registry can interact
+(reconfigure-in-place, removal while valves exist, valve flips,
+recompiles — character-lane events, never the chunk-attach path).
++3 test_detail_maps checks (stamp counting, no-restamp removal,
+bit-identical survivor).
+
+Gated by NEW test_snapshot (8 checks + 3 @directional shadow-contract
+rows + SSAO flat-identity) and the extended visibility/detail tests —
+identical on both engines.
 
 ## 10. Testing Contract
 

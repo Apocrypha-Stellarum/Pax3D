@@ -1463,3 +1463,45 @@ queue row + C++-changes line, paxcraft ENGINE_NOTES.md response
 keep-the-PT one-liner applied game-side. Gate logs
 `gate_bind_pax3d_game.log` / `gate_bind_stock_game.log`; wheel archived
 `wheels_bind_pin\` (rollback: `wheels_gvad\`).
+
+**Session AJ update (2026-07-27, the voxel-lane trio — paxcraft asks
+landed same-day):** The first session formally serving the SECOND game:
+Animal Crossfire (`C:\python\paxcraft`, the Minecraft-style voxel
+game) is now a sanctioned secondary engine consumer — user-ratified,
+recorded in CLAUDE.md's new "Games Served" table; its
+`docs/ENGINE_NOTES.md` is the standing two-way channel (engine replies
+inline; the bind_thread exchange set the pattern). Space sim first by
+policy, but all three of today's filings serve planetside too (the
+concordance policy, now named in CLAUDE.md). The trio, all pure
+Python, no build window: (1) **`render_snapshot(pos, hpr, size, ...,
+shadow_center=)`** — one-shot FULL-pipeline render (PBR/shadows/
+atmosphere/SSAO/bloom/flare/tonemap) from any pose into a RAM-backed
+texture without perturbing the player's view; new
+`pax3d_render/snapshot.py` keeps a persistent offscreen mirror of the
+post chain, inactive except during the shot (player chain sits out
+exactly one engine frame — gated rms 0.0; same-pose parity vs the
+window capture rms 0.0); the filing's shadow-extent coupling became
+the `shadow_center=`/`shadow_extent=` one-frame recentre with exact
+restore, gated both ways; repeat shots 3–24 ms vs their ~30 s
+subprocess fallback — their AI-building feedback loop (an AI
+screenshots its own build and iterates) is now interactive, and
+planetside gets photo mode / kill-cam free. (2) **Visibility queries
+fail LOUDLY** — `visibility_query_valid` + per-query `.valid`,
+fail-CLOSED 0.0 while a viewmodel stomps the scene depth (was:
+confident open-sky garbage — their three-session trap),
+`on_depth_degrade='raise'` at registration, and a live
+`enable_log_depth` flip now degrades a 'range' viewmodel properly and
+loudly. (3) **`set_detail_maps` append-only registration** — new
+entries stamp only their own geoms (was O(total registered) per call:
+their 300-chunk streaming terrain measured gatling 60→32 fps),
+no-valve removal O(entry); per-attach registration is now the correct
+integration and their deferred-batch workaround retires. Gates: NEW
+test_snapshot (7 default + 10 @directional, green both engines incl.
+the routed pax_pbr row), +9 test_visibility_query checks, +3
+test_detail_maps checks. Totals from the ER-014 baseline 87/7/136 ·
+84/7/139 to **Pax3D 90/7/139 · stock 87/7/142** (+3 PASS +3 SKIP
+each, FAIL sets unchanged; logs `gate_aj_*`). Docs: CLAUDE.md Games
+Served + voxel-lane status row, master plan §4.23, arch doc §6.1 +
+§9 Session AJ, paxtest README (incl. the missing Session-AI
+detail_maps block, trued up), ENGINE_NOTES.md inline reply, sfb2
+USING_PAX3D_RENDER §8 quick-ref (game commit `bc35e24`).

@@ -1057,6 +1057,80 @@ ER-014 is TERMINAL; their next filing on its heels = the SSS-skin ER
 
 ---
 
+### 4.23 Session AJ (2026-07-27) — the voxel-lane trio: photo mode, loud visibility, streaming detail maps
+
+The first session serving the SECOND game: Animal Crossfire (the
+Minecraft-style voxel game at `C:\python\paxcraft`) filed three asks in
+its `docs/ENGINE_NOTES.md`, and the session also formalized that
+arrangement — the voxel game is a sanctioned secondary engine consumer
+(user-ratified; CLAUDE.md "Games Served" table is the record, that
+ENGINE_NOTES.md file is the standing two-way channel, replies inline).
+Space sim first by policy; every item below serves planetside too
+(concordance). All three landed same-day, pure Python, no build window.
+
+**1. `render_snapshot` photo mode (their Phase-C AI-building loop; our
+photo mode / kill-cam).** `pipeline.render_snapshot(pos, hpr, size,
+fov=, near=, far=, shadow_center=, shadow_extent=, filename=)` → a
+RAM-backed RGBA8 texture of ONE full-pipeline frame (PBR, shadows,
+atmosphere, SSAO, bloom, flare, tonemap — mirroring current config)
+from an arbitrary pose, without perturbing the player's view. New
+`pax3d_render/snapshot.py`: a persistent offscreen mirror of the post
+chain (scene HDR + SSAO pair + bloom extract/down/up + flare + tonemap
+into an RTM_copy_ram buffer), inactive except during the shot — the
+call deactivates the player chain (window + FilterManager + vis-query
+buffers) for exactly one engine frame and restores everything.
+Camera-coupled state swapped per shot (camera_world_position, orbital
+quads, halo vp height, log-depth coefficient; lens defaults COPY the
+main lens). The filing's flagged shadow coupling became a first-class
+param: `shadow_center=`/`shadow_extent=` one-frame recentre with exact
+restore — both their offered contracts honored. Measured: repeat shots
+3–24 ms (their fallback was ~30 s subprocess boots); same-pose parity
+vs the window capture rms 0.0; player view rms 0.0. Chain auto-releases
+on every rebuild-class toggle (gated through a set_enable_bloom flip)
+and on cleanup(). Known limits in the module header (aux-camera
+transforms game-owned; viewmodel excluded; no TAA single-frame). NEW
+`test_snapshot` (+@directional in run.py): 7 checks default + 10
+directional (shadow contract both ways + exact restore + SSAO
+flat-identity), green both engines, INCLUDING the routed pax_pbr row.
+
+**2. Visibility queries fail LOUDLY (their Session-5 three-session
+trap, promoted to contract).** `pipeline.visibility_query_valid`
+property + per-query `.valid`: False whenever a post-main region
+clears the scene depth (viewmodel depth_mode='clear', requested or
+degraded-to) — while invalid every query reports visibility 0.0
+fail-CLOSED with one loud print per transition, instead of confidently
+reading the cleared buffer as "open sky everywhere" (flare through
+mountains, the old behavior). `register_viewmodel_camera(...,
+on_depth_degrade='raise')` makes a degraded 'range' request fatal at
+registration; `set_enable_log_depth(True)` now degrades a live 'range'
+viewmodel properly (region clear flipped on, loud) instead of leaving
+gl_FragDepth clamping silently. +9 test_visibility_query checks
+across default/@logdepth/stock legs (stock exercises the
+no-set_depth_range degrade).
+
+**3. `set_detail_maps` append-only registration (their streaming-chunk
+profile; our streaming content too).** Registration of model N stamps
+ONLY model N's geoms (`_stamp_detail_entry`); the old
+always-global `_refresh_detail_valve_stamps` tail made per-attach
+registration O(total registered) per call — their ~300-chunk terrain
+measured gatling remesh 60→32 fps and shipped a 0.3 s/2 s
+deferred-batch workaround, now retirable. No-valve removal is
+O(entry). The global refresh remains on every path the valve registry
+can touch (reconfigure-in-place, removal while valves exist, valve
+flips, recompiles — character-lane events). +3 test_detail_maps
+checks (stamp-count hook, no-restamp removal, bit-identical survivor),
+all four legs green both engines.
+
+Gate: **Pax3D 90/7/139 · stock 87/7/142** (from the ER-014 baseline
+87/7/136 · 84/7/139: +3 PASS +3 SKIP each — the snapshot rows; FAIL
+sets unchanged, the same 7 known rows both engines; logs
+`gate_aj_*`). Docs: CLAUDE.md Games Served section + voxel-lane status
+row, arch doc §6.1 note + §9 Session AJ, paxtest README rows, reply
+filed inline in paxcraft ENGINE_NOTES.md, sfb2 USING_PAX3D_RENDER §8
+quick-ref entries (committed game-side, `bc35e24`).
+
+---
+
 ## 5. Risks
 
 | Risk | Mitigation |

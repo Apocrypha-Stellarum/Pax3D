@@ -1,0 +1,1933 @@
+paxtest: 236 jobs, python=C:\python\pax3d-env\Scripts\python.exe, baseline=game
+
+--- gamma/none ---
+  [ ok ] transfer:linear  max_err=0.000 at in=0.800 (expected 0.800, got 0.800)
+  [info] texture_srgb_decode  RAW (not linearized): measured=0.502, raw-pred=0.502, decoded-pred=0.220
+
+--- gamma/simplepbr ---
+  [ ok ] transfer:stock  max_err=0.002 at in=0.867 (expected 0.822, got 0.820)
+  [ ok ] exposure_ev1:stock  max_err=0.002
+  [info] texture_srgb_decode  RAW (not linearized): measured=0.729, raw-pred=0.731, decoded-pred=0.554
+
+--- gamma/pax3d_simplepbr ---
+  [ ok ] transfer:aces  max_err=0.002 at in=0.267 (expected 0.657, got 0.655)
+  [ ok ] transfer:reinhard  max_err=0.002 at in=0.467 (expected 0.594, got 0.592)
+  [ ok ] transfer:uncharted2  max_err=0.002 at in=0.667 (expected 0.641, got 0.639)
+  [ ok ] transfer:hejl_dawson  max_err=0.002 at in=0.867 (expected 0.822, got 0.820)
+  [ ok ] exposure_ev1:hejl_dawson  max_err=0.002
+  [info] texture_srgb_decode  RAW (not linearized): measured=0.804, raw-pred=0.803, decoded-pred=0.604
+
+--- gamma/pax_pbr ---
+  [ ok ] transfer:aces  max_err=0.000 at in=0.533 (expected 0.815, got 0.814)
+  [ ok ] transfer:reinhard  max_err=0.000 at in=2.933 (expected 0.875, got 0.875)
+  [ ok ] transfer:uncharted2  max_err=0.000 at in=2.400 (expected 0.888, got 0.888)
+  [ ok ] transfer:hejl_dawson  max_err=0.000 at in=0.867 (expected 0.822, got 0.821)
+  [ ok ] exposure_ev1:hejl_dawson  max_err=0.000
+  [info] texture_srgb_decode  RAW (not linearized): measured=0.803, raw-pred=0.803, decoded-pred=0.604
+
+--- gamma/pax3d_render ---
+  [ ok ] transfer:aces  max_err=0.000 at in=0.533 (expected 0.815, got 0.814)
+  [ ok ] transfer:reinhard  max_err=0.000 at in=2.933 (expected 0.875, got 0.875)
+  [ ok ] transfer:uncharted2  max_err=0.000 at in=2.400 (expected 0.888, got 0.888)
+  [ ok ] transfer:hejl_dawson  max_err=0.000 at in=0.867 (expected 0.822, got 0.821)
+  [ ok ] exposure_ev1:hejl_dawson  max_err=0.000
+  [info] texture_srgb_decode  RAW (not linearized): measured=0.803, raw-pred=0.803, decoded-pred=0.604
+
+--- lighting/none ---
+  [info] gltf_ship  no model available, skipping
+  [ ok ] sphere_game:visible  mean_lum=1.000 with sun behind camera
+  [FAIL] sphere_game:front_vs_back  frontlit=1.000 backlit=1.000 ratio=1.0
+  [FAIL] sphere_game:east  lit_half=1.000 dark_half=1.000 ratio=1.0
+  [FAIL] sphere_game:west  lit_half=1.000 dark_half=1.000 ratio=1.0
+  [FAIL] sphere_game:up  lit_half=1.000 dark_half=1.000 ratio=1.0
+  [FAIL] sphere_game:down  lit_half=1.000 dark_half=1.000 ratio=1.0
+  [info] sphere_reversed:visible  ok — mean_lum=1.000 with sun behind camera
+  [info] sphere_reversed:front_vs_back  ANOMALY — frontlit=1.000 backlit=1.000 ratio=1.0
+  [info] sphere_reversed:east  ANOMALY — lit_half=1.000 dark_half=1.000 ratio=1.0
+  [info] sphere_reversed:west  ANOMALY — lit_half=1.000 dark_half=1.000 ratio=1.0
+  [info] sphere_reversed:up  ANOMALY — lit_half=1.000 dark_half=1.000 ratio=1.0
+  [info] sphere_reversed:down  ANOMALY — lit_half=1.000 dark_half=1.000 ratio=1.0
+
+--- lighting/simplepbr ---
+  [info] gltf_ship  no model available, skipping
+  [ ok ] sphere_game:visible  mean_lum=0.786 with sun behind camera
+  [ ok ] sphere_game:front_vs_back  frontlit=0.786 backlit=0.086 ratio=9.1
+  [ ok ] sphere_game:east  lit_half=0.563 dark_half=0.086 ratio=6.5
+  [ ok ] sphere_game:west  lit_half=0.556 dark_half=0.086 ratio=6.4
+  [ ok ] sphere_game:up  lit_half=0.556 dark_half=0.086 ratio=6.4
+  [ ok ] sphere_game:down  lit_half=0.563 dark_half=0.086 ratio=6.5
+  [info] sphere_reversed:visible  ok — mean_lum=0.086 with sun behind camera
+  [info] sphere_reversed:front_vs_back  ANOMALY — frontlit=0.086 backlit=0.786 ratio=0.1 — INVERTED
+  [info] sphere_reversed:east  ok — lit_half=0.563 dark_half=0.086 ratio=6.5
+  [info] sphere_reversed:west  ok — lit_half=0.556 dark_half=0.086 ratio=6.4
+  [info] sphere_reversed:up  ok — lit_half=0.556 dark_half=0.086 ratio=6.4
+  [info] sphere_reversed:down  ok — lit_half=0.563 dark_half=0.086 ratio=6.5
+
+--- lighting/pax3d_simplepbr ---
+  [info] gltf_ship  no model available, skipping
+  [ ok ] sphere_game:visible  mean_lum=0.786 with sun behind camera
+  [ ok ] sphere_game:front_vs_back  frontlit=0.786 backlit=0.086 ratio=9.1
+  [ ok ] sphere_game:east  lit_half=0.563 dark_half=0.086 ratio=6.5
+  [ ok ] sphere_game:west  lit_half=0.556 dark_half=0.086 ratio=6.4
+  [ ok ] sphere_game:up  lit_half=0.556 dark_half=0.086 ratio=6.4
+  [ ok ] sphere_game:down  lit_half=0.563 dark_half=0.086 ratio=6.5
+  [info] sphere_reversed:visible  ok — mean_lum=0.086 with sun behind camera
+  [info] sphere_reversed:front_vs_back  ANOMALY — frontlit=0.086 backlit=0.786 ratio=0.1 — INVERTED
+  [info] sphere_reversed:east  ok — lit_half=0.563 dark_half=0.086 ratio=6.5
+  [info] sphere_reversed:west  ok — lit_half=0.556 dark_half=0.086 ratio=6.4
+  [info] sphere_reversed:up  ok — lit_half=0.556 dark_half=0.086 ratio=6.4
+  [info] sphere_reversed:down  ok — lit_half=0.563 dark_half=0.086 ratio=6.5
+
+--- lighting/pax_pbr ---
+  [info] gltf_ship  no model available, skipping
+  [ ok ] sphere_game:visible  mean_lum=0.786 with sun behind camera
+  [ ok ] sphere_game:front_vs_back  frontlit=0.786 backlit=0.086 ratio=9.2
+  [ ok ] sphere_game:east  lit_half=0.563 dark_half=0.086 ratio=6.6
+  [ ok ] sphere_game:west  lit_half=0.556 dark_half=0.086 ratio=6.5
+  [ ok ] sphere_game:up  lit_half=0.556 dark_half=0.086 ratio=6.5
+  [ ok ] sphere_game:down  lit_half=0.563 dark_half=0.086 ratio=6.6
+  [info] sphere_reversed:visible  ok — mean_lum=0.086 with sun behind camera
+  [info] sphere_reversed:front_vs_back  ANOMALY — frontlit=0.086 backlit=0.786 ratio=0.1 — INVERTED
+  [info] sphere_reversed:east  ok — lit_half=0.563 dark_half=0.086 ratio=6.6
+  [info] sphere_reversed:west  ok — lit_half=0.556 dark_half=0.086 ratio=6.5
+  [info] sphere_reversed:up  ok — lit_half=0.556 dark_half=0.086 ratio=6.5
+  [info] sphere_reversed:down  ok — lit_half=0.563 dark_half=0.086 ratio=6.6
+  [info] real_directional_light  IGNORED by this pipeline (ambient-only=0.086, with DirectionalLight=0.086)
+
+--- lighting/pax3d_render ---
+  [info] gltf_ship  no model available, skipping
+  [ ok ] sphere_game:visible  mean_lum=0.786 with sun behind camera
+  [ ok ] sphere_game:front_vs_back  frontlit=0.786 backlit=0.086 ratio=9.2
+  [ ok ] sphere_game:east  lit_half=0.563 dark_half=0.086 ratio=6.6
+  [ ok ] sphere_game:west  lit_half=0.556 dark_half=0.086 ratio=6.5
+  [ ok ] sphere_game:up  lit_half=0.556 dark_half=0.086 ratio=6.5
+  [ ok ] sphere_game:down  lit_half=0.563 dark_half=0.086 ratio=6.6
+  [info] sphere_reversed:visible  ok — mean_lum=0.086 with sun behind camera
+  [info] sphere_reversed:front_vs_back  ANOMALY — frontlit=0.086 backlit=0.786 ratio=0.1 — INVERTED
+  [info] sphere_reversed:east  ok — lit_half=0.563 dark_half=0.086 ratio=6.6
+  [info] sphere_reversed:west  ok — lit_half=0.556 dark_half=0.086 ratio=6.5
+  [info] sphere_reversed:up  ok — lit_half=0.556 dark_half=0.086 ratio=6.5
+  [info] sphere_reversed:down  ok — lit_half=0.563 dark_half=0.086 ratio=6.6
+  [info] real_directional_light  IGNORED by this pipeline (ambient-only=0.086, with DirectionalLight=0.086)
+
+--- lighting/pax3d_render @directional ---
+  [info] sun_mode  directional
+  [info] gltf_ship  no model available, skipping
+  [ ok ] sphere_game:visible  mean_lum=0.786 with sun behind camera
+  [ ok ] sphere_game:front_vs_back  frontlit=0.786 backlit=0.086 ratio=9.2
+  [ ok ] sphere_game:east  lit_half=0.563 dark_half=0.086 ratio=6.6
+  [ ok ] sphere_game:west  lit_half=0.556 dark_half=0.086 ratio=6.5
+  [ ok ] sphere_game:up  lit_half=0.556 dark_half=0.086 ratio=6.5
+  [ ok ] sphere_game:down  lit_half=0.563 dark_half=0.086 ratio=6.6
+  [info] sphere_reversed:visible  ok — mean_lum=0.086 with sun behind camera
+  [info] sphere_reversed:front_vs_back  ANOMALY — frontlit=0.086 backlit=0.786 ratio=0.1 — INVERTED
+  [info] sphere_reversed:east  ok — lit_half=0.563 dark_half=0.086 ratio=6.6
+  [info] sphere_reversed:west  ok — lit_half=0.556 dark_half=0.086 ratio=6.5
+  [info] sphere_reversed:up  ok — lit_half=0.556 dark_half=0.086 ratio=6.5
+  [info] sphere_reversed:down  ok — lit_half=0.563 dark_half=0.086 ratio=6.6
+  [info] real_directional_light  CONSUMED by this pipeline (ambient-only=0.086, with DirectionalLight=0.786)
+
+--- bloom/none @512x512 ---
+  SKIP: pipeline has no bloom support
+
+--- bloom/none @960x540 ---
+  SKIP: pipeline has no bloom support
+
+--- bloom/simplepbr @512x512 ---
+  SKIP: pipeline has no bloom support
+
+--- bloom/simplepbr @960x540 ---
+  SKIP: pipeline has no bloom support
+
+--- bloom/pax3d_simplepbr @512x512 ---
+  [ ok ] core_visible  core_lum=1.000
+  [ ok ] halo_present  mean_lum at r=23px: 0.6050
+  [FAIL] halo_smooth:+x  max_adjacent_step=0.051 at r=72px, outward_jumps=0
+  [FAIL] halo_smooth:-x  max_adjacent_step=0.051 at r=73px, outward_jumps=0
+  [FAIL] halo_smooth:diag  max_adjacent_step=0.051 at r=68px, outward_jumps=0
+  [info] halo_symmetry  left/right delta=0.0000, up/down delta=0.0536
+  [FAIL] bloom_buffers_float  11 bloom buffers, non-float: ['bloom_extract', 'bloom_down_0', 'bloom_down_1', 'bloom_down_2', 'bloom_down_3', 'bloom_down_4', 'bloom_up_0', 'bloom_up_1', 'bloom_up_2', 'bloom_up_3', 'bloom_up_4']
+
+--- bloom/pax3d_simplepbr @960x540 ---
+  [ ok ] core_visible  core_lum=1.000
+  [ ok ] halo_present  mean_lum at r=24px: 0.5858
+  [FAIL] halo_smooth:+x  max_adjacent_step=0.051 at r=63px, outward_jumps=0
+  [FAIL] halo_smooth:-x  max_adjacent_step=0.051 at r=64px, outward_jumps=0
+  [FAIL] halo_smooth:diag  max_adjacent_step=0.051 at r=67px, outward_jumps=0
+  [info] halo_symmetry  left/right delta=0.0000, up/down delta=0.0706
+  [FAIL] bloom_buffers_float  11 bloom buffers, non-float: ['bloom_extract', 'bloom_down_0', 'bloom_down_1', 'bloom_down_2', 'bloom_down_3', 'bloom_down_4', 'bloom_up_0', 'bloom_up_1', 'bloom_up_2', 'bloom_up_3', 'bloom_up_4']
+
+--- bloom/pax_pbr @512x512 ---
+  [ ok ] core_visible  core_lum=1.000
+  [ ok ] halo_present  mean_lum at r=23px: 0.8413
+  [ ok ] halo_smooth:+x  max_adjacent_step=0.014 at r=23px, outward_jumps=0
+  [ ok ] halo_smooth:-x  max_adjacent_step=0.016 at r=24px, outward_jumps=0
+  [ ok ] halo_smooth:diag  max_adjacent_step=0.018 at r=22px, outward_jumps=0
+  [info] halo_symmetry  left/right delta=0.0001, up/down delta=0.0000
+  [ ok ] bloom_buffers_float  11 bloom buffers, non-float: none
+
+--- bloom/pax_pbr @960x540 ---
+  [ ok ] core_visible  core_lum=1.000
+  [ ok ] halo_present  mean_lum at r=24px: 0.8292
+  [ ok ] halo_smooth:+x  max_adjacent_step=0.014 at r=22px, outward_jumps=0
+  [ ok ] halo_smooth:-x  max_adjacent_step=0.016 at r=23px, outward_jumps=0
+  [ ok ] halo_smooth:diag  max_adjacent_step=0.020 at r=21px, outward_jumps=0
+  [info] halo_symmetry  left/right delta=0.0001, up/down delta=0.0003
+  [ ok ] bloom_buffers_float  11 bloom buffers, non-float: none
+
+--- bloom/pax3d_render @512x512 ---
+  [ ok ] core_visible  core_lum=1.000
+  [ ok ] halo_present  mean_lum at r=23px: 0.8413
+  [ ok ] halo_smooth:+x  max_adjacent_step=0.014 at r=23px, outward_jumps=0
+  [ ok ] halo_smooth:-x  max_adjacent_step=0.016 at r=24px, outward_jumps=0
+  [ ok ] halo_smooth:diag  max_adjacent_step=0.018 at r=22px, outward_jumps=0
+  [info] halo_symmetry  left/right delta=0.0001, up/down delta=0.0000
+  [ ok ] bloom_buffers_float  11 bloom buffers, non-float: none
+
+--- bloom/pax3d_render @960x540 ---
+  [ ok ] core_visible  core_lum=1.000
+  [ ok ] halo_present  mean_lum at r=24px: 0.8292
+  [ ok ] halo_smooth:+x  max_adjacent_step=0.014 at r=22px, outward_jumps=0
+  [ ok ] halo_smooth:-x  max_adjacent_step=0.016 at r=23px, outward_jumps=0
+  [ ok ] halo_smooth:diag  max_adjacent_step=0.020 at r=21px, outward_jumps=0
+  [info] halo_symmetry  left/right delta=0.0001, up/down delta=0.0003
+  [ ok ] bloom_buffers_float  11 bloom buffers, non-float: none
+
+--- rebuild/none ---
+  SKIP: pipeline has no bloom toggle — nothing rebuilds
+
+--- rebuild/simplepbr ---
+  SKIP: pipeline has no bloom toggle — nothing rebuilds
+
+--- rebuild/pax3d_simplepbr ---
+  [info] attach_mode  manual buffer-discovery (sky_camera.py pattern)
+  [ ok ] aux_visible_initial  red=0.84
+  [FAIL] aux_survives_bloom_on  red=0.00
+  [FAIL] aux_survives_bloom_off  red=0.00
+
+--- rebuild/pax_pbr ---
+  [info] attach_mode  manual buffer-discovery (sky_camera.py pattern)
+  [ ok ] aux_visible_initial  red=0.84
+  [FAIL] aux_survives_bloom_on  red=0.00
+  [FAIL] aux_survives_bloom_off  red=0.00
+
+--- rebuild/pax3d_render ---
+  [info] attach_mode  register_scene_camera API
+  [ ok ] aux_visible_initial  red=0.84
+  [ ok ] aux_survives_bloom_on  red=0.85
+  [ ok ] aux_survives_bloom_off  red=0.84
+
+--- shadows/none ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadows/simplepbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadows/pax3d_simplepbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadows/pax_pbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadows/pax3d_render ---
+  [ ok ] unshadowed_bright  lum=0.800 with shadows off
+  [ ok ] shadow_darkens  shadowed=0.086 unshadowed=0.800 ratio=9.3
+  [ ok ] shadow_toggle_returns  reshadowed=0.086 (runtime recompile path)
+  [ ok ] extent_miss_is_lit  pole lum=0.800 outside origin-centered extent (outside frustum must be lit, not artifacts)
+  [ ok ] extent_recenter_shadows  pole lum=0.086 after centering the extent on the cluster
+  [ ok ] recenter_keeps_lighting  lit-point lum 0.456 -> 0.456 (light-node set_pos must not change lighting)
+  [ ok ] skinned_rig_soft  Character=True TransformBlendTable=True (guards against rigidified test geometry)
+  [ ok ] depth_instrument_sees_static  5776 texels from the static occluder (instrument sanity)
+  [ ok ] skinned_writes_depth  7396 texels from the skinned sheet (static control: 5776)
+  [ ok ] skinned_casts_shadow  pole lum 0.800 (no caster) -> 0.086 (skinned sheet overhead)
+  [ ok ] skinned_shadow_follows_pose  x=+1.4 lum 0.321 -> 0.037 (joint_tip dragged +2x; control_joint=True)
+  [info] skinned_pole_posed  pole lum 0.086 (stretched sheet still covers x=0)
+  [ ok ] gltf_caster_writes_depth  2820 depth texels from a panda3d-gltf Actor (f_1.glb, anims=['A-poses'])
+  [ ok ] gltf_caster_darkens_ground  pole lum 0.800 (no caster) -> 0.086 under the actor
+
+--- shadows/pax3d_render @softskin ---
+  [ ok ] unshadowed_bright  lum=0.800 with shadows off
+  [ ok ] shadow_darkens  shadowed=0.086 unshadowed=0.800 ratio=9.3
+  [ ok ] shadow_toggle_returns  reshadowed=0.086 (runtime recompile path)
+  [ ok ] extent_miss_is_lit  pole lum=0.800 outside origin-centered extent (outside frustum must be lit, not artifacts)
+  [ ok ] extent_recenter_shadows  pole lum=0.086 after centering the extent on the cluster
+  [ ok ] recenter_keeps_lighting  lit-point lum 0.456 -> 0.456 (light-node set_pos must not change lighting)
+  [ ok ] skinned_rig_soft  Character=True TransformBlendTable=True (guards against rigidified test geometry)
+  [ ok ] depth_instrument_sees_static  5776 texels from the static occluder (instrument sanity)
+  [ ok ] skinned_writes_depth  7396 texels from the skinned sheet (static control: 5776)
+  [ ok ] skinned_casts_shadow  pole lum 0.800 (no caster) -> 0.086 (skinned sheet overhead)
+  [ ok ] skinned_shadow_follows_pose  x=+1.4 lum 0.321 -> 0.037 (joint_tip dragged +2x; control_joint=True)
+  [info] skinned_pole_posed  pole lum 0.086 (stretched sheet still covers x=0)
+  [ ok ] gltf_caster_writes_depth  2820 depth texels from a panda3d-gltf Actor (f_1.glb, anims=['A-poses'])
+  [ ok ] gltf_caster_darkens_ground  pole lum 0.800 (no caster) -> 0.086 under the actor
+
+--- shadows_gltf/none ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadows_gltf/simplepbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadows_gltf/pax3d_simplepbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadows_gltf/pax_pbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadows_gltf/pax3d_render ---
+  [ ok ] gltf_scene_loaded  ground=True box=True
+  [ ok ] receiver_is_gltf_material  ground carries TextureAttrib + MaterialAttrib (texture-sampling glTF path, not flat color)
+  [ ok ] caster_is_gltf_material  box carries TextureAttrib + MaterialAttrib
+  [ ok ] gltf_ground_lit_bright  open-ground lum=0.746 with shadows on (textured glTF receiver renders lit)
+  [ ok ] gltf_box_shadows_gltf_ground  shadow-point lum 0.746 (shadows off) -> 0.086 (on); 45-degree sun, glTF caster AND receiver
+  [ ok ] gltf_actor_shadows_gltf_ground  actor-shadow lum 0.746 (off) -> 0.254 (on); height=1.85, f_1.glb
+
+--- shadow_quality/none ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadow_quality/simplepbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadow_quality/pax3d_simplepbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadow_quality/pax_pbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadow_quality/pax3d_render ---
+  [ ok ] bias_trap_at_scale  under-occluder lum=0.682 vs open ground 0.682: default bias 0.005 x depth 600 = 3.0 world units ERASES the 1.2-high caster (gap 2.4) — the trap is real and measured
+  [ ok ] bias_world_units_restores  shadow lum=0.086 lit=0.606 with set_shadow_bias(0.2, world_units=True)
+  [ ok ] angled_sun_shadow_where_predicted  sun 30 deg elevation: dark at predicted (-2.08,0), lit at mirror (2.08,0)
+  [ ok ] bias_world_extent_invariant  same 0.2 world bias at extent 12/60: shadow lum=0.086 lit=0.682 (normalized bias would have changed by 10x)
+  [ ok ] pcf_edge_softens  edge transition 6px (1 tap) -> 16px (3x3); texel = 4px, expect ~+2 texels
+  [ ok ] pcf_interior_unchanged  interior 0.086->0.086, lit 0.682->0.675 across filter switch
+  [ ok ] nocast_excluded_ground_lit  ground under excluded occluder lum=0.682 (lit ref 0.682)
+  [ ok ] nocast_still_visible_to_camera  occluder pixel rgb=(0.71,0.33,0.33) — red card still renders in the main view
+  [ ok ] nocast_include_restores  shadow back after include_in_shadows (lum=0.086)
+
+--- shadow_grazing/none ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadow_grazing/simplepbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadow_grazing/pax3d_simplepbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadow_grazing/pax_pbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadow_grazing/pax3d_render ---
+  [ ok ] grazing_acne_present  open-ground acne fraction=0.132 at sun alt 12 deg (tan(theta)=4.70), constant bias 0.05 world / texel 0.234 -- the grazing self-shadow defect reproduces
+  [ ok ] real_umbra_present  caster umbra fraction=1.000 (a real shadow exists to protect; gap=4.8 world units)
+  [ ok ] grazing_acne_cleared  open-ground acne fraction 0.132 -> 0.000 with set_shadow_normal_bias(0.15) -- slope term 0.71 > acne offset 0.55
+  [ ok ] real_umbra_retained  caster umbra fraction 1.000 -> 1.000: the real shadow survives (slope term 0.71 << gap 4.8) -- no peter-panning
+  [ ok ] over_bias_erodes_shadow  caster umbra fraction 1.000 -> 0.000 at set_shadow_normal_bias(1.5) (slope term 7.06 > gap 4.8) -- the umbra check has teeth: over-biasing lifts real shadows and is caught
+  [ ok ] opt_out_restores  normal_bias 0 reproduces the before state exactly (acne 0.132->0.132, umbra 1.000->1.000)
+
+--- shadow_snap/none ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadow_snap/simplepbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadow_snap/pax3d_simplepbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadow_snap/pax_pbr ---
+  SKIP: pipeline has no directional sun mode
+
+--- shadow_snap/pax3d_render ---
+  [ ok ] snap_defaults_off  shadow_texel_snap defaults to False (byte-identical shipped behavior)
+  [ ok ] nosnap_subtexel_rerasters  0.3-texel center move, snap off: 24 depth texels changed — every sub-texel step redraws the map (the shimmer source)
+  [ ok ] snap_on_grid_identical  snap enabled at an on-grid center: screen rms=0.00e+00 (no behavior change until the center actually moves)
+  [ ok ] snap_subtexel_stable  sub-texel center sweep with snap on: depth map and screen unchanged [0.15tx: depth diff 0, rms 0.0e+00; 0.30tx: depth diff 0, rms 0.0e+00; 0.45tx: depth diff 0, rms 0.0e+00] — shadow edges cannot shimmer while the frustum follows a walking camera
+  [ ok ] snap_whole_texel_moves  2-texel center move with snap on: 152 depth texels changed — the frustum follows in whole-texel steps, it is not frozen
+  [ ok ] snap_off_restores  snap disabled, center restored: screen rms=0.00e+00 vs the original no-snap capture
+
+--- ftl_blur/none ---
+  SKIP: pipeline has no radial-blur API
+
+--- ftl_blur/simplepbr ---
+  SKIP: pipeline has no radial-blur API
+
+--- ftl_blur/pax3d_simplepbr ---
+  SKIP: pipeline has no radial-blur API
+
+--- ftl_blur/pax_pbr ---
+  [ ok ] quad_visible  core_lum=0.954
+  [ ok ] baseline_dark_inboard  lum=0.0000
+  [ ok ] smear_radial_inboard  baseline=0.0000 blurred=0.8336
+  [ ok ] smear_not_tangential  baseline=0.0000 blurred=0.0000
+  [ ok ] center_moves_with_uniform  smear at old inboard point: 0.0000 (baseline 0.0000)
+  [ ok ] chroma_red_outward  outer band r=0.7129 b=0.0000
+  [ ok ] chroma_blue_inward  inner band r=0.0000 b=0.4694
+  [ ok ] passthrough_identical  max_point_diff=0.0000
+
+--- ftl_blur/pax3d_render ---
+  [ ok ] quad_visible  core_lum=0.954
+  [ ok ] baseline_dark_inboard  lum=0.0000
+  [ ok ] smear_radial_inboard  baseline=0.0000 blurred=0.8336
+  [ ok ] smear_not_tangential  baseline=0.0000 blurred=0.0000
+  [ ok ] center_moves_with_uniform  smear at old inboard point: 0.0000 (baseline 0.0000)
+  [ ok ] chroma_red_outward  outer band r=0.7129 b=0.0000
+  [ ok ] chroma_blue_inward  inner band r=0.0000 b=0.4694
+  [ ok ] passthrough_identical  max_point_diff=0.0000
+
+--- scale/none ---
+  [FAIL] zfight_at_range  overlap at 2500 IEU (sep 1.0, 6-step sweep): worst red=0.02 green=0.98 at +0.31 (R4 acceptance — expected FAIL until log depth)
+  [ ok ] zfight_near_control  overlap at 50 IEU: red=1.00 green=0.00 (must stay green forever)
+  [ ok ] origin_control  origin vs origin diff_fraction=0.00000 (determinism guard)
+  [FAIL] precision_off_origin:1e+06  origin vs 1e+06 IEU diff_fraction=0.00157 (R4 acceptance — expected FAIL until camera-relative)
+  [FAIL] precision_off_origin:1e+07  origin vs 1e+07 IEU diff_fraction=0.21997 (R4 acceptance — expected FAIL until camera-relative)
+  [info] trap_parent_cancel_quantizes  parent at -1.2e7 "canceling" stored sim coords: ship 1.5 IEU from anchor renders diff_fraction=0.08484 vs the true layout — local positions quantize (~1 IEU spacing there) before composition; subtract in doubles instead
+
+--- scale/simplepbr ---
+  SKIP: scale defects are engine-level; run under none + pax3d_render only
+
+--- scale/pax3d_simplepbr ---
+  SKIP: scale defects are engine-level; run under none + pax3d_render only
+
+--- scale/pax_pbr ---
+  SKIP: scale defects are engine-level; run under none + pax3d_render only
+
+--- scale/pax3d_render ---
+  [FAIL] zfight_at_range  overlap at 2500 IEU (sep 1.0, 6-step sweep): worst red=0.00 green=1.00 at +1.24 (R4 acceptance — expected FAIL until log depth)
+  [ ok ] zfight_near_control  overlap at 50 IEU: red=1.00 green=0.00 (must stay green forever)
+  [ ok ] origin_control  origin vs origin diff_fraction=0.00000 (determinism guard)
+  [FAIL] precision_off_origin:1e+06  origin vs 1e+06 IEU diff_fraction=0.00157 (R4 acceptance — expected FAIL until camera-relative)
+  [FAIL] precision_off_origin:1e+07  origin vs 1e+07 IEU diff_fraction=0.21997 (R4 acceptance — expected FAIL until camera-relative)
+  [info] trap_parent_cancel_quantizes  parent at -1.2e7 "canceling" stored sim coords: ship 1.5 IEU from anchor renders diff_fraction=0.08484 vs the true layout — local positions quantize (~1 IEU spacing there) before composition; subtract in doubles instead
+
+--- scale/pax3d_render @logdepth ---
+  [ ok ] zfight_at_range  overlap at 2500 IEU (sep 1.0, 6-step sweep): worst red=1.00 green=0.00 at +0.00 (log depth ON — must pass)
+  [ ok ] zfight_near_control  overlap at 50 IEU: red=1.00 green=0.00 (must stay green forever)
+
+--- skinning/none ---
+  SKIP: per-node skinning API is pax3d_render-only
+
+--- skinning/simplepbr ---
+  SKIP: per-node skinning API is pax3d_render-only
+
+--- skinning/pax3d_simplepbr ---
+  SKIP: per-node skinning API is pax3d_render-only
+
+--- skinning/pax_pbr ---
+  SKIP: per-node skinning API is pax3d_render-only
+
+--- skinning/pax3d_render ---
+  [ ok ] sheet_rig_posed  control_joint acquired=True
+  [ ok ] optout_image_matches_hw  image rms HW vs per-node-CPU = 0.0000 (same pose, both passes)
+  [ ok ] optout_shadow_follows_pose  x=+1.4 shadow lum: hw=0.037 optout=0.037 (depth pass must follow the per-node CPU path — override 2 beats initial state)
+  [ ok ] optout_clear_restores  image rms HW vs cleared = 0.0000
+  [ ok ] bone_palette_200_inert  p3d_TransformTable[200] on the 2-joint rig: rms vs [100] = 0.00e+00 (identity padding — the ceiling is a knob, shadow pass included)
+  [ ok ] bone_palette_restore  back to 100: rms = 0.00e+00 (exact restore)
+  [ ok ] audit_names_oversized_rig  audit at table 100: flagged=[('skinned_chain', 120)] (the missing warning — a too-big rig now names itself)
+  [ ok ] oversized_rig_corrupts_at_100  GPU@[100] vs CPU truth on the posed 120-joint chain: rms 0.1045 — the palette cannot hold the posed joint (the measured justification for the audit warning)
+  [ ok ] auto_palette_covers_rig  'auto' resolved the palette to 128 (>=120): GPU vs CPU truth rms 0.0000 — the cap follows the content, not the other way around
+  [ ok ] pack1_soft_rig  1 soft geoms, anim=Walk, blends=63tr, max_simultaneous=4, sliders=False
+  [ ok ] pack1_palette_math_matches_cpu  max |gpu_sim - cpu| = 0.0000 model units (>4-influence loss / stale palette would show here)
+  [ ok ] pack1_hw_matches_cpu_render  0.00% of pixels differ between GPU and CPU skinning (concertina shows as several %)
+  [ ok ] pack1_optout_roundtrip  0.00% differ after clear_hardware_skinning
+  [ ok ] pack2_soft_rig  1 soft geoms, anim=Walk, blends=63tr, max_simultaneous=4, sliders=False
+  [ ok ] pack2_palette_math_matches_cpu  max |gpu_sim - cpu| = 0.0000 model units (>4-influence loss / stale palette would show here)
+  [ ok ] pack2_hw_matches_cpu_render  0.00% of pixels differ between GPU and CPU skinning (concertina shows as several %)
+  [ ok ] pack2_optout_roundtrip  0.00% differ after clear_hardware_skinning
+
+--- atmosphere/none ---
+  SKIP: pipeline has no set_enable_atmosphere (R5.1)
+
+--- atmosphere/simplepbr ---
+  SKIP: pipeline has no set_enable_atmosphere (R5.1)
+
+--- atmosphere/pax3d_simplepbr ---
+  SKIP: pipeline has no set_enable_atmosphere (R5.1)
+
+--- atmosphere/pax_pbr ---
+  [ ok ] baseline_black  black card, atmosphere off: lum=0.000 (dither+tiny ambient only)
+  [ ok ] density_zero_identical  ENABLE_ATMOSPHERE compiled in, density=0: rms vs off = 0.00e+00 (tau=0 is an exact no-op; recompile preserved every shader input)
+  [ ok ] analytic_d100  black card at 100: rgb=(0.354,0.428,0.485) expected (0.354,0.428,0.485) [1-T=0.181], max channel err 0.000
+  [ ok ] analytic_d400  black card at 400: rgb=(0.606,0.679,0.728) expected (0.606,0.679,0.729) [1-T=0.551], max channel err 0.000
+  [ ok ] analytic_d1600  black card at 1600: rgb=(0.722,0.783,0.821) expected (0.722,0.782,0.821) [1-T=0.959], max channel err 0.000
+  [ ok ] haze_monotonic_with_distance  inscatter grows with distance: 0.423 < 0.671 < 0.775
+  [ ok ] height_analytic_z1  horizontal ray at z=1 (H=30): lum=0.773 expected 0.773 (tau=2.90)
+  [ ok ] height_analytic_z150  horizontal ray at z=150 (H=30): lum=0.073 expected 0.072 (tau=0.02)
+  [ ok ] haze_thins_with_altitude  inscatter 0.773 at z=1 -> 0.073 at z=150: above the scale height the haze is gone
+  [ ok ] sunward_tint  looking sunward rgb ordering red>blue (0.728 vs 0.256); anti-sunward blue>red (0.705 vs 0.256) — forward-scatter lobe follows the sun
+  [ ok ] atmo_scale_one_noop  set_atmosphere_scale(np, 1.0): rms vs untouched = 0.00e+00 (exact no-op)
+  [ ok ] atmo_scale_half_analytic  scale 0.5: left rgb=(0.489,0.567,0.624) expected (0.489,0.567,0.624) err 0.000; sibling keeps full haze err 0.000 (tau scales linearly, per-node only)
+  [ ok ] atmo_scale_zero_no_haze  scale 0.0: left matches the density=0 render to 0.00e+00 (tau exactly 0 — no haze on the subtree); sibling still full haze (err 0.000)
+  [ ok ] atmo_scale_clear_restores  clear_atmosphere_scale(): rms vs untouched = 0.00e+00 (byte-identical restore)
+  [ ok ] opt_out_restores  set_enable_atmosphere(False): rms vs the pre-enable baseline = 0.00e+00 (byte-identical opt-out)
+
+--- atmosphere/pax3d_render ---
+  [ ok ] baseline_black  black card, atmosphere off: lum=0.000 (dither+tiny ambient only)
+  [ ok ] density_zero_identical  ENABLE_ATMOSPHERE compiled in, density=0: rms vs off = 0.00e+00 (tau=0 is an exact no-op; recompile preserved every shader input)
+  [ ok ] analytic_d100  black card at 100: rgb=(0.354,0.428,0.485) expected (0.354,0.428,0.485) [1-T=0.181], max channel err 0.000
+  [ ok ] analytic_d400  black card at 400: rgb=(0.606,0.679,0.728) expected (0.606,0.679,0.729) [1-T=0.551], max channel err 0.000
+  [ ok ] analytic_d1600  black card at 1600: rgb=(0.722,0.783,0.821) expected (0.722,0.782,0.821) [1-T=0.959], max channel err 0.000
+  [ ok ] haze_monotonic_with_distance  inscatter grows with distance: 0.423 < 0.671 < 0.775
+  [ ok ] height_analytic_z1  horizontal ray at z=1 (H=30): lum=0.773 expected 0.773 (tau=2.90)
+  [ ok ] height_analytic_z150  horizontal ray at z=150 (H=30): lum=0.073 expected 0.072 (tau=0.02)
+  [ ok ] haze_thins_with_altitude  inscatter 0.773 at z=1 -> 0.073 at z=150: above the scale height the haze is gone
+  [ ok ] sunward_tint  looking sunward rgb ordering red>blue (0.728 vs 0.256); anti-sunward blue>red (0.705 vs 0.256) — forward-scatter lobe follows the sun
+  [ ok ] atmo_scale_one_noop  set_atmosphere_scale(np, 1.0): rms vs untouched = 0.00e+00 (exact no-op)
+  [ ok ] atmo_scale_half_analytic  scale 0.5: left rgb=(0.489,0.567,0.624) expected (0.489,0.567,0.624) err 0.000; sibling keeps full haze err 0.000 (tau scales linearly, per-node only)
+  [ ok ] atmo_scale_zero_no_haze  scale 0.0: left matches the density=0 render to 0.00e+00 (tau exactly 0 — no haze on the subtree); sibling still full haze (err 0.000)
+  [ ok ] atmo_scale_clear_restores  clear_atmosphere_scale(): rms vs untouched = 0.00e+00 (byte-identical restore)
+  [ ok ] opt_out_restores  set_enable_atmosphere(False): rms vs the pre-enable baseline = 0.00e+00 (byte-identical opt-out)
+
+--- ambient_sh/none ---
+  SKIP: pipeline has no set_hemisphere_ambient (R5.2)
+
+--- ambient_sh/simplepbr ---
+  SKIP: pipeline has no set_hemisphere_ambient (R5.2)
+
+--- ambient_sh/pax3d_simplepbr ---
+  SKIP: pipeline has no set_hemisphere_ambient (R5.2)
+
+--- ambient_sh/pax_pbr ---
+  [ ok ] baseline_flat_ambient  zero SH: card lum=0.108, analytic ambient-only 0.108
+  [ ok ] up_face_analytic  up-facing card rgb=(0.606,0.675,0.802) expected (0.606,0.675,0.802), max err 0.000
+  [ ok ] up_face_sky_tinted  up face is sky-tinted: blue 0.802 > red 0.606
+  [ ok ] down_face_analytic  down-facing card rgb=(0.742,0.606,0.592) expected (0.742,0.606,0.593), max err 0.000
+  [ ok ] down_face_ground_tinted  down face is ground-tinted: red 0.742 > blue 0.592
+  [ ok ] sh_survives_recompile  shader recompile with hemisphere SH set: rms=0.00e+00 (inputs preserved, custom SH re-pushed)
+  [ ok ] clear_restores_baseline  clear_ambient_sh(): rms vs baseline = 0.00e+00 (byte-identical opt-out)
+  [ ok ] pernode_sh_override  node card rgb=(0.742,0.606,0.592) expected swapped-hemisphere (0.742,0.606,0.593) err 0.000; global card beneath unaffected (err 0.000)
+  [ ok ] pernode_sh_clear_restores  clear_ambient_sh(node=...): rms vs pre-override = 0.00e+00 (subtree reverts to the global set)
+  [ ok ] cubemap_sh_dc  DC coeff 5.570 vs analytic 5.568 (0.0%)
+  [ ok ] cubemap_sh_linear_z  z-linear coeff 1.715 vs analytic 1.715 (0.0%)
+  [ ok ] cubemap_sh_stray_bands  non-z bands stay ~zero for a pure z-gradient env (max stray 0.0000)
+  [ ok ] skybox_file_face_table  load_cube_map file N -> GL face N, content intact (worst center-texel err 0.0020)
+  [ ok ] skybox_file_sh_compass  file skybox -> SH names every marker: east_red=(2.48,1.07,0.39); west_blue=(0.74,1.07,2.14); north_green=(0.74,2.15,0.72); south_yellow=(2.48,2.15,0.72)
+  [ ok ] skybox_file_up_orientation  up-face image TOP row = SOUTHERN sky: E(south)=(0.63,0.29,0.28) red-tilted, E(north)=(0.28,0.29,0.63) blue-tilted
+
+--- ambient_sh/pax3d_render ---
+  [ ok ] baseline_flat_ambient  zero SH: card lum=0.108, analytic ambient-only 0.108
+  [ ok ] up_face_analytic  up-facing card rgb=(0.606,0.675,0.802) expected (0.606,0.675,0.802), max err 0.000
+  [ ok ] up_face_sky_tinted  up face is sky-tinted: blue 0.802 > red 0.606
+  [ ok ] down_face_analytic  down-facing card rgb=(0.742,0.606,0.592) expected (0.742,0.606,0.593), max err 0.000
+  [ ok ] down_face_ground_tinted  down face is ground-tinted: red 0.742 > blue 0.592
+  [ ok ] sh_survives_recompile  shader recompile with hemisphere SH set: rms=0.00e+00 (inputs preserved, custom SH re-pushed)
+  [ ok ] clear_restores_baseline  clear_ambient_sh(): rms vs baseline = 0.00e+00 (byte-identical opt-out)
+  [ ok ] pernode_sh_override  node card rgb=(0.742,0.606,0.592) expected swapped-hemisphere (0.742,0.606,0.593) err 0.000; global card beneath unaffected (err 0.000)
+  [ ok ] pernode_sh_clear_restores  clear_ambient_sh(node=...): rms vs pre-override = 0.00e+00 (subtree reverts to the global set)
+  [ ok ] cubemap_sh_dc  DC coeff 5.570 vs analytic 5.568 (0.0%)
+  [ ok ] cubemap_sh_linear_z  z-linear coeff 1.715 vs analytic 1.715 (0.0%)
+  [ ok ] cubemap_sh_stray_bands  non-z bands stay ~zero for a pure z-gradient env (max stray 0.0000)
+  [ ok ] skybox_file_face_table  load_cube_map file N -> GL face N, content intact (worst center-texel err 0.0020)
+  [ ok ] skybox_file_sh_compass  file skybox -> SH names every marker: east_red=(2.48,1.07,0.39); west_blue=(0.74,1.07,2.14); north_green=(0.74,2.15,0.72); south_yellow=(2.48,2.15,0.72)
+  [ ok ] skybox_file_up_orientation  up-face image TOP row = SOUTHERN sky: E(south)=(0.63,0.29,0.28) red-tilted, E(north)=(0.28,0.29,0.63) blue-tilted
+
+--- glass/none ---
+  SKIP: pipeline has no set_glass (Session K)
+
+--- glass/simplepbr ---
+  SKIP: pipeline has no set_glass (Session K)
+
+--- glass/pax3d_simplepbr ---
+  SKIP: pipeline has no set_glass (Session K)
+
+--- glass/pax_pbr ---
+  [ ok ] legacy_alpha_fades_spec  M_alpha highlight lum=0.289, analytic (spec*alpha) 0.290 — the defect, measured
+  [ ok ] glass_spec_preserved  glass highlight lum=0.599, analytic (spec unattenuated) 0.599
+  [ ok ] glass_vs_legacy_ratio  highlight 0.289 -> 0.599 (2.07x)
+  [ ok ] glass_transmits_background  glass over emissive 0.35: lum=0.753, analytic 0.753 (bg * (1-a) + glass)
+  [ ok ] glass_survives_recompile  shader recompile with glass applied: rms=0.00e+00 (variant re-pushed by _reapply_glass_shaders)
+  [ ok ] optout_restores_legacy  set_glass(np, False): rms vs M_alpha baseline = 0.00e+00 (byte-identical opt-out)
+
+--- glass/pax3d_render ---
+  [ ok ] legacy_alpha_fades_spec  M_alpha highlight lum=0.289, analytic (spec*alpha) 0.290 — the defect, measured
+  [ ok ] glass_spec_preserved  glass highlight lum=0.599, analytic (spec unattenuated) 0.599
+  [ ok ] glass_vs_legacy_ratio  highlight 0.289 -> 0.599 (2.07x)
+  [ ok ] glass_transmits_background  glass over emissive 0.35: lum=0.753, analytic 0.753 (bg * (1-a) + glass)
+  [ ok ] glass_survives_recompile  shader recompile with glass applied: rms=0.00e+00 (variant re-pushed by _reapply_glass_shaders)
+  [ ok ] optout_restores_legacy  set_glass(np, False): rms vs M_alpha baseline = 0.00e+00 (byte-identical opt-out)
+
+--- glass/pax3d_render @directional ---
+  [ ok ] legacy_alpha_fades_spec  M_alpha highlight lum=0.289, analytic (spec*alpha) 0.290 — the defect, measured
+  [ ok ] glass_spec_preserved  glass highlight lum=0.599, analytic (spec unattenuated) 0.599
+  [ ok ] glass_vs_legacy_ratio  highlight 0.289 -> 0.599 (2.07x)
+  [ ok ] glass_transmits_background  glass over emissive 0.35: lum=0.753, analytic 0.753 (bg * (1-a) + glass)
+  [ ok ] glass_survives_recompile  shader recompile with glass applied: rms=0.00e+00 (variant re-pushed by _reapply_glass_shaders)
+  [ ok ] optout_restores_legacy  set_glass(np, False): rms vs M_alpha baseline = 0.00e+00 (byte-identical opt-out)
+
+--- doublesided/none ---
+  SKIP: pipeline has no set_double_sided_lighting (Session K)
+
+--- doublesided/simplepbr ---
+  SKIP: pipeline has no set_double_sided_lighting (Session K)
+
+--- doublesided/pax3d_simplepbr ---
+  SKIP: pipeline has no set_double_sided_lighting (Session K)
+
+--- doublesided/pax_pbr ---
+  [ ok ] front_analytic  front face lum=0.705, analytic 0.705
+  [ ok ] default_backface_dark  backface lum=0.108, ambient-only analytic 0.108 — the defect, measured
+  [ ok ] flip_lights_backface  flipped backface lum=0.705, analytic 0.705
+  [ ok ] backface_matches_front  backface 0.705 vs front 0.705 (same surface, same light)
+  [ ok ] front_unchanged_by_flag  front face, flag on vs off: rms=0.00e+00 (the flip is a !gl_FrontFacing branch)
+  [ ok ] optout_restores_default  set_double_sided_lighting(False): rms vs default backface = 0.00e+00 (byte-identical opt-out)
+
+--- doublesided/pax3d_render ---
+  [ ok ] front_analytic  front face lum=0.705, analytic 0.705
+  [ ok ] default_backface_dark  backface lum=0.108, ambient-only analytic 0.108 — the defect, measured
+  [ ok ] flip_lights_backface  flipped backface lum=0.705, analytic 0.705
+  [ ok ] backface_matches_front  backface 0.705 vs front 0.705 (same surface, same light)
+  [ ok ] front_unchanged_by_flag  front face, flag on vs off: rms=0.00e+00 (the flip is a !gl_FrontFacing branch)
+  [ ok ] optout_restores_default  set_double_sided_lighting(False): rms vs default backface = 0.00e+00 (byte-identical opt-out)
+
+--- doublesided/pax3d_render @directional ---
+  [ ok ] front_analytic  front face lum=0.705, analytic 0.705
+  [ ok ] default_backface_dark  backface lum=0.108, ambient-only analytic 0.108 — the defect, measured
+  [ ok ] flip_lights_backface  flipped backface lum=0.705, analytic 0.705
+  [ ok ] backface_matches_front  backface 0.705 vs front 0.705 (same surface, same light)
+  [ ok ] front_unchanged_by_flag  front face, flag on vs off: rms=0.00e+00 (the flip is a !gl_FrontFacing branch)
+  [ ok ] optout_restores_default  set_double_sided_lighting(False): rms vs default backface = 0.00e+00 (byte-identical opt-out)
+
+--- ambient_scale/none ---
+  SKIP: pipeline has no set_ambient_scale (Session L)
+
+--- ambient_scale/simplepbr ---
+  SKIP: pipeline has no set_ambient_scale (Session L)
+
+--- ambient_scale/pax3d_simplepbr ---
+  SKIP: pipeline has no set_ambient_scale (Session L)
+
+--- ambient_scale/pax_pbr ---
+  [ ok ] default_scale_noop  rgb=(0.606,0.675,0.802) expected (0.606,0.675,0.802), max err 0.000 (untouched card, full hemisphere ambient)
+  [ ok ] scaled_analytic  rgb=(0.298,0.363,0.520) expected (0.298,0.363,0.520), max err 0.000 (interior at scale 0.25)
+  [ ok ] scale_survives_recompile  shader recompile with per-node scale set: rms=0.00e+00 (root default + node input both preserved)
+  [ ok ] direct_light_unscaled  rgb=(0.726,0.736,0.766) expected (0.726,0.736,0.766), max err 0.000 (full sun + damped ambient — the sun-shaft case)
+  [ ok ] clear_restores_baseline  clear_ambient_scale(): rms vs baseline = 0.00e+00 (byte-identical opt-out)
+
+--- ambient_scale/pax3d_render ---
+  [ ok ] default_scale_noop  rgb=(0.606,0.675,0.802) expected (0.606,0.675,0.802), max err 0.000 (untouched card, full hemisphere ambient)
+  [ ok ] scaled_analytic  rgb=(0.298,0.363,0.520) expected (0.298,0.363,0.520), max err 0.000 (interior at scale 0.25)
+  [ ok ] scale_survives_recompile  shader recompile with per-node scale set: rms=0.00e+00 (root default + node input both preserved)
+  [ ok ] direct_light_unscaled  rgb=(0.726,0.736,0.766) expected (0.726,0.736,0.766), max err 0.000 (full sun + damped ambient — the sun-shaft case)
+  [ ok ] clear_restores_baseline  clear_ambient_scale(): rms vs baseline = 0.00e+00 (byte-identical opt-out)
+
+--- env_map/none ---
+  SKIP: pipeline has no set_env_map (Session M / R5.3)
+
+--- env_map/simplepbr ---
+  SKIP: pipeline has no set_env_map (Session M / R5.3)
+
+--- env_map/pax3d_simplepbr ---
+  SKIP: pipeline has no set_env_map (Session M / R5.3)
+
+--- env_map/pax_pbr ---
+  [ ok ] real_brdf_lut  128x128 LUT; mirror corner (A,B)=(1.000,0.000) ~ (1, 0)
+  [ ok ] baseline_no_env  rgb=(0.108,0.108,0.108) expected (0.108,0.108,0.108), max err 0.000 (shipped behavior: ibl_spec 0)
+  [ ok ] constant_env_analytic  rgb=(0.730,0.630,0.486) expected (0.730,0.630,0.486), max err 0.000 (A=0.958 B=0.000 @ ndv=1, rough=0.402)
+  [ ok ] env_survives_recompile  shader recompile with env map bound: rms=0.00e+00
+  [ ok ] lod_zero_reads_base  rgb=(0.769,0.415,0.415) expected (0.769,0.415,0.415), max err 0.000 (roughness 0 -> mip 0, red)
+  [ ok ] lod_max_reads_top  rgb=(0.244,0.244,0.543) expected (0.244,0.244,0.543), max err 0.000 (roughness 1 -> top mip, blue)
+  [ ok ] mirror_reflects_neg_y  rgb=(0.794,0.415,0.794) expected (0.794,0.415,0.794), max err 0.000 (normal incidence -> -Y face, magenta)
+  [ ok ] mirror_reflects_pos_z  rgb=(0.415,0.415,0.794) expected (0.415,0.415,0.794), max err 0.000 (45-degree pitch -> +Z face, blue)
+  [ ok ] env_yaw_rotates_lookup  rgb=(0.415,0.794,0.415) expected (0.415,0.794,0.415), max err 0.000 (+90 yaw: -X green arrives at -Y — the skybox set_h sense)
+  [ ok ] env_yaw_zero_restores  yaw back to 0: rms vs pre-yaw mirror = 0.00e+00 (exact no-op default)
+  [ ok ] env_scale_scales_env_only  rgb=(0.450,0.357,0.258) expected (0.450,0.357,0.259), max err 0.000 (per-node 0.25: sheen trace, ambient intact)
+  [ ok ] env_intensity_composes  rgb=(0.328,0.259,0.193) expected (0.328,0.259,0.193), max err 0.000 (global 0.5 x node 0.25 = 0.125 multiply)
+  [ ok ] env_controls_restore  rgb=(0.730,0.630,0.486) expected (0.730,0.630,0.486), max err 0.000 (defaults back: exact full-strength env)
+  [ ok ] glass_reflections_full  rgb=(0.123,0.080,0.041) expected (0.123,0.080,0.042), max err 0.000 (alpha 0.15: env term NOT scaled)
+  [ ok ] pernode_baseline_both_sky  rgb=(0.729,0.629,0.485) expected (0.730,0.630,0.486), max err 0.000 (both cards on the global map; ndv=0.986)
+  [ ok ] pernode_override_analytic  rgb=(0.614,0.614,0.401) expected (0.615,0.615,0.394), max err 0.007 (node map mip 1 via the NODE max_lod=2)
+  [ ok ] pernode_sibling_keeps_sky  rgb=(0.730,0.630,0.486) expected (0.730,0.630,0.486), max err 0.000 (center card still on the global map)
+  [ ok ] pernode_clear_restores  clear_env_map(node=...): rms vs pre-override = 0.00e+00 (subtree reverts to the inherited map)
+  [ ok ] prefilter_chain_identity  tool .txo: 5-level chain, mip 0 face centers exact (worst err 0.0000)
+  [ ok ] prefilter_uniform_energy  uniform env: every mip level of every face stays (0.5,0.3,0.15) - worst err 0.0000 (GGX weights normalize)
+  [ ok ] prefilter_monotonic_blur  +X face-center red across the ladder: [0.700, 0.700, 0.637, 0.519, 0.450] - monotone toward the blend
+  [ ok ] prefilter_drives_shader  mirror reflects tool mip 0 (-Y magenta, err 0.000); roughness 1 reads the tool top mip (0.450,0.250,0.700) through textureCubeLod (err 0.000)
+  [ ok ] clear_restores_baseline  clear_env_map(): rms vs baseline = 0.00e+00 (byte-identical opt-out)
+
+--- env_map/pax3d_render ---
+  [ ok ] real_brdf_lut  128x128 LUT; mirror corner (A,B)=(1.000,0.000) ~ (1, 0)
+  [ ok ] baseline_no_env  rgb=(0.108,0.108,0.108) expected (0.108,0.108,0.108), max err 0.000 (shipped behavior: ibl_spec 0)
+  [ ok ] constant_env_analytic  rgb=(0.730,0.630,0.486) expected (0.730,0.630,0.486), max err 0.000 (A=0.958 B=0.000 @ ndv=1, rough=0.402)
+  [ ok ] env_survives_recompile  shader recompile with env map bound: rms=0.00e+00
+  [ ok ] lod_zero_reads_base  rgb=(0.769,0.415,0.415) expected (0.769,0.415,0.415), max err 0.000 (roughness 0 -> mip 0, red)
+  [ ok ] lod_max_reads_top  rgb=(0.244,0.244,0.543) expected (0.244,0.244,0.543), max err 0.000 (roughness 1 -> top mip, blue)
+  [ ok ] mirror_reflects_neg_y  rgb=(0.794,0.415,0.794) expected (0.794,0.415,0.794), max err 0.000 (normal incidence -> -Y face, magenta)
+  [ ok ] mirror_reflects_pos_z  rgb=(0.415,0.415,0.794) expected (0.415,0.415,0.794), max err 0.000 (45-degree pitch -> +Z face, blue)
+  [ ok ] env_yaw_rotates_lookup  rgb=(0.415,0.794,0.415) expected (0.415,0.794,0.415), max err 0.000 (+90 yaw: -X green arrives at -Y — the skybox set_h sense)
+  [ ok ] env_yaw_zero_restores  yaw back to 0: rms vs pre-yaw mirror = 0.00e+00 (exact no-op default)
+  [ ok ] env_scale_scales_env_only  rgb=(0.450,0.357,0.258) expected (0.450,0.357,0.259), max err 0.000 (per-node 0.25: sheen trace, ambient intact)
+  [ ok ] env_intensity_composes  rgb=(0.328,0.259,0.193) expected (0.328,0.259,0.193), max err 0.000 (global 0.5 x node 0.25 = 0.125 multiply)
+  [ ok ] env_controls_restore  rgb=(0.730,0.630,0.486) expected (0.730,0.630,0.486), max err 0.000 (defaults back: exact full-strength env)
+  [ ok ] glass_reflections_full  rgb=(0.123,0.080,0.041) expected (0.123,0.080,0.042), max err 0.000 (alpha 0.15: env term NOT scaled)
+  [ ok ] pernode_baseline_both_sky  rgb=(0.729,0.629,0.485) expected (0.730,0.630,0.486), max err 0.000 (both cards on the global map; ndv=0.986)
+  [ ok ] pernode_override_analytic  rgb=(0.614,0.614,0.401) expected (0.615,0.615,0.394), max err 0.007 (node map mip 1 via the NODE max_lod=2)
+  [ ok ] pernode_sibling_keeps_sky  rgb=(0.730,0.630,0.486) expected (0.730,0.630,0.486), max err 0.000 (center card still on the global map)
+  [ ok ] pernode_clear_restores  clear_env_map(node=...): rms vs pre-override = 0.00e+00 (subtree reverts to the inherited map)
+  [ ok ] prefilter_chain_identity  tool .txo: 5-level chain, mip 0 face centers exact (worst err 0.0000)
+  [ ok ] prefilter_uniform_energy  uniform env: every mip level of every face stays (0.5,0.3,0.15) - worst err 0.0000 (GGX weights normalize)
+  [ ok ] prefilter_monotonic_blur  +X face-center red across the ladder: [0.700, 0.700, 0.637, 0.519, 0.450] - monotone toward the blend
+  [ ok ] prefilter_drives_shader  mirror reflects tool mip 0 (-Y magenta, err 0.000); roughness 1 reads the tool top mip (0.450,0.250,0.700) through textureCubeLod (err 0.000)
+  [ ok ] clear_restores_baseline  clear_env_map(): rms vs baseline = 0.00e+00 (byte-identical opt-out)
+
+--- local_lights/none ---
+  SKIP: needs a pax_pbr-family pipeline
+
+--- local_lights/simplepbr ---
+  SKIP: needs a pax_pbr-family pipeline
+
+--- local_lights/pax3d_simplepbr ---
+  SKIP: needs a pax_pbr-family pipeline
+
+--- local_lights/pax_pbr ---
+  [ ok ] point_light_analytic  PointLight on-axis, att (1,0,0): lum=0.703, analytic 0.705
+  [ ok ] quadratic_attenuation  att (1,0,0.25) at d=4.0: lum=0.381, analytic 0.384 (falloff x0.200)
+  [ ok ] light_scoping  card WITHOUT set_light: lum=0.108, ambient-only 0.108 (per-room scoping works)
+  [ ok ] spot_in_cone_analytic  in-cone center: lum=0.703, analytic 0.705
+  [ ok ] spot_outside_cone_dark  51 deg off-axis: lum=0.108, ambient-only 0.108 (cone cutoff)
+  [ ok ] interior_recipe_composes  lamp + hemisphere ambient x0.1: rgb=(0.421,0.407,0.440) expected (0.423,0.409,0.442), max err 0.002 (lamp full strength, sky damped)
+  [ ok ] gltf_lights_inert  2 authored lights loaded, scene unchanged (rms=0.00e+00) — light nodes are INERT until activated
+  [ ok ] activate_model_lights_analytic  activated 1 light(s) (directional excluded): lum=0.219, analytic 0.220 (I*4pi/683 units, quadratic att x0.0588)
+  [ ok ] deactivate_restores  deactivate_model_lights(): rms vs inert baseline = 0.00e+00 (colors + scopes restored)
+
+--- local_lights/pax3d_render ---
+  [ ok ] point_light_analytic  PointLight on-axis, att (1,0,0): lum=0.703, analytic 0.705
+  [ ok ] quadratic_attenuation  att (1,0,0.25) at d=4.0: lum=0.381, analytic 0.384 (falloff x0.200)
+  [ ok ] light_scoping  card WITHOUT set_light: lum=0.108, ambient-only 0.108 (per-room scoping works)
+  [ ok ] spot_in_cone_analytic  in-cone center: lum=0.703, analytic 0.705
+  [ ok ] spot_outside_cone_dark  51 deg off-axis: lum=0.108, ambient-only 0.108 (cone cutoff)
+  [ ok ] interior_recipe_composes  lamp + hemisphere ambient x0.1: rgb=(0.421,0.407,0.440) expected (0.423,0.409,0.442), max err 0.002 (lamp full strength, sky damped)
+  [ ok ] gltf_lights_inert  2 authored lights loaded, scene unchanged (rms=0.00e+00) — light nodes are INERT until activated
+  [ ok ] activate_model_lights_analytic  activated 1 light(s) (directional excluded): lum=0.219, analytic 0.220 (I*4pi/683 units, quadratic att x0.0588)
+  [ ok ] deactivate_restores  deactivate_model_lights(): rms vs inert baseline = 0.00e+00 (colors + scopes restored)
+
+--- local_lights/pax3d_render @directional ---
+  [ ok ] point_light_analytic  PointLight on-axis, att (1,0,0): lum=0.703, analytic 0.705
+  [ ok ] quadratic_attenuation  att (1,0,0.25) at d=4.0: lum=0.381, analytic 0.384 (falloff x0.200)
+  [ ok ] light_scoping  card WITHOUT set_light: lum=0.108, ambient-only 0.108 (per-room scoping works)
+  [ ok ] spot_in_cone_analytic  in-cone center: lum=0.703, analytic 0.705
+  [ ok ] spot_outside_cone_dark  51 deg off-axis: lum=0.108, ambient-only 0.108 (cone cutoff)
+  [ ok ] interior_recipe_composes  lamp + hemisphere ambient x0.1: rgb=(0.421,0.407,0.440) expected (0.423,0.409,0.442), max err 0.002 (lamp full strength, sky damped)
+  [ ok ] gltf_lights_inert  2 authored lights loaded, scene unchanged (rms=0.00e+00) — light nodes are INERT until activated
+  [ ok ] activate_model_lights_analytic  activated 1 light(s) (directional excluded): lum=0.219, analytic 0.220 (I*4pi/683 units, quadratic att x0.0588)
+  [ ok ] deactivate_restores  deactivate_model_lights(): rms vs inert baseline = 0.00e+00 (colors + scopes restored)
+
+--- orbital/none ---
+  SKIP: pipeline has no set_orbital_atmosphere (R5.5)
+
+--- orbital/simplepbr ---
+  SKIP: pipeline has no set_orbital_atmosphere (R5.5)
+
+--- orbital/pax3d_simplepbr ---
+  SKIP: pipeline has no set_orbital_atmosphere (R5.5)
+
+--- orbital/pax_pbr ---
+  [info] sample_columns  disk_day px+61 (b=45.0), shell_in px+142 (b=103.3), shell_out px+171 (b=123.7), space px+211 (b=151.3)
+  [ ok ] baseline_disk  planet disk renders its emissive value: g=0.659 expected 0.658
+  [ ok ] baseline_backdrop  backdrop g=0.749 expected 0.748
+  [ ok ] density_zero_identical  quads present, density=0: rms vs off = 0.00e+00 (dst*1.0 and dst+0.0 are exact blend no-ops)
+  [ ok ] trans_disk_center  px+0: rgb=(0.639,0.620,0.592) expected (0.639,0.619,0.592) [T=(0.914,0.836,0.741)], max channel err 0.001
+  [ ok ] trans_shell_inner  px+142: rgb=(0.635,0.510,0.345) expected (0.636,0.510,0.345) [T=(0.575,0.330,0.158)], max channel err 0.001
+  [ ok ] trans_shell_outer  px+171: rgb=(0.745,0.741,0.737) expected (0.744,0.741,0.736) [T=(0.981,0.962,0.938)], max channel err 0.001
+  [ ok ] trans_space  px+211: rgb=(0.749,0.749,0.745) expected (0.748,0.748,0.748) [T=(1.000,1.000,1.000)], max channel err 0.003
+  [ ok ] trans_profile_monotonic  extinction fades outward across the limb: 0.497 < 0.741 < 0.748
+  [ ok ] inscatter_halo_sunward  px+142: rgb=(0.671,0.733,0.745) expected (0.671,0.733,0.745) [L=(0.371,0.508,0.542)], max channel err 0.000
+  [ ok ] inscatter_disk_day  px+61: rgb=(0.678,0.678,0.667) expected (0.680,0.681,0.667) [L=(0.071,0.102,0.113)], max channel err 0.002
+  [ ok ] terminator_dark  anti-sunward limb is terminator-occluded: lum=0.000
+  [ ok ] limb_asymmetry  sunward halo 0.715 vs anti-sunward 0.000 — day/night asymmetry
+  [ ok ] opt_out_restores  clear_orbital_atmosphere(): rms vs the pre-enable baseline = 0.00e+00 (byte-identical opt-out)
+
+--- orbital/pax3d_render ---
+  [info] sample_columns  disk_day px+61 (b=45.0), shell_in px+142 (b=103.3), shell_out px+171 (b=123.7), space px+211 (b=151.3)
+  [ ok ] baseline_disk  planet disk renders its emissive value: g=0.659 expected 0.658
+  [ ok ] baseline_backdrop  backdrop g=0.749 expected 0.748
+  [ ok ] density_zero_identical  quads present, density=0: rms vs off = 0.00e+00 (dst*1.0 and dst+0.0 are exact blend no-ops)
+  [ ok ] trans_disk_center  px+0: rgb=(0.639,0.620,0.592) expected (0.639,0.619,0.592) [T=(0.914,0.836,0.741)], max channel err 0.001
+  [ ok ] trans_shell_inner  px+142: rgb=(0.635,0.510,0.345) expected (0.636,0.510,0.345) [T=(0.575,0.330,0.158)], max channel err 0.001
+  [ ok ] trans_shell_outer  px+171: rgb=(0.745,0.741,0.737) expected (0.744,0.741,0.736) [T=(0.981,0.962,0.938)], max channel err 0.001
+  [ ok ] trans_space  px+211: rgb=(0.749,0.749,0.745) expected (0.748,0.748,0.748) [T=(1.000,1.000,1.000)], max channel err 0.003
+  [ ok ] trans_profile_monotonic  extinction fades outward across the limb: 0.497 < 0.741 < 0.748
+  [ ok ] inscatter_halo_sunward  px+142: rgb=(0.671,0.733,0.745) expected (0.671,0.733,0.745) [L=(0.371,0.508,0.542)], max channel err 0.000
+  [ ok ] inscatter_disk_day  px+61: rgb=(0.678,0.678,0.667) expected (0.680,0.681,0.667) [L=(0.071,0.102,0.113)], max channel err 0.002
+  [ ok ] terminator_dark  anti-sunward limb is terminator-occluded: lum=0.000
+  [ ok ] limb_asymmetry  sunward halo 0.715 vs anti-sunward 0.000 — day/night asymmetry
+  [ ok ] opt_out_restores  clear_orbital_atmosphere(): rms vs the pre-enable baseline = 0.00e+00 (byte-identical opt-out)
+
+--- orbital/pax3d_render @logdepth ---
+  [info] sample_columns  disk_day px+61 (b=45.0), shell_in px+142 (b=103.3), shell_out px+171 (b=123.7), space px+211 (b=151.3)
+  [ ok ] baseline_disk  planet disk renders its emissive value: g=0.659 expected 0.658
+  [ ok ] baseline_backdrop  backdrop g=0.749 expected 0.748
+  [ ok ] density_zero_identical  quads present, density=0: rms vs off = 0.00e+00 (dst*1.0 and dst+0.0 are exact blend no-ops)
+  [ ok ] trans_disk_center  px+0: rgb=(0.639,0.620,0.592) expected (0.639,0.619,0.592) [T=(0.914,0.836,0.741)], max channel err 0.001
+  [ ok ] trans_shell_inner  px+142: rgb=(0.635,0.510,0.345) expected (0.636,0.510,0.345) [T=(0.575,0.330,0.158)], max channel err 0.001
+  [ ok ] trans_shell_outer  px+171: rgb=(0.745,0.741,0.737) expected (0.744,0.741,0.736) [T=(0.981,0.962,0.938)], max channel err 0.001
+  [ ok ] trans_space  px+211: rgb=(0.749,0.749,0.745) expected (0.748,0.748,0.748) [T=(1.000,1.000,1.000)], max channel err 0.003
+  [ ok ] trans_profile_monotonic  extinction fades outward across the limb: 0.497 < 0.741 < 0.748
+  [ ok ] inscatter_halo_sunward  px+142: rgb=(0.671,0.733,0.745) expected (0.671,0.733,0.745) [L=(0.371,0.508,0.542)], max channel err 0.000
+  [ ok ] inscatter_disk_day  px+61: rgb=(0.678,0.678,0.667) expected (0.680,0.681,0.667) [L=(0.071,0.102,0.113)], max channel err 0.002
+  [ ok ] terminator_dark  anti-sunward limb is terminator-occluded: lum=0.000
+  [ ok ] limb_asymmetry  sunward halo 0.715 vs anti-sunward 0.000 — day/night asymmetry
+  [ ok ] opt_out_restores  clear_orbital_atmosphere(): rms vs the pre-enable baseline = 0.00e+00 (byte-identical opt-out)
+
+--- srgb/none ---
+  SKIP: pipeline has no set_srgb_inputs (R1.3)
+
+--- srgb/simplepbr ---
+  SKIP: pipeline has no set_srgb_inputs (R1.3)
+
+--- srgb/pax3d_simplepbr ---
+  SKIP: pipeline has no set_srgb_inputs (R1.3)
+
+--- srgb/pax_pbr ---
+  [ ok ] baseline_mod_raw  mod card via hejl_dawson: lum=0.625 expected 0.626 (linear 0.3012)
+  [ ok ] baseline_emis_raw  emis card via hejl_dawson: lum=0.731 expected 0.731 (linear 0.5020)
+  [ ok ] calibration_white  white card via hejl_dawson: lum=0.763 expected 0.763 (linear 0.6000)
+  [info] converted  3 textures flipped to sRGB formats
+  [ ok ] srgb_mod_decoded  mod card via hejl_dawson: lum=0.432 expected 0.432 (linear 0.1295)
+  [ ok ] srgb_emis_decoded  emis card via hejl_dawson: lum=0.550 expected 0.550 (linear 0.2159)
+  [ ok ] srgb_white_unchanged  white card via hejl_dawson: lum=0.763 expected 0.763 (linear 0.6000)
+  [ ok ] modulate_format_flipped  base-color texture format is now F_srgb (30)
+  [ ok ] normal_stage_untouched  M_normal stage texture stays linear (9)
+  [ ok ] aces_emis_decoded  emis card via aces: lum=0.599 expected 0.599 (linear 0.2159)
+  [ ok ] aces_mod_decoded  mod card via aces: lum=0.457 expected 0.457 (linear 0.1295)
+  [ ok ] reinhard_emis_decoded  emis card via reinhard: lum=0.455 expected 0.456 (linear 0.2159)
+  [ ok ] reinhard_mod_decoded  mod card via reinhard: lum=0.374 expected 0.374 (linear 0.1295)
+  [ ok ] uncharted2_emis_decoded  emis card via uncharted2: lum=0.423 expected 0.424 (linear 0.2159)
+  [ ok ] uncharted2_mod_decoded  mod card via uncharted2: lum=0.342 expected 0.343 (linear 0.1295)
+  [ ok ] opt_out_restores  set_srgb_inputs(False): rms vs the raw baseline = 0.00e+00 (byte-identical opt-out)
+
+--- srgb/pax3d_render ---
+  [ ok ] baseline_mod_raw  mod card via hejl_dawson: lum=0.625 expected 0.626 (linear 0.3012)
+  [ ok ] baseline_emis_raw  emis card via hejl_dawson: lum=0.731 expected 0.731 (linear 0.5020)
+  [ ok ] calibration_white  white card via hejl_dawson: lum=0.763 expected 0.763 (linear 0.6000)
+  [info] converted  3 textures flipped to sRGB formats
+  [ ok ] srgb_mod_decoded  mod card via hejl_dawson: lum=0.432 expected 0.432 (linear 0.1295)
+  [ ok ] srgb_emis_decoded  emis card via hejl_dawson: lum=0.550 expected 0.550 (linear 0.2159)
+  [ ok ] srgb_white_unchanged  white card via hejl_dawson: lum=0.763 expected 0.763 (linear 0.6000)
+  [ ok ] modulate_format_flipped  base-color texture format is now F_srgb (30)
+  [ ok ] normal_stage_untouched  M_normal stage texture stays linear (9)
+  [ ok ] aces_emis_decoded  emis card via aces: lum=0.599 expected 0.599 (linear 0.2159)
+  [ ok ] aces_mod_decoded  mod card via aces: lum=0.457 expected 0.457 (linear 0.1295)
+  [ ok ] reinhard_emis_decoded  emis card via reinhard: lum=0.455 expected 0.456 (linear 0.2159)
+  [ ok ] reinhard_mod_decoded  mod card via reinhard: lum=0.374 expected 0.374 (linear 0.1295)
+  [ ok ] uncharted2_emis_decoded  emis card via uncharted2: lum=0.423 expected 0.424 (linear 0.2159)
+  [ ok ] uncharted2_mod_decoded  mod card via uncharted2: lum=0.342 expected 0.343 (linear 0.1295)
+  [ ok ] opt_out_restores  set_srgb_inputs(False): rms vs the raw baseline = 0.00e+00 (byte-identical opt-out)
+
+--- ssao/none ---
+  SKIP: pipeline has no set_enable_ssao (Session S)
+
+--- ssao/simplepbr ---
+  SKIP: pipeline has no set_enable_ssao (Session S)
+
+--- ssao/pax3d_simplepbr ---
+  SKIP: pipeline has no set_enable_ssao (Session S)
+
+--- ssao/pax_pbr ---
+  [ ok ] plane_byte_identical  constant-depth wall with SSAO on: rms vs off = 0.00e+00 (flat geometry -> AO exactly 1.0, exact multiply)
+  [ ok ] corner_darkens  crease rows darken: 0.730->0.693 and 0.730->0.693 (screen-space obscurance in the wall/slab junctions)
+  [ ok ] far_region_unaffected  wall center (3 units from either crease, radius 1.0): lum 0.730 -> 0.730 (within 8-bit AO tolerance)
+  [ ok ] intensity_monotonic  ao_intensity 1.0 -> 2.0 deepens the crease: 0.693 -> 0.645
+  [ ok ] intensity_zero_exact_noop  ao_intensity 0.0 with the feature on: rms vs off = 0.00e+00 (clamp(1 - 0*occ) == 1 exactly)
+  [ ok ] opt_out_restores  set_enable_ssao(False): rms vs the pre-enable capture = 0.00e+00 (byte-identical opt-out)
+
+--- ssao/pax3d_render ---
+  [ ok ] plane_byte_identical  constant-depth wall with SSAO on: rms vs off = 0.00e+00 (flat geometry -> AO exactly 1.0, exact multiply)
+  [ ok ] corner_darkens  crease rows darken: 0.730->0.693 and 0.730->0.693 (screen-space obscurance in the wall/slab junctions)
+  [ ok ] far_region_unaffected  wall center (3 units from either crease, radius 1.0): lum 0.730 -> 0.730 (within 8-bit AO tolerance)
+  [ ok ] intensity_monotonic  ao_intensity 1.0 -> 2.0 deepens the crease: 0.693 -> 0.645
+  [ ok ] intensity_zero_exact_noop  ao_intensity 0.0 with the feature on: rms vs off = 0.00e+00 (clamp(1 - 0*occ) == 1 exactly)
+  [ ok ] opt_out_restores  set_enable_ssao(False): rms vs the pre-enable capture = 0.00e+00 (byte-identical opt-out)
+
+--- ssao/pax3d_render @logdepth ---
+  [ ok ] plane_byte_identical  constant-depth wall with SSAO on: rms vs off = 0.00e+00 (flat geometry -> AO exactly 1.0, exact multiply)
+  [ ok ] corner_darkens  crease rows darken: 0.730->0.693 and 0.730->0.693 (screen-space obscurance in the wall/slab junctions)
+  [ ok ] far_region_unaffected  wall center (3 units from either crease, radius 1.0): lum 0.730 -> 0.730 (within 8-bit AO tolerance)
+  [ ok ] intensity_monotonic  ao_intensity 1.0 -> 2.0 deepens the crease: 0.693 -> 0.645
+  [ ok ] intensity_zero_exact_noop  ao_intensity 0.0 with the feature on: rms vs off = 0.00e+00 (clamp(1 - 0*occ) == 1 exactly)
+  [ ok ] opt_out_restores  set_enable_ssao(False): rms vs the pre-enable capture = 0.00e+00 (byte-identical opt-out)
+
+--- ssao/pax3d_render @msaa4 ---
+  [ ok ] plane_byte_identical  constant-depth wall with SSAO on: rms vs off = 0.00e+00 (flat geometry -> AO exactly 1.0, exact multiply)
+  [ ok ] corner_darkens  crease rows darken: 0.730->0.694 and 0.730->0.702 (screen-space obscurance in the wall/slab junctions)
+  [ ok ] far_region_unaffected  wall center (3 units from either crease, radius 1.0): lum 0.730 -> 0.730 (within 8-bit AO tolerance)
+  [ ok ] intensity_monotonic  ao_intensity 1.0 -> 2.0 deepens the crease: 0.694 -> 0.646
+  [ ok ] intensity_zero_exact_noop  ao_intensity 0.0 with the feature on: rms vs off = 0.00e+00 (clamp(1 - 0*occ) == 1 exactly)
+  [ ok ] opt_out_restores  set_enable_ssao(False): rms vs the pre-enable capture = 0.00e+00 (byte-identical opt-out)
+
+--- lens_flare/none ---
+  SKIP: pipeline has no bloom support
+
+--- lens_flare/simplepbr ---
+  SKIP: pipeline has no bloom support
+
+--- lens_flare/pax3d_simplepbr ---
+  SKIP: pipeline has no set_enable_lens_flare (Session S)
+
+--- lens_flare/pax_pbr ---
+  [ ok ] ghosts_at_predicted_positions  flare-on minus flare-off at the four analytic ghost centers: c=-2.0: +0.921@px199, c=-3.5: +0.810@px223, c=1.7: +0.324@px322, c=3.0: +0.483@px293
+  [ ok ] control_off_axis_unchanged  off-axis control point delta +0.0000 (ghosts land only where the formula says)
+  [ ok ] dark_scene_no_flare  source hidden: flare-on vs flare-off rms = 0.00e+00 (no extract energy -> no flare, occlusion for free)
+  [ ok ] flare_strength_zero  flare_strength 0.0: rms vs bloom-only = 0.00e+00 (adds exactly zero)
+  [ ok ] dirt_modulates  left-black/right-white dirt: left ghosts +0.000/+0.000 (killed), right ghosts +0.324/+0.483 (kept)
+  [ ok ] dirt_clear_restores  set_lens_dirt(None): rms vs clean flare = 0.00e+00
+  [ ok ] opt_out_restores  set_enable_lens_flare(False): rms vs bloom-only = 0.00e+00 (byte-identical opt-out)
+
+--- lens_flare/pax3d_render ---
+  [ ok ] ghosts_at_predicted_positions  flare-on minus flare-off at the four analytic ghost centers: c=-2.0: +0.921@px199, c=-3.5: +0.810@px223, c=1.7: +0.324@px322, c=3.0: +0.483@px293
+  [ ok ] control_off_axis_unchanged  off-axis control point delta +0.0000 (ghosts land only where the formula says)
+  [ ok ] dark_scene_no_flare  source hidden: flare-on vs flare-off rms = 0.00e+00 (no extract energy -> no flare, occlusion for free)
+  [ ok ] flare_strength_zero  flare_strength 0.0: rms vs bloom-only = 0.00e+00 (adds exactly zero)
+  [ ok ] dirt_modulates  left-black/right-white dirt: left ghosts +0.000/+0.000 (killed), right ghosts +0.324/+0.483 (kept)
+  [ ok ] dirt_clear_restores  set_lens_dirt(None): rms vs clean flare = 0.00e+00
+  [ ok ] opt_out_restores  set_enable_lens_flare(False): rms vs bloom-only = 0.00e+00 (byte-identical opt-out)
+
+--- morph_gltf/none ---
+  SKIP: glTF morph gate is pax3d_render-only (needs set_hardware_skinning)
+
+--- morph_gltf/simplepbr ---
+  SKIP: glTF morph gate is pax3d_render-only (needs set_hardware_skinning)
+
+--- morph_gltf/pax3d_simplepbr ---
+  SKIP: glTF morph gate is pax3d_render-only (needs set_hardware_skinning)
+
+--- morph_gltf/pax_pbr ---
+  SKIP: glTF morph gate is pax3d_render-only (needs set_hardware_skinning)
+
+--- morph_gltf/pax3d_render ---
+  [ ok ] shim_installs  gltf_compat.install() -> True (sparse densify + short-channel + lerp fixes active)
+  [ ok ] skinned_delivery  sliders=['blink', 'brow_raise', 'jaw_open'], slider_table=True
+  [ ok ] cpu_truth_matches_manifest  3 sliders: worst |max_delta - truth| = 0.00000 m, argmax positions match=True
+  [ ok ] hw_drops_morphs  jaw_open 0->1 rms 0.000000 on the DEFAULT HW path (fact #16; the opt-in fix is set_gpu_morphs — gpu_renders_morphs below)
+  [ ok ] cpu_optout_renders_morphs  same A/B on set_hardware_skinning(np, False): rms 0.00906
+  [ ok ] gpu_morphs_convert  set_gpu_morphs converted 1 morph geom(s) (expected 1)
+  [ ok ] gpu_renders_morphs  jaw_open 0->1 rms 0.00906 on the HW path WITH set_gpu_morphs — sliders render without the CPU valve (fact #15 closed, opt-in)
+  [ ok ] gpu_optout_restores  set_gpu_morphs(np, False): rms vs pre-enable 0.000000 (geom states restored exactly)
+  [ ok ] gpu_matches_cpu  jaw_open=1 image, GPU morphs vs CPU valve: rms 0.0000 (fact-#13 bar 0.02; both paths apply position AND normal deltas)
+  [ ok ] gpu_sparse_compose_matches_cpu  blink=0.6 + brow_raise=1 image, GPU vs CPU: rms 0.0000
+  [ ok ] bake_fast_matches_reorder  fast path available on loader output=True; zero-copy vs reorder(numpy=True) vs reorder(pure-py) texture bytes identical=True (1 texture(s), 163296 bytes)
+  [ ok ] copy_reuses_textures  set_gpu_morphs(clone): 1 geom(s), delta textures pointer-shared with template=True (zero re-bake)
+  [ ok ] copy_drives_own_face  clone jaw_open=1 via the CLONE's sliders: moves (rms 0.00906 vs rest), matches the template's own jaw image (rms 0.0000)
+  [ ok ] copy_ignores_template_sliders  template jaw_open=1 while clone rests: clone image rms vs rest 0.000000
+  [ ok ] copy_optout_isolated  disabled clone ignores its sliders (rms 0.000000); template still drives (rms 0.000000 vs its earlier jaw image)
+  [ ok ] static_delivery  sliders=['blink', 'brow_raise', 'jaw_open'], slider_table=True
+  [ ok ] clip_drives_sliders  clip 'Animation' (90f): peaks blink=1.00@f10, jaw_open=1.00@f38, brow_raise=1.00@f68; frame0 zeros=True, order=True
+
+--- data_texture/none ---
+  SKIP: the data-texture contract API lives in pax3d_render (data_texture / load_data_texture / set_srgb_inputs)
+
+--- data_texture/simplepbr ---
+  SKIP: the data-texture contract API lives in pax3d_render (data_texture / load_data_texture / set_srgb_inputs)
+
+--- data_texture/pax3d_simplepbr ---
+  SKIP: the data-texture contract API lives in pax3d_render (data_texture / load_data_texture / set_srgb_inputs)
+
+--- data_texture/pax_pbr ---
+  SKIP: the data-texture contract API lives in pax3d_render (data_texture / load_data_texture / set_srgb_inputs)
+
+--- data_texture/pax3d_render ---
+  [ ok ] png16_precision  16-bit PNG loads at native precision (type=1, components=1, format=18)
+  [ ok ] tiff16_precision  16-bit grayscale TIFF (the stamp packs' wire format) loads at native precision (ok=True, type=1, components=1)
+  [ ok ] stamp_contract  data_texture(): F_r16 + CM_off + ATS_none (format=27)
+  [ ok ] stamp_idempotent  second stamp is an exact no-op
+  [ ok ] stamp_unflags_srgb  a pre-flagged F_srgb texture is unflagged to F_rgb8 (9)
+  [ ok ] render_levels_16bit  1022-code gradient renders 161 distinct levels (>64 = the sampled texture is genuinely >8-bit; terracing would band it)
+  [ ok ] render_levels_8bit_control  8-bit control renders 9 distinct levels (<=16 = the probe can fail — sample geometry proven)
+  [ ok ] gpu_roundtrip_r16  extract=True compression=1 bytes identical (4096 bytes)
+  [ ok ] gpu_roundtrip_r32f  extract=True compression=1 bytes identical (2048 bytes)
+  [ ok ] compression_canary_live  unstamped F_rgb8 canary came back compression=4 (!= CM_off proves compressed-textures 1 was live, so the round-trips above passed against a real threat)
+  [ ok ] srgb_walk_leaves_data  set_srgb_inputs(True) (converted 0) left the stamped R16 texture alone even on an M_modulate stage (27)
+  [ ok ] texture_scale_trap_real  Texture.read() under texture-scale 0.25: 512 -> 128 texels (the read-time trap is real; ATS/stamps cannot guard it)
+  [ ok ] load_data_texture_immune  load_data_texture() under the same prc: 512 texels, format=27, bytes identical to the direct-read original
+
+--- terrain_splat/none ---
+  SKIP: set_terrain_splat lives in pax3d_render (ER-001)
+
+--- terrain_splat/simplepbr ---
+  SKIP: set_terrain_splat lives in pax3d_render (ER-001)
+
+--- terrain_splat/pax3d_simplepbr ---
+  SKIP: set_terrain_splat lives in pax3d_render (ER-001)
+
+--- terrain_splat/pax_pbr ---
+  SKIP: set_terrain_splat lives in pax3d_render (ER-001)
+
+--- terrain_splat/pax3d_render ---
+  [ ok ] q_topleft  lum=0.241 expected 0.241 (layer (0.8, 0.0, 0.0))
+  [ ok ] q_topright  lum=0.241 expected 0.241 (layer (0.0, 0.8, 0.0))
+  [ ok ] q_botleft  lum=0.243 expected 0.241 (layer (0.0, 0.0, 0.8))
+  [ ok ] q_botright  lum=0.481 expected 0.482 (layer (0.8, 0.8, 0.0))
+  [ ok ] center_4way_blend  lum=0.521 expected 0.521 (bilinear mid = mean of 4 layers)
+  [ ok ] weights_renormalized  (0.2,0.2,0,0) splat: lum=0.383 expected 0.383 (== normalized 0.5/0.5 blend)
+  [ ok ] macro_modulation  macro 191/255 @ strength 1: lum=0.268 expected 0.264 (factor 1.498)
+  [ ok ] uv_scale_half  scale 0.5: lum=0.722 expected 0.722
+  [ ok ] uv_scale_full  scale 1.0: lum=0.000 expected 0.000
+  [ ok ] normal_tilt_lights  tilted normal under horizontal sun: lum=0.820 vs faded-flat 0.724 (map normals light the surface)
+  [ ok ] normal_fade_flattens  forced fade renders ambient-only 0.724 expected 0.724 (detail normals gone past fade_end)
+  [ ok ] opt_out_restores  clear_terrain_splat(): rms vs untouched baseline = 0.00e+00 (byte-identical opt-out)
+  [ ok ] hex_q_topleft  lum=0.241 expected 0.241 (uniform layers: hex == plain)
+  [ ok ] hex_q_topright  lum=0.241 expected 0.241 (uniform layers: hex == plain)
+  [ ok ] hex_q_botleft  lum=0.243 expected 0.241 (uniform layers: hex == plain)
+  [ ok ] hex_q_botright  lum=0.481 expected 0.482 (uniform layers: hex == plain)
+  [ ok ] hex_plain_is_periodic  plain tiling one-period shift rms=0.0014 (exactly self-similar)
+  [ ok ] hex_breaks_periodicity  hex one-period shift rms=0.2296 vs plain 0.0014 (motif repetition broken)
+  [ ok ] hex_preserves_mean  mean lum hex=0.574 plain=0.565 (stochastic resample of the same tile)
+  [ ok ] hex_rotation_off_keeps_anisotropy  rotation=0: |dy|/|dx|=0.188 (stripes stay axis-aligned; offsets only)
+  [ ok ] hex_rotation_mixes_directions  rotation=1: |dy|/|dx|=1.139 vs rot0 0.188 (random rotation live)
+  [ ok ] hex_normals_r0_matches_plain  uniform tilted normal, rotation=0: lum=0.820 vs plain 0.820 (offset taps of a uniform map are the map)
+  [ ok ] hex_normals_backrotation_live  rotation=1 vs rotation=0 rms=0.0936 (sampled normals rotate with the motif)
+  [ ok ] hex_opt_out_restores  clear after hex: rms vs untouched baseline = 0.00e+00 (byte-identical opt-out)
+  [ ok ] rgba_q_topleft  lum=0.241 expected 0.241 (RGBA array, height_blend off: alpha inert)
+  [ ok ] rgba_q_topright  lum=0.241 expected 0.241 (RGBA array, height_blend off: alpha inert)
+  [ ok ] rgba_q_botleft  lum=0.243 expected 0.241 (RGBA array, height_blend off: alpha inert)
+  [ ok ] rgba_q_botright  lum=0.481 expected 0.482 (RGBA array, height_blend off: alpha inert)
+  [ ok ] height_allflat_noop  all-flat palette, k=8 on vs off: rms=2.55e-06 (equal heights cancel — dune cannot shift)
+  [ ok ] height_allflat_onehot_exact  one-hot quadrant delta=0.0000 (w*f/f == w exactly)
+  [ ok ] height_softmax_analytic  k=4, h=1 vs h=0 at 50/50: lum=0.287 expected 0.287 (weights 0.9412/0.0588)
+  [ ok ] height_sharp0_inert  sharpness=0: lum=0.383 expected 0.383 (kwarg live, softmax inert)
+  [ ok ] height_flat128_competes  k=8, h=1 vs flat-128 at 50/50: lum=0.287 expected 0.287 (weights 0.9406/0.0594)
+  [ ok ] height_hex_uniform_analytic  hex + height, k=4: lum=0.287 expected 0.287 (uniform slices: hex == plain)
+  [ ok ] hexoff_reseeds_lattice  hex_offset (5,3) vs (0,0): rms=0.2280 (hash input moved — the seam mechanism is live)
+  [ ok ] hexoff_preserves_mean  mean lum 0.574 vs 0.575 (same stochastic resample statistics)
+  [ ok ] hexoff_world_anchor  UV window +1.37 w/ offset 0 vs UV 0..1 w/ offset 1.37: rms=0.0005 (cell ids anchor to base_uv + hex_offset — chunk borders seamless)
+  [ ok ] height_opt_out_restores  clear after height+hex_offset: rms vs untouched baseline = 0.00e+00 (byte-identical opt-out)
+
+--- terrain_splat/pax3d_render @directional ---
+  [ ok ] q_topleft  lum=0.241 expected 0.241 (layer (0.8, 0.0, 0.0))
+  [ ok ] q_topright  lum=0.241 expected 0.241 (layer (0.0, 0.8, 0.0))
+  [ ok ] q_botleft  lum=0.243 expected 0.241 (layer (0.0, 0.0, 0.8))
+  [ ok ] q_botright  lum=0.481 expected 0.482 (layer (0.8, 0.8, 0.0))
+  [ ok ] center_4way_blend  lum=0.521 expected 0.521 (bilinear mid = mean of 4 layers)
+  [ ok ] weights_renormalized  (0.2,0.2,0,0) splat: lum=0.383 expected 0.383 (== normalized 0.5/0.5 blend)
+  [ ok ] macro_modulation  macro 191/255 @ strength 1: lum=0.268 expected 0.264 (factor 1.498)
+  [ ok ] uv_scale_half  scale 0.5: lum=0.722 expected 0.722
+  [ ok ] uv_scale_full  scale 1.0: lum=0.000 expected 0.000
+  [ ok ] normal_tilt_lights  tilted normal under horizontal sun: lum=0.820 vs faded-flat 0.724 (map normals light the surface)
+  [ ok ] normal_fade_flattens  forced fade renders ambient-only 0.724 expected 0.724 (detail normals gone past fade_end)
+  [ ok ] opt_out_restores  clear_terrain_splat(): rms vs untouched baseline = 0.00e+00 (byte-identical opt-out)
+  [ ok ] hex_q_topleft  lum=0.241 expected 0.241 (uniform layers: hex == plain)
+  [ ok ] hex_q_topright  lum=0.241 expected 0.241 (uniform layers: hex == plain)
+  [ ok ] hex_q_botleft  lum=0.243 expected 0.241 (uniform layers: hex == plain)
+  [ ok ] hex_q_botright  lum=0.481 expected 0.482 (uniform layers: hex == plain)
+  [ ok ] hex_plain_is_periodic  plain tiling one-period shift rms=0.0014 (exactly self-similar)
+  [ ok ] hex_breaks_periodicity  hex one-period shift rms=0.2296 vs plain 0.0014 (motif repetition broken)
+  [ ok ] hex_preserves_mean  mean lum hex=0.574 plain=0.565 (stochastic resample of the same tile)
+  [ ok ] hex_rotation_off_keeps_anisotropy  rotation=0: |dy|/|dx|=0.188 (stripes stay axis-aligned; offsets only)
+  [ ok ] hex_rotation_mixes_directions  rotation=1: |dy|/|dx|=1.139 vs rot0 0.188 (random rotation live)
+  [ ok ] hex_normals_r0_matches_plain  uniform tilted normal, rotation=0: lum=0.820 vs plain 0.820 (offset taps of a uniform map are the map)
+  [ ok ] hex_normals_backrotation_live  rotation=1 vs rotation=0 rms=0.0936 (sampled normals rotate with the motif)
+  [ ok ] hex_opt_out_restores  clear after hex: rms vs untouched baseline = 0.00e+00 (byte-identical opt-out)
+  [ ok ] rgba_q_topleft  lum=0.241 expected 0.241 (RGBA array, height_blend off: alpha inert)
+  [ ok ] rgba_q_topright  lum=0.241 expected 0.241 (RGBA array, height_blend off: alpha inert)
+  [ ok ] rgba_q_botleft  lum=0.243 expected 0.241 (RGBA array, height_blend off: alpha inert)
+  [ ok ] rgba_q_botright  lum=0.481 expected 0.482 (RGBA array, height_blend off: alpha inert)
+  [ ok ] height_allflat_noop  all-flat palette, k=8 on vs off: rms=2.55e-06 (equal heights cancel — dune cannot shift)
+  [ ok ] height_allflat_onehot_exact  one-hot quadrant delta=0.0000 (w*f/f == w exactly)
+  [ ok ] height_softmax_analytic  k=4, h=1 vs h=0 at 50/50: lum=0.287 expected 0.287 (weights 0.9412/0.0588)
+  [ ok ] height_sharp0_inert  sharpness=0: lum=0.383 expected 0.383 (kwarg live, softmax inert)
+  [ ok ] height_flat128_competes  k=8, h=1 vs flat-128 at 50/50: lum=0.287 expected 0.287 (weights 0.9406/0.0594)
+  [ ok ] height_hex_uniform_analytic  hex + height, k=4: lum=0.287 expected 0.287 (uniform slices: hex == plain)
+  [ ok ] hexoff_reseeds_lattice  hex_offset (5,3) vs (0,0): rms=0.2280 (hash input moved — the seam mechanism is live)
+  [ ok ] hexoff_preserves_mean  mean lum 0.574 vs 0.575 (same stochastic resample statistics)
+  [ ok ] hexoff_world_anchor  UV window +1.37 w/ offset 0 vs UV 0..1 w/ offset 1.37: rms=0.0005 (cell ids anchor to base_uv + hex_offset — chunk borders seamless)
+  [ ok ] height_opt_out_restores  clear after height+hex_offset: rms vs untouched baseline = 0.00e+00 (byte-identical opt-out)
+
+--- terrain_water/none ---
+  SKIP: set_terrain_water lives in pax3d_render (ER-010)
+
+--- terrain_water/simplepbr ---
+  SKIP: set_terrain_water lives in pax3d_render (ER-010)
+
+--- terrain_water/pax3d_simplepbr ---
+  SKIP: set_terrain_water lives in pax3d_render (ER-010)
+
+--- terrain_water/pax_pbr ---
+  SKIP: set_terrain_water lives in pax3d_render (ER-010)
+
+--- terrain_water/pax3d_render ---
+  [ ok ] dry_sanity  lum=0.654 expected 0.654 (dry sand)
+  [ ok ] wet_full_analytic  lum=0.512 expected 0.512 (dark 0.55 + sat 1.25, wet=1)
+  [ ok ] wet_below_waterline  z=-0.5 under water_z=0: lum=0.512 expected 0.512 (the seafloor reads WET, not dry)
+  [ ok ] band_mid_analytic  z=band/2: lum=0.594 expected 0.595 (smoothstep midpoint, wet=0.5)
+  [ ok ] band_dry_above  region z>0.6: rms vs water-off = 0.00e+00 (wet==0 computes the dry arithmetic)
+  [ ok ] redress_preserves_water  set_terrain_splat re-call: rms vs shore band = 0.00e+00 (re-dressing keeps the water)
+  [ ok ] wet_sheen_brighter  white env, z=-0.5: rough_mult 0.12 lum=0.827 vs 1.0 lum=0.737 (the sheen is a specular read)
+  [ ok ] sheen_dry_region_exact  same compile, only the uniform differs: dry-region rms = 0.00e+00 (wet==0 never reads it)
+  [ ok ] anim_amp0_exact  amp=0, phase pinned nonzero: rms vs static band = 0.00e+00 (edge + 0.0*noise == edge)
+  [ ok ] anim_phase_live  phase 0 vs pi: rms=0.0513 (the edge breathes)
+  [ ok ] anim_above_reach_exact  region z>0.9: worst rms vs static = 0.00e+00 (beyond the edge reach, wet==0 exact)
+  [ ok ] anim_deep_below_exact  region z<-0.4: worst rms vs static = 0.00e+00 (the deep seafloor never flickers)
+  [ ok ] anim_shore_variation  z=0 per-column lum spread=0.095 (the edge varies ALONG the shore)
+  [ ok ] water_none_clears  water_z=None: rms vs dry = 0.00e+00 (byte-identical clear)
+  [ ok ] water_clear_restores  clear_terrain_water(): rms vs dry = 0.00e+00 (byte-identical clear)
+  [ ok ] water_requires_splat  set_terrain_water without set_terrain_splat raises ValueError (API contract)
+  [ ok ] opt_out_restores  clear_terrain_splat(): rms vs untouched baseline = 0.00e+00 (byte-identical opt-out)
+
+--- terrain_water/pax3d_render @directional ---
+  [ ok ] dry_sanity  lum=0.654 expected 0.654 (dry sand)
+  [ ok ] wet_full_analytic  lum=0.512 expected 0.512 (dark 0.55 + sat 1.25, wet=1)
+  [ ok ] wet_below_waterline  z=-0.5 under water_z=0: lum=0.512 expected 0.512 (the seafloor reads WET, not dry)
+  [ ok ] band_mid_analytic  z=band/2: lum=0.594 expected 0.595 (smoothstep midpoint, wet=0.5)
+  [ ok ] band_dry_above  region z>0.6: rms vs water-off = 0.00e+00 (wet==0 computes the dry arithmetic)
+  [ ok ] redress_preserves_water  set_terrain_splat re-call: rms vs shore band = 0.00e+00 (re-dressing keeps the water)
+  [ ok ] wet_sheen_brighter  white env, z=-0.5: rough_mult 0.12 lum=0.827 vs 1.0 lum=0.737 (the sheen is a specular read)
+  [ ok ] sheen_dry_region_exact  same compile, only the uniform differs: dry-region rms = 0.00e+00 (wet==0 never reads it)
+  [ ok ] anim_amp0_exact  amp=0, phase pinned nonzero: rms vs static band = 0.00e+00 (edge + 0.0*noise == edge)
+  [ ok ] anim_phase_live  phase 0 vs pi: rms=0.0513 (the edge breathes)
+  [ ok ] anim_above_reach_exact  region z>0.9: worst rms vs static = 0.00e+00 (beyond the edge reach, wet==0 exact)
+  [ ok ] anim_deep_below_exact  region z<-0.4: worst rms vs static = 0.00e+00 (the deep seafloor never flickers)
+  [ ok ] anim_shore_variation  z=0 per-column lum spread=0.095 (the edge varies ALONG the shore)
+  [ ok ] water_none_clears  water_z=None: rms vs dry = 0.00e+00 (byte-identical clear)
+  [ ok ] water_clear_restores  clear_terrain_water(): rms vs dry = 0.00e+00 (byte-identical clear)
+  [ ok ] water_requires_splat  set_terrain_water without set_terrain_splat raises ValueError (API contract)
+  [ ok ] opt_out_restores  clear_terrain_splat(): rms vs untouched baseline = 0.00e+00 (byte-identical opt-out)
+
+--- instancing/none ---
+  SKIP: set_instanced lives in pax3d_render (ER-002)
+
+--- instancing/simplepbr ---
+  SKIP: set_instanced lives in pax3d_render (ER-002)
+
+--- instancing/pax3d_simplepbr ---
+  SKIP: set_instanced lives in pax3d_render (ER-002)
+
+--- instancing/pax_pbr ---
+  SKIP: set_instanced lives in pax3d_render (ER-002)
+
+--- instancing/pax3d_render ---
+  [info] instance_api  InstanceList: reserve + append(pos,hpr,scale) x4 ok; node re-reads 4 instances
+  [ ok ] unflagged_fallback_correct  no set_instanced: 4/4 instances render (origin lum=0.000) — the traverser falls back to one draw per instance; set_instanced is a PERF switch, not correctness
+  [ ok ] flag_without_shader_collapses  flag + non-INSTANCING shader: origin lum=0.763 (expected 0.763), 0/4 positions lit — HW path engaged, identity matrices collapse instances (keep flag and shader paired via set_instanced)
+  [ ok ] instanced_draws_all  4/4 instance positions at ambient-exact lum, origin lum=0.000 (no stray copy)
+  [ ok ] matches_plain_copies  instanced render vs 4 plain copies (pos + 45-deg roll + 1.5x scale): rms=0.00000
+  [ ok ] opt_out_restores  set_instanced(np, False): rms vs the unflagged baseline = 0.00e+00 (byte-identical opt-out)
+
+--- instancing/pax3d_render @directional ---
+  [info] instance_api  InstanceList: reserve + append(pos,hpr,scale) x4 ok; node re-reads 4 instances
+  [ ok ] unflagged_fallback_correct  no set_instanced: 4/4 instances render (origin lum=0.000) — the traverser falls back to one draw per instance; set_instanced is a PERF switch, not correctness
+  [ ok ] flag_without_shader_collapses  flag + non-INSTANCING shader: origin lum=0.763 (expected 0.763), 0/4 positions lit — HW path engaged, identity matrices collapse instances (keep flag and shader paired via set_instanced)
+  [ ok ] instanced_draws_all  4/4 instance positions at ambient-exact lum, origin lum=0.000 (no stray copy)
+  [ ok ] matches_plain_copies  instanced render vs 4 plain copies (pos + 45-deg roll + 1.5x scale): rms=0.00000
+  [ ok ] instanced_casters_shadow  4/4 shadow spots dark vs clear ground 0.76 ((-0.6,0.0)=0.47, (0.6,0.0)=0.47, (-0.6,-0.8)=0.47, (0.6,-0.8)=0.47) — the depth pass applies per-instance transforms
+  [ ok ] opt_out_restores  set_instanced(np, False): rms vs the unflagged baseline = 0.00e+00 (byte-identical opt-out)
+
+--- rigid_clips/none ---
+  SKIP: pipeline has no get_model_clips (ER-004)
+
+--- rigid_clips/simplepbr ---
+  SKIP: pipeline has no get_model_clips (ER-004)
+
+--- rigid_clips/pax3d_simplepbr ---
+  SKIP: pipeline has no get_model_clips (ER-004)
+
+--- rigid_clips/pax_pbr ---
+  [ ok ] loader_keeps_plain_nodes  door/hatch/probe/step found=[True, True, True, True], Character absent=True
+  [ ok ] clips_parsed  clips=['DoorOpen'], targets=['DoorPivot', 'Hatch', 'StepNode'], duration=2.0
+  [ ok ] targets_resolved  missing=[], duplicates=[]
+  [ ok ] key0_matches_loader_rest  door pos err vs loader 0.00e+00, vs analytic (1.0, -3.0, 2.0): 0.00e+00; hatch quat err 1.19e-07
+  [ ok ] seek_end_analytic  door 0.00e+00, probe world (-2.0, 0.9999999403953552, 0.0) err 5.96e-08, step scale err 0.00e+00
+  [ ok ] seek_mid_lerp_slerp_step  door lerp 0.00e+00, probe slerp 4.75e-08, step holds 0.00e+00
+  [ ok ] reverse_and_reset  scrub-back err 0.00e+00, reset pos 0.00e+00 quat 2.38e-07
+  [ ok ] cubicspline_midpoint  hermite(0.5) with zero tangents = (0.5, 0.0, 0.0)
+  [ ok ] delta_clip_composes_on_rest  end pos err 0.00e+00, rotated probe err 3.58e-07, back-to-rest err 0.00e+00
+  [ ok ] render_moves  seek 0 vs 1 rms 0.2949 (the quad rides its clip-driven node)
+
+--- rigid_clips/pax3d_render ---
+  [ ok ] loader_keeps_plain_nodes  door/hatch/probe/step found=[True, True, True, True], Character absent=True
+  [ ok ] clips_parsed  clips=['DoorOpen'], targets=['DoorPivot', 'Hatch', 'StepNode'], duration=2.0
+  [ ok ] targets_resolved  missing=[], duplicates=[]
+  [ ok ] key0_matches_loader_rest  door pos err vs loader 0.00e+00, vs analytic (1.0, -3.0, 2.0): 0.00e+00; hatch quat err 1.19e-07
+  [ ok ] seek_end_analytic  door 0.00e+00, probe world (-2.0, 0.9999999403953552, 0.0) err 5.96e-08, step scale err 0.00e+00
+  [ ok ] seek_mid_lerp_slerp_step  door lerp 0.00e+00, probe slerp 4.75e-08, step holds 0.00e+00
+  [ ok ] reverse_and_reset  scrub-back err 0.00e+00, reset pos 0.00e+00 quat 2.38e-07
+  [ ok ] cubicspline_midpoint  hermite(0.5) with zero tangents = (0.5, 0.0, 0.0)
+  [ ok ] delta_clip_composes_on_rest  end pos err 0.00e+00, rotated probe err 3.58e-07, back-to-rest err 0.00e+00
+  [ ok ] render_moves  seek 0 vs 1 rms 0.2949 (the quad rides its clip-driven node)
+
+--- screen/none ---
+  SKIP: pipeline has no set_screen (ER-005)
+
+--- screen/simplepbr ---
+  SKIP: pipeline has no set_screen (ER-005)
+
+--- screen/pax3d_simplepbr ---
+  SKIP: pipeline has no set_screen (ER-005)
+
+--- screen/pax_pbr ---
+  [ ok ] baseline_analytic  gray card rgb (0.049,0.049,0.049) expected 0.049, err 0.000
+  [ ok ] screen_binds_analytic  worst quadrant err 0.000 (texture as albedo+emission, e=1)
+  [ ok ] screen_off_albedo_lit  worst quadrant err 0.000 (scale 0 = the VA_ScreenOff state; quadrants still faintly visible under room light)
+  [ ok ] emission_scale_color  worst quadrant err 0.000 (scale 2.0 * color (1,.5,.25))
+  [ ok ] clear_emission_restores  rms vs screen_on = 0.00e+00
+  [ ok ] uv_window_selects_quadrant  worst quadrant err 0.000 (uv*0.5+0.5 windows the top-right cell everywhere)
+  [ ok ] clear_uv_transform_restores  rms vs screen_on = 0.00e+00
+  [ ok ] screen_survives_recompile  rms vs screen_on across recompile = 0.00e+00
+  [ ok ] flipbook_frame_mapping  2x2 frames 0-3 -> [(0.0, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5), (0.0, 0.0, 0.5, 0.5), (0.5, 0.0, 0.5, 0.5)] (row-major from TOP-LEFT)
+  [ ok ] flipbook_frame0_renders  worst quadrant err 0.000 (frame 0 = top-left cell)
+  [ ok ] stop_flipbook_restores  rms vs screen_on = 0.00e+00
+  [ ok ] uv_scroll_animates  captures 30 frames apart rms 0.14060
+  [ ok ] clear_uv_scroll_restores  rms vs screen_on = 0.00e+00
+  [ ok ] blink_envelope_math  double-flash windows, wrap, and phase all exact
+  [ ok ] blink_on_off_states  pulse-ON == screen_on rms 0.00e+00; gap-OFF == emission-0 rms 0.00e+00
+  [ ok ] blink_syncs_light  lamp color ON (0.8, 0.4, 0.2, 1.0) / OFF (0.0, 0.0, 0.0, 1.0) (gated with the same envelope)
+  [ ok ] clear_blink_restores  rms vs screen_on = 0.00e+00, lamp color restored (0.8, 0.4, 0.2, 1.0)
+  [ ok ] emissive_only_analytic  worst quadrant err 0.001 (albedo=False: black base, pure glow)
+  [ ok ] clear_screen_restores  rms vs baseline = 0.00e+00 (texture + material state both restored)
+
+--- screen/pax3d_render ---
+  [ ok ] baseline_analytic  gray card rgb (0.049,0.049,0.049) expected 0.049, err 0.000
+  [ ok ] screen_binds_analytic  worst quadrant err 0.000 (texture as albedo+emission, e=1)
+  [ ok ] screen_off_albedo_lit  worst quadrant err 0.000 (scale 0 = the VA_ScreenOff state; quadrants still faintly visible under room light)
+  [ ok ] emission_scale_color  worst quadrant err 0.000 (scale 2.0 * color (1,.5,.25))
+  [ ok ] clear_emission_restores  rms vs screen_on = 0.00e+00
+  [ ok ] uv_window_selects_quadrant  worst quadrant err 0.000 (uv*0.5+0.5 windows the top-right cell everywhere)
+  [ ok ] clear_uv_transform_restores  rms vs screen_on = 0.00e+00
+  [ ok ] screen_survives_recompile  rms vs screen_on across recompile = 0.00e+00
+  [ ok ] flipbook_frame_mapping  2x2 frames 0-3 -> [(0.0, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5), (0.0, 0.0, 0.5, 0.5), (0.5, 0.0, 0.5, 0.5)] (row-major from TOP-LEFT)
+  [ ok ] flipbook_frame0_renders  worst quadrant err 0.000 (frame 0 = top-left cell)
+  [ ok ] stop_flipbook_restores  rms vs screen_on = 0.00e+00
+  [ ok ] uv_scroll_animates  captures 30 frames apart rms 0.14060
+  [ ok ] clear_uv_scroll_restores  rms vs screen_on = 0.00e+00
+  [ ok ] blink_envelope_math  double-flash windows, wrap, and phase all exact
+  [ ok ] blink_on_off_states  pulse-ON == screen_on rms 0.00e+00; gap-OFF == emission-0 rms 0.00e+00
+  [ ok ] blink_syncs_light  lamp color ON (0.8, 0.4, 0.2, 1.0) / OFF (0.0, 0.0, 0.0, 1.0) (gated with the same envelope)
+  [ ok ] clear_blink_restores  rms vs screen_on = 0.00e+00, lamp color restored (0.8, 0.4, 0.2, 1.0)
+  [ ok ] emissive_only_analytic  worst quadrant err 0.001 (albedo=False: black base, pure glow)
+  [ ok ] clear_screen_restores  rms vs baseline = 0.00e+00 (texture + material state both restored)
+
+--- alpha_mask/none ---
+  SKIP: pipeline has no apply_alpha_masks
+
+--- alpha_mask/simplepbr ---
+  SKIP: pipeline has no apply_alpha_masks
+
+--- alpha_mask/pax3d_simplepbr ---
+  SKIP: pipeline has no apply_alpha_masks
+
+--- alpha_mask/pax_pbr ---
+  [ ok ] loader_stamps_alpha_test  2 geoms carry keep-if-greater AlphaTestAttrib (want 2: shell + cutout, never the opaque back quad)
+  [ ok ] anchor_back_lit  back quad center rgb=(0.705, 0.705, 0.705), analytic 0.705 (v on axis only here)
+  [ ok ] modern_prefix_defect_present  gl 3 2 without the API: shell g=0.398 / cutout-alpha0 g=0.267 vs anchor 0.640/0.600 — MASK ignored, renders solid (the field report). If this ever masks, the engine grew core-profile alpha test: true up this test
+  [ ok ] api_finds_masked_geoms  apply_alpha_masks -> 2, again -> 2 (want 2, idempotent)
+  [ ok ] mask_alpha0_discards  shell region rgb=(0.640, 0.640, 0.640) vs anchor (0.640, 0.640, 0.640) — the textureless alpha-0 shell vanishes (THE field case)
+  [ ok ] cutout_kept_half  kept half rgb=(0.677, 0.508, 0.507) — red-tinted (gray specular rides on top), g below anchor 0.680: drawn, not discarded
+  [ ok ] cutout_discarded_half  discarded half rgb=(0.600, 0.600, 0.600) vs anchor (0.600, 0.600, 0.600) — texture alpha 0 discards
+  [ ok ] variant_tracks_recompile  shell region g=0.640 vs anchor 0.640 after a recompile-class toggle (the glass discipline)
+  [ ok ] recompile_roundtrip_identical  double_sided on->off vs post-API: rms=0.00e+00 (front-facing quads cannot change)
+  [ ok ] optout_restores_exactly  apply_alpha_masks(False) -> 2, rms vs pre-API = 0.00e+00 (on @modern this restores the DEFECT — exact restore is the contract)
+  [ ok ] binary_modern_prefix_defect  gl 3 2, M_binary, no API: cut-half g=0.267 vs anchor 0.600 — the attrib is cull-implemented as a fixed-function alpha test, silently ignored (the solid grass-card field case)
+  [ ok ] binary_geomlevel_detected  1 geom(s), cutoff=0.5 (want 1 @ 0.5 — the get_binary_state semantic)
+  [ ok ] binary_nodelevel_detected  1 geom(s) under a set_transparency(M_binary) root (the subtree-composed state is scanned)
+  [ ok ] binary_masks_both_baselines  apply_alpha_masks -> 1; cut half rgb=(0.600, 0.600, 0.600) vs anchor (0.600, 0.600, 0.600); kept half red-dominant
+  [ ok ] binary_optout_restores  apply_alpha_masks(False) -> 1, rms vs pre-API = 0.00e+00
+  [ ok ] instanced_default_mask_collapses  instanced=False mask on a set_instanced node: 0/4 instances still render, origin kept-half r-g=0.138 — the flag/shader pairing trap, measured (why the kwarg exists)
+  [ ok ] instanced_mask_renders_all  instanced=True: 4/4 kept halves red at their instance transforms, origin back to backdrop (g=0.702 vs anchor 0.702)
+  [ ok ] instanced_mask_cutout_discards  4/4 discarded halves show the backdrop — cutout grass cards render per-instance (the ER-009 understory case)
+  [ ok ] instanced_mask_optout_restores  apply_alpha_masks(False) -> 1, rms vs pre-mask instanced render = 0.00e+00
+
+--- alpha_mask/pax3d_render ---
+  [ ok ] loader_stamps_alpha_test  2 geoms carry keep-if-greater AlphaTestAttrib (want 2: shell + cutout, never the opaque back quad)
+  [ ok ] anchor_back_lit  back quad center rgb=(0.705, 0.705, 0.705), analytic 0.705 (v on axis only here)
+  [ ok ] modern_prefix_defect_present  gl 3 2 without the API: shell g=0.398 / cutout-alpha0 g=0.267 vs anchor 0.640/0.600 — MASK ignored, renders solid (the field report). If this ever masks, the engine grew core-profile alpha test: true up this test
+  [ ok ] api_finds_masked_geoms  apply_alpha_masks -> 2, again -> 2 (want 2, idempotent)
+  [ ok ] mask_alpha0_discards  shell region rgb=(0.640, 0.640, 0.640) vs anchor (0.640, 0.640, 0.640) — the textureless alpha-0 shell vanishes (THE field case)
+  [ ok ] cutout_kept_half  kept half rgb=(0.677, 0.508, 0.507) — red-tinted (gray specular rides on top), g below anchor 0.680: drawn, not discarded
+  [ ok ] cutout_discarded_half  discarded half rgb=(0.600, 0.600, 0.600) vs anchor (0.600, 0.600, 0.600) — texture alpha 0 discards
+  [ ok ] variant_tracks_recompile  shell region g=0.640 vs anchor 0.640 after a recompile-class toggle (the glass discipline)
+  [ ok ] recompile_roundtrip_identical  double_sided on->off vs post-API: rms=0.00e+00 (front-facing quads cannot change)
+  [ ok ] optout_restores_exactly  apply_alpha_masks(False) -> 2, rms vs pre-API = 0.00e+00 (on @modern this restores the DEFECT — exact restore is the contract)
+  [ ok ] binary_modern_prefix_defect  gl 3 2, M_binary, no API: cut-half g=0.267 vs anchor 0.600 — the attrib is cull-implemented as a fixed-function alpha test, silently ignored (the solid grass-card field case)
+  [ ok ] binary_geomlevel_detected  1 geom(s), cutoff=0.5 (want 1 @ 0.5 — the get_binary_state semantic)
+  [ ok ] binary_nodelevel_detected  1 geom(s) under a set_transparency(M_binary) root (the subtree-composed state is scanned)
+  [ ok ] binary_masks_both_baselines  apply_alpha_masks -> 1; cut half rgb=(0.600, 0.600, 0.600) vs anchor (0.600, 0.600, 0.600); kept half red-dominant
+  [ ok ] binary_optout_restores  apply_alpha_masks(False) -> 1, rms vs pre-API = 0.00e+00
+  [ ok ] instanced_default_mask_collapses  instanced=False mask on a set_instanced node: 0/4 instances still render, origin kept-half r-g=0.138 — the flag/shader pairing trap, measured (why the kwarg exists)
+  [ ok ] instanced_mask_renders_all  instanced=True: 4/4 kept halves red at their instance transforms, origin back to backdrop (g=0.702 vs anchor 0.702)
+  [ ok ] instanced_mask_cutout_discards  4/4 discarded halves show the backdrop — cutout grass cards render per-instance (the ER-009 understory case)
+  [ ok ] instanced_mask_optout_restores  apply_alpha_masks(False) -> 1, rms vs pre-mask instanced render = 0.00e+00
+
+--- viewmodel/none ---
+  SKIP: pipeline has no camera-registration API
+
+--- viewmodel/simplepbr ---
+  SKIP: pipeline has no camera-registration API
+
+--- viewmodel/pax3d_simplepbr ---
+  SKIP: pipeline has no camera-registration API
+
+--- viewmodel/pax_pbr ---
+  SKIP: pipeline has no camera-registration API
+
+--- viewmodel/pax3d_render ---
+  [ ok ] near_clip_hides_vm_without_region  center 0.670 vs box 0.670 (vm at 0.12m, near 0.3m)
+  [ ok ] vm_tonemapped_over_closer_world  center 0.730 vs analytic 0.730 (box at 1m would read 0.670)
+  [ ok ] world_lit_sanity  world card 0.848
+  [ ok ] vm_lighting_parity  world 0.848 vs viewmodel 0.848
+  [ ok ] world_unchanged_outside_vm  corner max diff 0.00000
+  [ ok ] unregister_restores_frame  rms vs baseline 0.0000000
+  [ ok ] unregister_restores_camera_mask   0111 1111 1111 1111 1111 1111 1111 1111
+
+  [ ok ] range_mode_draws_over_world  center 0.730 vs analytic 0.730
+  [ ok ] vm_survives_ssao_rebuild  center 0.730 (depth_range must be re-applied on the rebuilt buffer)
+  [ ok ] range_mode_preserves_world_depth  corner depth diff 0.000000
+  [ ok ] range_mode_vm_writes_front_slice  center depth vm 0.042 vs box 0.702
+  [ ok ] clear_mode_stomps_world_depth_documented  corner depth diff 0.0120 (SSAO needs depth_mode="range")
+  [ ok ] full_restore_after_churn  rms vs baseline 0.0000000
+  [ ok ] vm_survives_bloom_rebuild  center 0.737
+  [ ok ] vm_feeds_bloom  halo 0.019 -> 0.063 (viewmodel rides the HDR buffer pre-post)
+
+--- viewmodel/pax3d_render @directional ---
+  [ ok ] near_clip_hides_vm_without_region  center 0.366 vs box 0.366 (vm at 0.12m, near 0.3m)
+  [ ok ] vm_tonemapped_over_closer_world  center 0.730 vs analytic 0.730 (box at 1m would read 0.366)
+  [ ok ] world_lit_sanity  world card 0.583
+  [ ok ] vm_lighting_parity  world 0.583 vs viewmodel 0.583
+  [ ok ] world_unchanged_outside_vm  corner max diff 0.00000
+  [ ok ] unregister_restores_frame  rms vs baseline 0.0000000
+  [ ok ] unregister_restores_camera_mask   0111 1111 1111 1111 1111 1111 1111 1111
+
+  [ ok ] range_mode_draws_over_world  center 0.730 vs analytic 0.730
+  [ ok ] vm_survives_ssao_rebuild  center 0.730 (depth_range must be re-applied on the rebuilt buffer)
+  [ ok ] range_mode_preserves_world_depth  corner depth diff 0.000000
+  [ ok ] range_mode_vm_writes_front_slice  center depth vm 0.042 vs box 0.702
+  [ ok ] clear_mode_stomps_world_depth_documented  corner depth diff 0.0120 (SSAO needs depth_mode="range")
+  [ ok ] full_restore_after_churn  rms vs baseline 0.0000000
+  [ ok ] vm_survives_bloom_rebuild  center 0.736
+  [ ok ] vm_feeds_bloom  halo 0.000 -> 0.034 (viewmodel rides the HDR buffer pre-post)
+  [ ok ] shadow_mask_clears_vm_bit   0001 1111 1111 1111 1111 1111 1111 1111
+
+  [ ok ] vm_absent_from_shadow_map  0 texels differ with viewmodel registered
+
+--- gl_clean/none ---
+  [info] engine  1.11.0 (0 GL error lines over 30 frames)
+  [ ok ] offscreen_frames_gl_clean  0 GL error lines over 30 frames
+  [ ok ] gsg_still_active  
+
+--- gl_clean/simplepbr ---
+  SKIP: engine-level test, none pipeline only
+
+--- gl_clean/pax3d_simplepbr ---
+  SKIP: engine-level test, none pipeline only
+
+--- gl_clean/pax_pbr ---
+  SKIP: engine-level test, none pipeline only
+
+--- gl_clean/pax3d_render ---
+  SKIP: engine-level test, none pipeline only
+
+--- light_priority/none ---
+  SKIP: max_lights/set_light_budget live in pax3d_render (ER-008)
+
+--- light_priority/simplepbr ---
+  SKIP: max_lights/set_light_budget live in pax3d_render (ER-008)
+
+--- light_priority/pax3d_simplepbr ---
+  SKIP: max_lights/set_light_budget live in pax3d_render (ER-008)
+
+--- light_priority/pax_pbr ---
+  SKIP: max_lights/set_light_budget live in pax3d_render (ER-008)
+
+--- light_priority/pax3d_render ---
+  [ ok ] overflow_binds_exactly_array_size  3 lights on a 2-slot array: rgb=(0.770, 0.771, 0.000) -> 2 bound (excess silently dropped)
+  [info] tie_order_observed  all priorities 0: bound set = ['red', 'green'] (arbitrary — do not rely on it)
+  [ ok ] priority_selects_bound_set  priorities R=1 G=0 B=2: rgb=(0.770, 0.000, 0.770) — top-2 priorities bound, green dropped
+  [ ok ] priority_resort_is_live  green raised to 3 mid-session: rgb=(0.000, 0.771, 0.770) — bound set flipped without rebinding
+  [ ok ] warden_binds_top_scoring  d=1,2,3 @ budget 2: rgb=(0.917, 0.584, 0.000) — nearest two bound, far one not
+  [ ok ] warden_rebinds_on_motion  blue moved nearest: rgb=(0.917, 0.000, 0.981) — bound set follows the scores
+  [ ok ] warden_optout_unbinds  clear_light_budget: rms vs zero-light baseline = 0.00e+00 (every warden-bound light cleared; byte-identical restore)
+
+--- light_priority/pax3d_render @directional ---
+  [ ok ] sun_survives_spot_overflow  center (outside both spot cones) lum=0.770 — sun priority guard holds against 2 floods on a 2-slot array
+  [ ok ] overflow_still_drops_one_spot  green excess 0.147, blue excess -0.000 -> 1 spots bound (1 slot left beside the sun)
+
+--- effects/none ---
+  SKIP: pipeline has no spawn_effect (Session AD)
+
+--- effects/simplepbr ---
+  SKIP: pipeline has no spawn_effect (Session AD)
+
+--- effects/pax3d_simplepbr ---
+  SKIP: pipeline has no spawn_effect (Session AD)
+
+--- effects/pax_pbr ---
+  [ ok ] baseline_analytic  got (0.049,0.049,0.049) want (0.049,0.049,0.049) err 0.000 (gray card under flat ambient)
+  [ ok ] premult_composite_analytic  got (0.589,0.390,0.259) want (0.588,0.386,0.256) err 0.004 (emission + B*(1-a), the premultiplied contract)
+  [ ok ] additive_glow_analytic  got (0.544,0.544,0.544) want (0.544,0.544,0.544) err 0.000 (rgb>0 at a=0 adds light, occludes nothing)
+  [ ok ] opaque_core_analytic  got (0.841,0.626,0.379) want (0.841,0.625,0.375) err 0.004 (a=1: emission only, B*(1-1)=0)
+  [ ok ] effect_unlit  ambient x4: effect pixel moved 0.0000 (must not), background moved 0.1594 (must)
+  [ ok ] remove_effect_restores  rms vs baseline = 0.00e+00, registries empty = True
+  [ ok ] emission_scale_tint  got (0.733,0.390,0.162) want (0.732,0.386,0.160) err 0.004 (scale 2 * tint (1,.5,.25), HDR-legal)
+  [ ok ] billboard_faces_camera  got (0.589,0.390,0.259) want (0.588,0.386,0.256) err 0.004 (parent H=90: billboard still faces the eye)
+  [ ok ] static_quad_edge_on  billboard=False inherits H=90 (edge-on, invisible): rms vs baseline = 0.00e+00
+  [ ok ] one_shot_completes_cleans  played (rms 0.18198) then self-reaped: node empty = True, registries empty = True, rms vs baseline = 0.00e+00
+  [ ok ] effect_excluded_from_shadows  quad hidden from the shadow caster mask = True (the depth pass never reads alpha — fact #17)
+  [ ok ] fade_out_k075  got (0.531,0.339,0.222) want (0.525,0.332,0.217) err 0.008 (fade_out ramp at k=0.75: emission*k + B*(1-a*k))
+  [ ok ] fade_out_k025  got (0.317,0.186,0.122) want (0.306,0.177,0.117) err 0.012 (fade_out ramp at k=0.25)
+  [ ok ] fade_out_reaps_clean  faded one-shot self-reaped: node empty = True, registries empty = True, rms vs baseline = 0.00e+00
+  [ ok ] atlas_tool_alpha_exact  2x2 RGBA atlas, worst texel err 0.00e+00 (alpha survives assembly; trailing cell transparent)
+  [ ok ] atlas_tool_rgb_unchanged  alpha-free sources still produce a 3-channel atlas (worst texel err 0.00e+00) — screens unchanged
+
+--- effects/pax3d_render ---
+  [ ok ] baseline_analytic  got (0.049,0.049,0.049) want (0.049,0.049,0.049) err 0.000 (gray card under flat ambient)
+  [ ok ] premult_composite_analytic  got (0.589,0.390,0.259) want (0.588,0.386,0.256) err 0.004 (emission + B*(1-a), the premultiplied contract)
+  [ ok ] additive_glow_analytic  got (0.544,0.544,0.544) want (0.544,0.544,0.544) err 0.000 (rgb>0 at a=0 adds light, occludes nothing)
+  [ ok ] opaque_core_analytic  got (0.841,0.626,0.379) want (0.841,0.625,0.375) err 0.004 (a=1: emission only, B*(1-1)=0)
+  [ ok ] effect_unlit  ambient x4: effect pixel moved 0.0000 (must not), background moved 0.1594 (must)
+  [ ok ] remove_effect_restores  rms vs baseline = 0.00e+00, registries empty = True
+  [ ok ] emission_scale_tint  got (0.733,0.390,0.162) want (0.732,0.386,0.160) err 0.004 (scale 2 * tint (1,.5,.25), HDR-legal)
+  [ ok ] billboard_faces_camera  got (0.589,0.390,0.259) want (0.588,0.386,0.256) err 0.004 (parent H=90: billboard still faces the eye)
+  [ ok ] static_quad_edge_on  billboard=False inherits H=90 (edge-on, invisible): rms vs baseline = 0.00e+00
+  [ ok ] one_shot_completes_cleans  played (rms 0.18198) then self-reaped: node empty = True, registries empty = True, rms vs baseline = 0.00e+00
+  [ ok ] effect_excluded_from_shadows  quad hidden from the shadow caster mask = True (the depth pass never reads alpha — fact #17)
+  [ ok ] fade_out_k075  got (0.531,0.339,0.222) want (0.525,0.332,0.217) err 0.008 (fade_out ramp at k=0.75: emission*k + B*(1-a*k))
+  [ ok ] fade_out_k025  got (0.317,0.186,0.122) want (0.306,0.177,0.117) err 0.012 (fade_out ramp at k=0.25)
+  [ ok ] fade_out_reaps_clean  faded one-shot self-reaped: node empty = True, registries empty = True, rms vs baseline = 0.00e+00
+  [ ok ] atlas_tool_alpha_exact  2x2 RGBA atlas, worst texel err 0.00e+00 (alpha survives assembly; trailing cell transparent)
+  [ ok ] atlas_tool_rgb_unchanged  alpha-free sources still produce a 3-channel atlas (worst texel err 0.00e+00) — screens unchanged
+
+--- effects/pax3d_render @directional ---
+  [ ok ] baseline_analytic  got (0.049,0.049,0.049) want (0.049,0.049,0.049) err 0.000 (gray card under flat ambient)
+  [ ok ] premult_composite_analytic  got (0.589,0.390,0.259) want (0.588,0.386,0.256) err 0.004 (emission + B*(1-a), the premultiplied contract)
+  [ ok ] additive_glow_analytic  got (0.544,0.544,0.544) want (0.544,0.544,0.544) err 0.000 (rgb>0 at a=0 adds light, occludes nothing)
+  [ ok ] opaque_core_analytic  got (0.841,0.626,0.379) want (0.841,0.625,0.375) err 0.004 (a=1: emission only, B*(1-1)=0)
+  [ ok ] effect_unlit  ambient x4: effect pixel moved 0.0000 (must not), background moved 0.1594 (must)
+  [ ok ] remove_effect_restores  rms vs baseline = 0.00e+00, registries empty = True
+  [ ok ] emission_scale_tint  got (0.733,0.390,0.162) want (0.732,0.386,0.160) err 0.004 (scale 2 * tint (1,.5,.25), HDR-legal)
+  [ ok ] billboard_faces_camera  got (0.589,0.390,0.259) want (0.588,0.386,0.256) err 0.004 (parent H=90: billboard still faces the eye)
+  [ ok ] static_quad_edge_on  billboard=False inherits H=90 (edge-on, invisible): rms vs baseline = 0.00e+00
+  [ ok ] one_shot_completes_cleans  played (rms 0.18198) then self-reaped: node empty = True, registries empty = True, rms vs baseline = 0.00e+00
+  [ ok ] effect_excluded_from_shadows  quad hidden from the shadow caster mask = True (the depth pass never reads alpha — fact #17)
+  [ ok ] fade_out_k075  got (0.531,0.339,0.222) want (0.525,0.332,0.217) err 0.008 (fade_out ramp at k=0.75: emission*k + B*(1-a*k))
+  [ ok ] fade_out_k025  got (0.317,0.186,0.122) want (0.306,0.177,0.117) err 0.012 (fade_out ramp at k=0.25)
+  [ ok ] fade_out_reaps_clean  faded one-shot self-reaped: node empty = True, registries empty = True, rms vs baseline = 0.00e+00
+  [ ok ] atlas_tool_alpha_exact  2x2 RGBA atlas, worst texel err 0.00e+00 (alpha survives assembly; trailing cell transparent)
+  [ ok ] atlas_tool_rgb_unchanged  alpha-free sources still produce a 3-channel atlas (worst texel err 0.00e+00) — screens unchanged
+
+--- light_halo/none ---
+  SKIP: set_light_halo lives in pax3d_render (ER-013)
+
+--- light_halo/simplepbr ---
+  SKIP: set_light_halo lives in pax3d_render (ER-013)
+
+--- light_halo/pax3d_simplepbr ---
+  SKIP: set_light_halo lives in pax3d_render (ER-013)
+
+--- light_halo/pax_pbr ---
+  SKIP: set_light_halo lives in pax3d_render (ER-013)
+
+--- light_halo/pax3d_render ---
+  [ ok ] baseline_black  empty scene center lum 0.0000
+  [ ok ] near_center_analytic  got (0.808,0.533,0.533) want (0.810,0.532,0.532) err 0.002 (unlit additive sprite through the tonemap)
+  [ ok ] near_size  half-max diameter 70px, predicted 69.6px (world-size regime, 1.0m at 10.0m; tonemapped half-max r=0.728)
+  [ ok ] far_min_px_clamp  half-max diameter 6px, clamp predicts 5.8px (world size would be 2.39px < half of min_px 8 — the clamp regime)
+  [ ok ] far_center_analytic  got (0.800,0.518,0.518) want (0.810,0.532,0.532) err 0.015 (brightness independent of distance — sprite semantics; sub-pixel peak offset tolerated)
+  [ ok ] occlusion_by_depth  halo behind an opaque card: rms vs empty baseline = 0.00e+00 (no occluder was registered anywhere)
+  [ ok ] blink_mid_pulse_bright  got (0.808,0.533,0.533) want (0.810,0.532,0.532) err 0.002 (envelope 1.0: halo inherits u_emission_factor)
+  [ ok ] blink_gap_dark  envelope 0.0: center lum 0.0000 (halo flashes with its circuit, no extra wiring)
+  [ ok ] emission_scale_composition  got (0.894,0.686,0.686) want (0.894,0.686,0.686) err 0.001 (set_emission_scale(bulb, 2) doubles the halo)
+  [ ok ] clear_restores  clear_light_halo: rms vs baseline = 0.00e+00, registry empty = True
+
+--- light_halo/pax3d_render @directional ---
+  [ ok ] baseline_black  empty scene center lum 0.0000
+  [ ok ] near_center_analytic  got (0.808,0.533,0.533) want (0.810,0.532,0.532) err 0.002 (unlit additive sprite through the tonemap)
+  [ ok ] near_size  half-max diameter 70px, predicted 69.6px (world-size regime, 1.0m at 10.0m; tonemapped half-max r=0.728)
+  [ ok ] far_min_px_clamp  half-max diameter 6px, clamp predicts 5.8px (world size would be 2.39px < half of min_px 8 — the clamp regime)
+  [ ok ] far_center_analytic  got (0.800,0.518,0.518) want (0.810,0.532,0.532) err 0.015 (brightness independent of distance — sprite semantics; sub-pixel peak offset tolerated)
+  [ ok ] occlusion_by_depth  halo behind an opaque card: rms vs empty baseline = 0.00e+00 (no occluder was registered anywhere)
+  [ ok ] blink_mid_pulse_bright  got (0.808,0.533,0.533) want (0.810,0.532,0.532) err 0.002 (envelope 1.0: halo inherits u_emission_factor)
+  [ ok ] blink_gap_dark  envelope 0.0: center lum 0.0000 (halo flashes with its circuit, no extra wiring)
+  [ ok ] emission_scale_composition  got (0.894,0.686,0.686) want (0.894,0.686,0.686) err 0.001 (set_emission_scale(bulb, 2) doubles the halo)
+  [ ok ] clear_restores  clear_light_halo: rms vs baseline = 0.00e+00, registry empty = True
+  [ ok ] shadow_mask_exclusion  halo quad hidden from the shadow caster mask = True (the depth pass never reads alpha — fact #17)
+
+--- visibility_query/none ---
+  SKIP: add_visibility_query lives in pax3d_render (Session AF)
+
+--- visibility_query/simplepbr ---
+  SKIP: add_visibility_query lives in pax3d_render (Session AF)
+
+--- visibility_query/pax3d_simplepbr ---
+  SKIP: add_visibility_query lives in pax3d_render (Session AF)
+
+--- visibility_query/pax_pbr ---
+  SKIP: add_visibility_query lives in pax3d_render (Session AF)
+
+--- visibility_query/pax3d_render ---
+  [ ok ] open_sky_full  open target: visibility 1.000 (cleared depth counts as open sky)
+  [ ok ] blocked_zero  walled target: visibility 0.000
+  [ ok ] half_covered  edge target: visibility 0.498 (tap disc split by the wall edge — smooth partial occlusion)
+  [ ok ] behind_geometry_visible  backdrop at y=200 behind the y=50 target: visibility 1.000
+  [ ok ] sky_dome_default_blocks  dome at y=80 in front of the y=200 sun: visibility 0.000 (default: any closer depth occludes)
+  [ ok ] sky_dome_horizon_opens  max_occluder_depth=70 (below the dome distance): visibility 1.000 — the sky-dome valve
+  [ ok ] query_pass_invisible  3 active queries vs none: rendered frame rms = 0.00e+00 (the query buffer is outside the visible chain)
+  [info] latency_frames  value flipped 1.00 -> 0.00 in 2 frames after the target moved (contract: ~2, depth is one frame old)
+  [ ok ] healthy_state_valid  no depth stomper: visibility_query_valid=True, q.valid=True, visibility 1.000
+  [ ok ] clear_viewmodel_invalidates  viewmodel depth_mode="clear" registered: visibility_query_valid=False, q.valid=False, visibility 0.000 (fail closed — NOT the garbage open-sky read)
+  [ ok ] unregister_restores_valid  viewmodel unregistered: visibility_query_valid=True, q.valid=True, visibility 1.000
+  [ ok ] range_mode_stays_valid  honored "range" viewmodel: visibility_query_valid=True, visibility 1.000
+  [ ok ] logdepth_flip_degrades_live  enable_log_depth flipped on under a live "range" viewmodel: visibility_query_valid=False, visibility 0.000 (degraded to "clear", fail closed)
+
+--- visibility_query/pax3d_render @logdepth ---
+  [ ok ] open_sky_full  open target: visibility 1.000 (cleared depth counts as open sky)
+  [ ok ] blocked_zero  walled target: visibility 0.000
+  [ ok ] half_covered  edge target: visibility 0.498 (tap disc split by the wall edge — smooth partial occlusion)
+  [ ok ] behind_geometry_visible  backdrop at y=200 behind the y=50 target: visibility 1.000
+  [ ok ] sky_dome_default_blocks  dome at y=80 in front of the y=200 sun: visibility 0.000 (default: any closer depth occludes)
+  [ ok ] sky_dome_horizon_opens  max_occluder_depth=70 (below the dome distance): visibility 1.000 — the sky-dome valve
+  [ ok ] query_pass_invisible  3 active queries vs none: rendered frame rms = 0.00e+00 (the query buffer is outside the visible chain)
+  [info] latency_frames  value flipped 1.00 -> 0.00 in 2 frames after the target moved (contract: ~2, depth is one frame old)
+  [ ok ] healthy_state_valid  no depth stomper: visibility_query_valid=True, q.valid=True, visibility 1.000
+  [ ok ] clear_viewmodel_invalidates  viewmodel depth_mode="clear" registered: visibility_query_valid=False, q.valid=False, visibility 0.000 (fail closed — NOT the garbage open-sky read)
+  [ ok ] unregister_restores_valid  viewmodel unregistered: visibility_query_valid=True, q.valid=True, visibility 1.000
+  [ ok ] range_degrade_raises  on_depth_degrade="raise": degraded "range" request raised RuntimeError at registration
+  [ ok ] range_degrade_invalidates  degraded "range" viewmodel: visibility_query_valid=False, visibility 0.000 (fail closed)
+
+--- spot_exponent/none ---
+  SKIP: enable_spot_exponent lives in pax3d_render (Session AF)
+
+--- spot_exponent/simplepbr ---
+  SKIP: enable_spot_exponent lives in pax3d_render (Session AF)
+
+--- spot_exponent/pax3d_simplepbr ---
+  SKIP: enable_spot_exponent lives in pax3d_render (Session AF)
+
+--- spot_exponent/pax_pbr ---
+  SKIP: enable_spot_exponent lives in pax3d_render (Session AF)
+
+--- spot_exponent/pax3d_render ---
+  [ ok ] flag_off_ignores_exponent  exponent 50, flag off: lum=0.703, analytic 0.705 (shipped behavior — no pow term)
+  [ ok ] toggle_on_exponent0_noop  flag ON, exponent 0 vs flag OFF: rms = 0.00e+00 (pow(x>0, 0) == 1 exactly; runtime recompile path)
+  [ ok ] exponent_2_analytic  exponent 2: lum=0.679, analytic 0.681 (= base * cos(20deg)^2)
+  [ ok ] exponent_8_analytic  exponent 8: lum=0.605, analytic 0.606 (= base * cos(20deg)^8)
+  [ ok ] spotlight_default_50_documented  exponent 50 (Panda Spotlight default): lum=0.201, analytic 0.196 — why the flag defaults OFF
+  [ ok ] point_light_immune  PointLight scene, flag on vs off: rms = 0.00e+00 (the cutoff guard never touches non-spots)
+  [ ok ] toggle_off_restores  flag off again (exponent 50 live on the light): rms vs the first capture = 0.00e+00
+
+--- spot_exponent/pax3d_render @directional ---
+  [ ok ] flag_off_ignores_exponent  exponent 50, flag off: lum=0.703, analytic 0.705 (shipped behavior — no pow term)
+  [ ok ] toggle_on_exponent0_noop  flag ON, exponent 0 vs flag OFF: rms = 0.00e+00 (pow(x>0, 0) == 1 exactly; runtime recompile path)
+  [ ok ] exponent_2_analytic  exponent 2: lum=0.679, analytic 0.681 (= base * cos(20deg)^2)
+  [ ok ] exponent_8_analytic  exponent 8: lum=0.605, analytic 0.606 (= base * cos(20deg)^8)
+  [ ok ] spotlight_default_50_documented  exponent 50 (Panda Spotlight default): lum=0.201, analytic 0.196 — why the flag defaults OFF
+  [ ok ] point_light_immune  PointLight scene, flag on vs off: rms = 0.00e+00 (the cutoff guard never touches non-spots)
+  [ ok ] toggle_off_restores  flag off again (exponent 50 live on the light): rms vs the first capture = 0.00e+00
+
+--- gvad_churn/none ---
+  [ ok ] churn_handle-only_survives  exit 0: SURVIVED 60 s, 3525449 builds, 0 frames
+  [ ok ] churn_full_survives  exit 0: SURVIVED 30 s, 49949 builds, 0 frames
+
+--- gvad_churn/simplepbr ---
+  SKIP: engine-level test, none pipeline only
+
+--- gvad_churn/pax3d_simplepbr ---
+  SKIP: engine-level test, none pipeline only
+
+--- gvad_churn/pax_pbr ---
+  SKIP: engine-level test, none pipeline only
+
+--- gvad_churn/pax3d_render ---
+  SKIP: engine-level test, none pipeline only
+
+--- thread_bind/none ---
+  [ ok ] bind_pinned  exit 0: bind_thread ref count: 2 | current thread after drop+gc: pin_probe; PINNED
+  [ ok ] bound_churn_render  exit 0: got: depth_bits=24 color_bits=24 red_bits=8 green_bits=8 blue_bits=8 alpha_bits=8 accum_bits=64 force_hardware
+
+--- thread_bind/simplepbr ---
+  SKIP: engine-level test, none pipeline only
+
+--- thread_bind/pax3d_simplepbr ---
+  SKIP: engine-level test, none pipeline only
+
+--- thread_bind/pax_pbr ---
+  SKIP: engine-level test, none pipeline only
+
+--- thread_bind/pax3d_render ---
+  SKIP: engine-level test, none pipeline only
+
+--- detail_maps/none ---
+  SKIP: pipeline has no set_detail_maps
+
+--- detail_maps/simplepbr ---
+  SKIP: pipeline has no set_detail_maps
+
+--- detail_maps/pax3d_simplepbr ---
+  SKIP: pipeline has no set_detail_maps
+
+--- detail_maps/pax_pbr ---
+  [ ok ] anchor_flat_lit  plain g=0.721 / norm g=0.728 vs analytic 0.782 (defines off: normal map and tangents ignored; off-axis droop tolerated)
+  [ ok ] anchor_orm_rough_read  occ quad g=0.780 vs analytic 0.781 (on-axis; metal_rough .g already read pre-variant; .r ignored)
+  [ ok ] mask_premise  apply_alpha_masks -> 1 (want 1: the MASK quad, the hair-card analog)
+  [ ok ] api_selects_exactly  set_detail_maps -> 2, again -> 2 (want 2: norm + occ; mask carries the ALPHA_MASK variant, plain has no maps; idempotent)
+  [ ok ] tangentless_guard  set_detail_maps(card) -> 0 (M_normal stage bound but no tangent column: refused — the NaN-black class the global flip would hit)
+  [ ok ] normal_map_renders  norm quad g 0.728 -> 0.676 (constant normal tilted nx=0.702 turns the surface away from the on-axis sun: darker)
+  [ ok ] occlusion_renders  occ quad g=0.721 vs analytic 0.721 (ambient term x ORM .r 0.251; was 0.780)
+  [ ok ] masked_geom_untouched  mask quad g 0.745 -> 0.745 (ALPHA_MASK variant kept; its normal map stays unsampled — variant stacking is a documented limit)
+  [ ok ] card_untouched  card g 0.717 -> 0.717 (refused geom renders exactly as before)
+  [ ok ] variant_tracks_recompile  norm quad g=0.676 still detail-shaded after a recompile-class toggle (the glass discipline)
+  [ ok ] recompile_roundtrip_identical  double_sided on->off vs post-API: rms=0.00e+00
+  [ ok ] reconfigure_in_place  normal-only -> 1 geom(s); occ back to baseline (g=0.780 vs 0.780), norm still detail-shaded
+  [ ok ] reconfigure_roundtrip  both maps back -> 2, rms vs post-API = 0.00e+00
+  [ ok ] valve_blanket_trap_measured  raw override-2 flag attrib: norm quad g=0.728 reverts to flat anchor 0.728 — the blanket, measured (why the valve API re-stamps)
+  [ ok ] valve_composes_variant  set_hardware_skinning(np, False) with detail maps on: rms vs post-API = 0.00e+00 (variant + flag both survive the color pass)
+  [ ok ] valve_tags_for_depth_rescue  valve node tag pax3d_shadow='shadow' (the shadow cameras re-assert the depth shader above the override-2 stamp through this tag)
+  [ ok ] valve_clear_restores  clear_hardware_skinning: rms=0.00e+00, node attrib=None, tag cleared
+  [ ok ] optout_restores_exactly  set_detail_maps(False) -> 2, rms vs pre-API = 0.00e+00 (the baked detail goes back to being unsampled — exact restore is the contract)
+  [ ok ] append_only_stamps  entry 1: 2 geoms / 2 stamps; appending entry 2: 3 geoms / 3 stamps (want exactly the NEW geoms — the old path re-stamped every registered geom per attach)
+  [ ok ] removal_no_restamp  removing entry 2 -> 3 restored, 0 re-stamps of the survivor (want 0: no skinning valves anywhere = O(entry) detach)
+  [ ok ] append_only_renders  survivor entry after the add/remove cycle vs the post-API capture: rms=0.00e+00 (the fast path is behavior-identical)
+
+--- detail_maps/pax3d_render ---
+  [ ok ] anchor_flat_lit  plain g=0.721 / norm g=0.728 vs analytic 0.782 (defines off: normal map and tangents ignored; off-axis droop tolerated)
+  [ ok ] anchor_orm_rough_read  occ quad g=0.780 vs analytic 0.781 (on-axis; metal_rough .g already read pre-variant; .r ignored)
+  [ ok ] mask_premise  apply_alpha_masks -> 1 (want 1: the MASK quad, the hair-card analog)
+  [ ok ] api_selects_exactly  set_detail_maps -> 2, again -> 2 (want 2: norm + occ; mask carries the ALPHA_MASK variant, plain has no maps; idempotent)
+  [ ok ] tangentless_guard  set_detail_maps(card) -> 0 (M_normal stage bound but no tangent column: refused — the NaN-black class the global flip would hit)
+  [ ok ] normal_map_renders  norm quad g 0.728 -> 0.676 (constant normal tilted nx=0.702 turns the surface away from the on-axis sun: darker)
+  [ ok ] occlusion_renders  occ quad g=0.721 vs analytic 0.721 (ambient term x ORM .r 0.251; was 0.780)
+  [ ok ] masked_geom_untouched  mask quad g 0.745 -> 0.745 (ALPHA_MASK variant kept; its normal map stays unsampled — variant stacking is a documented limit)
+  [ ok ] card_untouched  card g 0.717 -> 0.717 (refused geom renders exactly as before)
+  [ ok ] variant_tracks_recompile  norm quad g=0.676 still detail-shaded after a recompile-class toggle (the glass discipline)
+  [ ok ] recompile_roundtrip_identical  double_sided on->off vs post-API: rms=0.00e+00
+  [ ok ] reconfigure_in_place  normal-only -> 1 geom(s); occ back to baseline (g=0.780 vs 0.780), norm still detail-shaded
+  [ ok ] reconfigure_roundtrip  both maps back -> 2, rms vs post-API = 0.00e+00
+  [ ok ] valve_blanket_trap_measured  raw override-2 flag attrib: norm quad g=0.728 reverts to flat anchor 0.728 — the blanket, measured (why the valve API re-stamps)
+  [ ok ] valve_composes_variant  set_hardware_skinning(np, False) with detail maps on: rms vs post-API = 0.00e+00 (variant + flag both survive the color pass)
+  [ ok ] valve_tags_for_depth_rescue  valve node tag pax3d_shadow='shadow' (the shadow cameras re-assert the depth shader above the override-2 stamp through this tag)
+  [ ok ] valve_clear_restores  clear_hardware_skinning: rms=0.00e+00, node attrib=None, tag cleared
+  [ ok ] optout_restores_exactly  set_detail_maps(False) -> 2, rms vs pre-API = 0.00e+00 (the baked detail goes back to being unsampled — exact restore is the contract)
+  [ ok ] append_only_stamps  entry 1: 2 geoms / 2 stamps; appending entry 2: 3 geoms / 3 stamps (want exactly the NEW geoms — the old path re-stamped every registered geom per attach)
+  [ ok ] removal_no_restamp  removing entry 2 -> 3 restored, 0 re-stamps of the survivor (want 0: no skinning valves anywhere = O(entry) detach)
+  [ ok ] append_only_renders  survivor entry after the add/remove cycle vs the post-API capture: rms=0.00e+00 (the fast path is behavior-identical)
+
+--- detail_maps/pax3d_render @directional ---
+  [ ok ] anchor_flat_lit  plain g=0.721 / norm g=0.728 vs analytic 0.782 (defines off: normal map and tangents ignored; off-axis droop tolerated)
+  [ ok ] anchor_orm_rough_read  occ quad g=0.780 vs analytic 0.781 (on-axis; metal_rough .g already read pre-variant; .r ignored)
+  [ ok ] mask_premise  apply_alpha_masks -> 1 (want 1: the MASK quad, the hair-card analog)
+  [ ok ] api_selects_exactly  set_detail_maps -> 2, again -> 2 (want 2: norm + occ; mask carries the ALPHA_MASK variant, plain has no maps; idempotent)
+  [ ok ] tangentless_guard  set_detail_maps(card) -> 0 (M_normal stage bound but no tangent column: refused — the NaN-black class the global flip would hit)
+  [ ok ] normal_map_renders  norm quad g 0.728 -> 0.676 (constant normal tilted nx=0.702 turns the surface away from the on-axis sun: darker)
+  [ ok ] occlusion_renders  occ quad g=0.721 vs analytic 0.721 (ambient term x ORM .r 0.251; was 0.780)
+  [ ok ] masked_geom_untouched  mask quad g 0.745 -> 0.745 (ALPHA_MASK variant kept; its normal map stays unsampled — variant stacking is a documented limit)
+  [ ok ] card_untouched  card g 0.717 -> 0.717 (refused geom renders exactly as before)
+  [ ok ] variant_tracks_recompile  norm quad g=0.676 still detail-shaded after a recompile-class toggle (the glass discipline)
+  [ ok ] recompile_roundtrip_identical  double_sided on->off vs post-API: rms=0.00e+00
+  [ ok ] reconfigure_in_place  normal-only -> 1 geom(s); occ back to baseline (g=0.780 vs 0.780), norm still detail-shaded
+  [ ok ] reconfigure_roundtrip  both maps back -> 2, rms vs post-API = 0.00e+00
+  [ ok ] valve_blanket_trap_measured  raw override-2 flag attrib: norm quad g=0.728 reverts to flat anchor 0.728 — the blanket, measured (why the valve API re-stamps)
+  [ ok ] valve_composes_variant  set_hardware_skinning(np, False) with detail maps on: rms vs post-API = 0.00e+00 (variant + flag both survive the color pass)
+  [ ok ] valve_tags_for_depth_rescue  valve node tag pax3d_shadow='shadow' (the shadow cameras re-assert the depth shader above the override-2 stamp through this tag)
+  [ ok ] shadow_premise  backdrop g 0.714 -> 0.584 with the detail-mapped caster unstashed (its shadow lands on the sample)
+  [ ok ] valve_shadow_intact  valve off vs on under shadows: rms=0.00e+00 (tag-state rescue keeps the depth pass on the shadow shader)
+  [ ok ] caster_tag_state_installed  1/1 shadow casters carry the pax3d_shadow tag-state rescue while the valve holds a detail geom
+  [ ok ] valve_clear_restores  clear_hardware_skinning: rms=0.00e+00, node attrib=None, tag cleared
+  [ ok ] caster_tag_state_removed  0/1 casters still keyed after the last valve cleared (want 0 — the per-node tag lookup must cost nothing at rest)
+  [ ok ] optout_restores_exactly  set_detail_maps(False) -> 2, rms vs pre-API = 0.00e+00 (the baked detail goes back to being unsampled — exact restore is the contract)
+  [ ok ] append_only_stamps  entry 1: 2 geoms / 2 stamps; appending entry 2: 3 geoms / 3 stamps (want exactly the NEW geoms — the old path re-stamped every registered geom per attach)
+  [ ok ] removal_no_restamp  removing entry 2 -> 3 restored, 0 re-stamps of the survivor (want 0: no skinning valves anywhere = O(entry) detach)
+  [ ok ] append_only_renders  survivor entry after the add/remove cycle vs the post-API capture: rms=0.00e+00 (the fast path is behavior-identical)
+
+--- detail_maps/pax3d_render @directional @logdepth ---
+  [ ok ] anchor_flat_lit  plain g=0.721 / norm g=0.728 vs analytic 0.782 (defines off: normal map and tangents ignored; off-axis droop tolerated)
+  [ ok ] anchor_orm_rough_read  occ quad g=0.780 vs analytic 0.781 (on-axis; metal_rough .g already read pre-variant; .r ignored)
+  [ ok ] mask_premise  apply_alpha_masks -> 1 (want 1: the MASK quad, the hair-card analog)
+  [ ok ] api_selects_exactly  set_detail_maps -> 2, again -> 2 (want 2: norm + occ; mask carries the ALPHA_MASK variant, plain has no maps; idempotent)
+  [ ok ] tangentless_guard  set_detail_maps(card) -> 0 (M_normal stage bound but no tangent column: refused — the NaN-black class the global flip would hit)
+  [ ok ] normal_map_renders  norm quad g 0.728 -> 0.676 (constant normal tilted nx=0.702 turns the surface away from the on-axis sun: darker)
+  [ ok ] occlusion_renders  occ quad g=0.721 vs analytic 0.721 (ambient term x ORM .r 0.251; was 0.780)
+  [ ok ] masked_geom_untouched  mask quad g 0.745 -> 0.745 (ALPHA_MASK variant kept; its normal map stays unsampled — variant stacking is a documented limit)
+  [ ok ] card_untouched  card g 0.717 -> 0.717 (refused geom renders exactly as before)
+  [ ok ] variant_tracks_recompile  norm quad g=0.676 still detail-shaded after a recompile-class toggle (the glass discipline)
+  [ ok ] recompile_roundtrip_identical  double_sided on->off vs post-API: rms=0.00e+00
+  [ ok ] reconfigure_in_place  normal-only -> 1 geom(s); occ back to baseline (g=0.780 vs 0.780), norm still detail-shaded
+  [ ok ] reconfigure_roundtrip  both maps back -> 2, rms vs post-API = 0.00e+00
+  [ ok ] valve_blanket_trap_measured  raw override-2 flag attrib: norm quad g=0.728 reverts to flat anchor 0.728 — the blanket, measured (why the valve API re-stamps)
+  [ ok ] valve_composes_variant  set_hardware_skinning(np, False) with detail maps on: rms vs post-API = 0.00e+00 (variant + flag both survive the color pass)
+  [ ok ] valve_tags_for_depth_rescue  valve node tag pax3d_shadow='shadow' (the shadow cameras re-assert the depth shader above the override-2 stamp through this tag)
+  [ ok ] shadow_premise  backdrop g 0.714 -> 0.584 with the detail-mapped caster unstashed (its shadow lands on the sample)
+  [ ok ] valve_shadow_intact  valve off vs on under shadows + log depth: rms=0.00e+00 (tag-state rescue keeps the depth pass on the shadow shader)
+  [ ok ] caster_tag_state_installed  1/1 shadow casters carry the pax3d_shadow tag-state rescue while the valve holds a detail geom
+  [ ok ] valve_clear_restores  clear_hardware_skinning: rms=0.00e+00, node attrib=None, tag cleared
+  [ ok ] caster_tag_state_removed  0/1 casters still keyed after the last valve cleared (want 0 — the per-node tag lookup must cost nothing at rest)
+  [ ok ] optout_restores_exactly  set_detail_maps(False) -> 2, rms vs pre-API = 0.00e+00 (the baked detail goes back to being unsampled — exact restore is the contract)
+  [ ok ] append_only_stamps  entry 1: 2 geoms / 2 stamps; appending entry 2: 3 geoms / 3 stamps (want exactly the NEW geoms — the old path re-stamped every registered geom per attach)
+  [ ok ] removal_no_restamp  removing entry 2 -> 3 restored, 0 re-stamps of the survivor (want 0: no skinning valves anywhere = O(entry) detach)
+  [ ok ] append_only_renders  survivor entry after the add/remove cycle vs the post-API capture: rms=0.00e+00 (the fast path is behavior-identical)
+
+--- snapshot/none ---
+  SKIP: pipeline has no render_snapshot (Session AJ)
+
+--- snapshot/simplepbr ---
+  SKIP: pipeline has no render_snapshot (Session AJ)
+
+--- snapshot/pax3d_simplepbr ---
+  SKIP: pipeline has no render_snapshot (Session AJ)
+
+--- snapshot/pax_pbr ---
+  [ ok ] returns_ram_texture  320x240, ram=True, png written=True
+  [ ok ] arbitrary_pose_sees_hidden  snapshot center rgb=(0.733, 0.463, 0.463) — the RED secret card behind the player renders from the snapshot pose (invisible to the main camera, its capture is the white subject)
+  [ ok ] player_view_unperturbed  window frame after the snapshot vs before: rms=0.00e+00 (the player chain sat out exactly one engine frame)
+  [ ok ] full_pipeline_parity  snapshot from the main camera pose vs the window capture: rms=0.0000 (same shaders, same chain structure, same size)
+  [ ok ] bloom_in_snapshot  hot-quad core=1.000; halo pixel 24px off: 0.000 (bloom off) -> 0.918 (bloom on — the snapshot chain rebuilt with the bloom stages)
+  [ ok ] resize  160x120, ram=True
+  [ ok ] ssao_chain_flat_identity  snapshot with SSAO on vs off, flat-card scene: rms=0.00e+00 (depth target + AO passes live in the snapshot chain; flat geometry is AO 1.0)
+  [info] repeat_shot_ms  12.4 ms for a repeat shot on the persistent chain (one extra rendered frame — the AI-loop latency, vs ~30 s for a subprocess boot)
+
+--- snapshot/pax3d_render ---
+  [ ok ] returns_ram_texture  320x240, ram=True, png written=True
+  [ ok ] arbitrary_pose_sees_hidden  snapshot center rgb=(0.733, 0.463, 0.463) — the RED secret card behind the player renders from the snapshot pose (invisible to the main camera, its capture is the white subject)
+  [ ok ] player_view_unperturbed  window frame after the snapshot vs before: rms=0.00e+00 (the player chain sat out exactly one engine frame)
+  [ ok ] full_pipeline_parity  snapshot from the main camera pose vs the window capture: rms=0.0000 (same shaders, same chain structure, same size)
+  [ ok ] bloom_in_snapshot  hot-quad core=1.000; halo pixel 24px off: 0.000 (bloom off) -> 0.918 (bloom on — the snapshot chain rebuilt with the bloom stages)
+  [ ok ] resize  160x120, ram=True
+  [ ok ] ssao_chain_flat_identity  snapshot with SSAO on vs off, flat-card scene: rms=0.00e+00 (depth target + AO passes live in the snapshot chain; flat geometry is AO 1.0)
+  [info] repeat_shot_ms  10.6 ms for a repeat shot on the persistent chain (one extra rendered frame — the AI-loop latency, vs ~30 s for a subprocess boot)
+
+--- snapshot/pax3d_render @directional ---
+  [ ok ] returns_ram_texture  320x240, ram=True, png written=True
+  [ ok ] arbitrary_pose_sees_hidden  snapshot center rgb=(0.733, 0.463, 0.463) — the RED secret card behind the player renders from the snapshot pose (invisible to the main camera, its capture is the white subject)
+  [ ok ] player_view_unperturbed  window frame after the snapshot vs before: rms=0.00e+00 (the player chain sat out exactly one engine frame)
+  [ ok ] full_pipeline_parity  snapshot from the main camera pose vs the window capture: rms=0.0000 (same shaders, same chain structure, same size)
+  [ ok ] bloom_in_snapshot  hot-quad core=1.000; halo pixel 24px off: 0.000 (bloom off) -> 0.918 (bloom on — the snapshot chain rebuilt with the bloom stages)
+  [ ok ] resize  160x120, ram=True
+  [ ok ] ssao_chain_flat_identity  snapshot with SSAO on vs off, flat-card scene: rms=0.00e+00 (depth target + AO passes live in the snapshot chain; flat geometry is AO 1.0)
+  [ ok ] shadow_contract_documented  cluster at x=5000, extent centered at origin: ground under the caster reads LIT (0.711) — outside the frustum samples lit, the documented coupling
+  [ ok ] shadow_center_recentres  shadow_center=(5000,0,0): ground under the caster 0.711 -> 0.602 (the one-frame recentre renders the shadow)
+  [ ok ] shadow_center_restored  after the shot: center=(0.0, 0.0, 0.0), extent=50.0 (restored exactly)
+  [info] repeat_shot_ms  14.5 ms for a repeat shot on the persistent chain (one extra rendered frame — the AI-loop latency, vs ~30 s for a subprocess boot)
+
+========================================================================
+PASS   gamma/none @512x512   (1 pass, 0 fail)
+PASS   gamma/simplepbr @512x512   (2 pass, 0 fail)
+PASS   gamma/pax3d_simplepbr @512x512   (5 pass, 0 fail)
+PASS   gamma/pax_pbr @512x512   (5 pass, 0 fail)
+PASS   gamma/pax3d_render @512x512   (5 pass, 0 fail)
+FAIL   lighting/none @512x512   (1 pass, 5 fail)
+PASS   lighting/simplepbr @512x512   (6 pass, 0 fail)
+PASS   lighting/pax3d_simplepbr @512x512   (6 pass, 0 fail)
+PASS   lighting/pax_pbr @512x512   (6 pass, 0 fail)
+PASS   lighting/pax3d_render @512x512   (6 pass, 0 fail)
+PASS   lighting/pax3d_render @512x512 @directional   (6 pass, 0 fail)
+SKIP   bloom/none @512x512   (0 pass, 0 fail)
+SKIP   bloom/none @960x540   (0 pass, 0 fail)
+SKIP   bloom/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   bloom/simplepbr @960x540   (0 pass, 0 fail)
+FAIL   bloom/pax3d_simplepbr @512x512   (2 pass, 4 fail)
+FAIL   bloom/pax3d_simplepbr @960x540   (2 pass, 4 fail)
+PASS   bloom/pax_pbr @512x512   (6 pass, 0 fail)
+PASS   bloom/pax_pbr @960x540   (6 pass, 0 fail)
+PASS   bloom/pax3d_render @512x512   (6 pass, 0 fail)
+PASS   bloom/pax3d_render @960x540   (6 pass, 0 fail)
+SKIP   rebuild/none @512x512   (0 pass, 0 fail)
+SKIP   rebuild/simplepbr @512x512   (0 pass, 0 fail)
+FAIL   rebuild/pax3d_simplepbr @512x512   (1 pass, 2 fail)
+FAIL   rebuild/pax_pbr @512x512   (1 pass, 2 fail)
+PASS   rebuild/pax3d_render @512x512   (3 pass, 0 fail)
+SKIP   shadows/none @512x512   (0 pass, 0 fail)
+SKIP   shadows/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   shadows/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   shadows/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   shadows/pax3d_render @512x512   (13 pass, 0 fail)
+PASS   shadows/pax3d_render @512x512 @softskin   (13 pass, 0 fail)
+SKIP   shadows_gltf/none @512x512   (0 pass, 0 fail)
+SKIP   shadows_gltf/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   shadows_gltf/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   shadows_gltf/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   shadows_gltf/pax3d_render @512x512   (6 pass, 0 fail)
+SKIP   shadow_quality/none @512x512   (0 pass, 0 fail)
+SKIP   shadow_quality/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   shadow_quality/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   shadow_quality/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   shadow_quality/pax3d_render @512x512   (9 pass, 0 fail)
+SKIP   shadow_grazing/none @512x512   (0 pass, 0 fail)
+SKIP   shadow_grazing/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   shadow_grazing/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   shadow_grazing/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   shadow_grazing/pax3d_render @512x512   (6 pass, 0 fail)
+SKIP   shadow_snap/none @512x512   (0 pass, 0 fail)
+SKIP   shadow_snap/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   shadow_snap/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   shadow_snap/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   shadow_snap/pax3d_render @512x512   (6 pass, 0 fail)
+SKIP   ftl_blur/none @512x512   (0 pass, 0 fail)
+SKIP   ftl_blur/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   ftl_blur/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   ftl_blur/pax_pbr @512x512   (8 pass, 0 fail)
+PASS   ftl_blur/pax3d_render @512x512   (8 pass, 0 fail)
+FAIL   scale/none @512x512   (2 pass, 3 fail)
+SKIP   scale/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   scale/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   scale/pax_pbr @512x512   (0 pass, 0 fail)
+FAIL   scale/pax3d_render @512x512   (2 pass, 3 fail)
+PASS   scale/pax3d_render @512x512 @logdepth   (2 pass, 0 fail)
+SKIP   skinning/none @512x512   (0 pass, 0 fail)
+SKIP   skinning/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   skinning/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   skinning/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   skinning/pax3d_render @512x512   (17 pass, 0 fail)
+SKIP   atmosphere/none @512x512   (0 pass, 0 fail)
+SKIP   atmosphere/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   atmosphere/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   atmosphere/pax_pbr @512x512   (15 pass, 0 fail)
+PASS   atmosphere/pax3d_render @512x512   (15 pass, 0 fail)
+SKIP   ambient_sh/none @512x512   (0 pass, 0 fail)
+SKIP   ambient_sh/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   ambient_sh/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   ambient_sh/pax_pbr @512x512   (15 pass, 0 fail)
+PASS   ambient_sh/pax3d_render @512x512   (15 pass, 0 fail)
+SKIP   glass/none @512x512   (0 pass, 0 fail)
+SKIP   glass/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   glass/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   glass/pax_pbr @512x512   (6 pass, 0 fail)
+PASS   glass/pax3d_render @512x512   (6 pass, 0 fail)
+PASS   glass/pax3d_render @512x512 @directional   (6 pass, 0 fail)
+SKIP   doublesided/none @512x512   (0 pass, 0 fail)
+SKIP   doublesided/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   doublesided/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   doublesided/pax_pbr @512x512   (6 pass, 0 fail)
+PASS   doublesided/pax3d_render @512x512   (6 pass, 0 fail)
+PASS   doublesided/pax3d_render @512x512 @directional   (6 pass, 0 fail)
+SKIP   ambient_scale/none @512x512   (0 pass, 0 fail)
+SKIP   ambient_scale/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   ambient_scale/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   ambient_scale/pax_pbr @512x512   (5 pass, 0 fail)
+PASS   ambient_scale/pax3d_render @512x512   (5 pass, 0 fail)
+SKIP   env_map/none @512x512   (0 pass, 0 fail)
+SKIP   env_map/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   env_map/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   env_map/pax_pbr @512x512   (23 pass, 0 fail)
+PASS   env_map/pax3d_render @512x512   (23 pass, 0 fail)
+SKIP   local_lights/none @512x512   (0 pass, 0 fail)
+SKIP   local_lights/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   local_lights/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   local_lights/pax_pbr @512x512   (9 pass, 0 fail)
+PASS   local_lights/pax3d_render @512x512   (9 pass, 0 fail)
+PASS   local_lights/pax3d_render @512x512 @directional   (9 pass, 0 fail)
+SKIP   orbital/none @512x512   (0 pass, 0 fail)
+SKIP   orbital/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   orbital/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   orbital/pax_pbr @512x512   (13 pass, 0 fail)
+PASS   orbital/pax3d_render @512x512   (13 pass, 0 fail)
+PASS   orbital/pax3d_render @512x512 @logdepth   (13 pass, 0 fail)
+SKIP   srgb/none @512x512   (0 pass, 0 fail)
+SKIP   srgb/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   srgb/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   srgb/pax_pbr @512x512   (15 pass, 0 fail)
+PASS   srgb/pax3d_render @512x512   (15 pass, 0 fail)
+SKIP   ssao/none @512x512   (0 pass, 0 fail)
+SKIP   ssao/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   ssao/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   ssao/pax_pbr @512x512   (6 pass, 0 fail)
+PASS   ssao/pax3d_render @512x512   (6 pass, 0 fail)
+PASS   ssao/pax3d_render @512x512 @logdepth   (6 pass, 0 fail)
+PASS   ssao/pax3d_render @512x512 @msaa4   (6 pass, 0 fail)
+SKIP   lens_flare/none @512x512   (0 pass, 0 fail)
+SKIP   lens_flare/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   lens_flare/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   lens_flare/pax_pbr @512x512   (7 pass, 0 fail)
+PASS   lens_flare/pax3d_render @512x512   (7 pass, 0 fail)
+SKIP   morph_gltf/none @512x512   (0 pass, 0 fail)
+SKIP   morph_gltf/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   morph_gltf/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   morph_gltf/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   morph_gltf/pax3d_render @512x512   (17 pass, 0 fail)
+SKIP   data_texture/none @512x512   (0 pass, 0 fail)
+SKIP   data_texture/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   data_texture/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   data_texture/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   data_texture/pax3d_render @512x512   (13 pass, 0 fail)
+SKIP   terrain_splat/none @512x512   (0 pass, 0 fail)
+SKIP   terrain_splat/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   terrain_splat/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   terrain_splat/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   terrain_splat/pax3d_render @512x512   (38 pass, 0 fail)
+PASS   terrain_splat/pax3d_render @512x512 @directional   (38 pass, 0 fail)
+SKIP   terrain_water/none @512x512   (0 pass, 0 fail)
+SKIP   terrain_water/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   terrain_water/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   terrain_water/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   terrain_water/pax3d_render @512x512   (17 pass, 0 fail)
+PASS   terrain_water/pax3d_render @512x512 @directional   (17 pass, 0 fail)
+SKIP   instancing/none @512x512   (0 pass, 0 fail)
+SKIP   instancing/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   instancing/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   instancing/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   instancing/pax3d_render @512x512   (5 pass, 0 fail)
+PASS   instancing/pax3d_render @512x512 @directional   (6 pass, 0 fail)
+SKIP   rigid_clips/none @512x512   (0 pass, 0 fail)
+SKIP   rigid_clips/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   rigid_clips/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   rigid_clips/pax_pbr @512x512   (10 pass, 0 fail)
+PASS   rigid_clips/pax3d_render @512x512   (10 pass, 0 fail)
+SKIP   screen/none @512x512   (0 pass, 0 fail)
+SKIP   screen/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   screen/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   screen/pax_pbr @512x512   (19 pass, 0 fail)
+PASS   screen/pax3d_render @512x512   (19 pass, 0 fail)
+SKIP   alpha_mask/none @512x512   (0 pass, 0 fail)
+SKIP   alpha_mask/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   alpha_mask/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   alpha_mask/pax_pbr @512x512   (19 pass, 0 fail)
+PASS   alpha_mask/pax3d_render @512x512   (19 pass, 0 fail)
+SKIP   viewmodel/none @512x512   (0 pass, 0 fail)
+SKIP   viewmodel/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   viewmodel/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   viewmodel/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   viewmodel/pax3d_render @512x512   (15 pass, 0 fail)
+PASS   viewmodel/pax3d_render @512x512 @directional   (17 pass, 0 fail)
+PASS   gl_clean/none @512x512   (2 pass, 0 fail)
+SKIP   gl_clean/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   gl_clean/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   gl_clean/pax_pbr @512x512   (0 pass, 0 fail)
+SKIP   gl_clean/pax3d_render @512x512   (0 pass, 0 fail)
+SKIP   light_priority/none @512x512   (0 pass, 0 fail)
+SKIP   light_priority/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   light_priority/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   light_priority/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   light_priority/pax3d_render @512x512   (6 pass, 0 fail)
+PASS   light_priority/pax3d_render @512x512 @directional   (2 pass, 0 fail)
+SKIP   effects/none @512x512   (0 pass, 0 fail)
+SKIP   effects/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   effects/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   effects/pax_pbr @512x512   (16 pass, 0 fail)
+PASS   effects/pax3d_render @512x512   (16 pass, 0 fail)
+PASS   effects/pax3d_render @512x512 @directional   (16 pass, 0 fail)
+SKIP   light_halo/none @512x512   (0 pass, 0 fail)
+SKIP   light_halo/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   light_halo/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   light_halo/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   light_halo/pax3d_render @512x512   (10 pass, 0 fail)
+PASS   light_halo/pax3d_render @512x512 @directional   (11 pass, 0 fail)
+SKIP   visibility_query/none @512x512   (0 pass, 0 fail)
+SKIP   visibility_query/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   visibility_query/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   visibility_query/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   visibility_query/pax3d_render @512x512   (12 pass, 0 fail)
+PASS   visibility_query/pax3d_render @512x512 @logdepth   (12 pass, 0 fail)
+SKIP   spot_exponent/none @512x512   (0 pass, 0 fail)
+SKIP   spot_exponent/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   spot_exponent/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   spot_exponent/pax_pbr @512x512   (0 pass, 0 fail)
+PASS   spot_exponent/pax3d_render @512x512   (7 pass, 0 fail)
+PASS   spot_exponent/pax3d_render @512x512 @directional   (7 pass, 0 fail)
+PASS   gvad_churn/none @512x512   (2 pass, 0 fail)
+SKIP   gvad_churn/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   gvad_churn/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   gvad_churn/pax_pbr @512x512   (0 pass, 0 fail)
+SKIP   gvad_churn/pax3d_render @512x512   (0 pass, 0 fail)
+PASS   thread_bind/none @512x512   (2 pass, 0 fail)
+SKIP   thread_bind/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   thread_bind/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+SKIP   thread_bind/pax_pbr @512x512   (0 pass, 0 fail)
+SKIP   thread_bind/pax3d_render @512x512   (0 pass, 0 fail)
+SKIP   detail_maps/none @512x512   (0 pass, 0 fail)
+SKIP   detail_maps/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   detail_maps/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   detail_maps/pax_pbr @512x512   (21 pass, 0 fail)
+PASS   detail_maps/pax3d_render @512x512   (21 pass, 0 fail)
+PASS   detail_maps/pax3d_render @512x512 @directional   (25 pass, 0 fail)
+PASS   detail_maps/pax3d_render @512x512 @logdepth   (25 pass, 0 fail)
+SKIP   snapshot/none @512x512   (0 pass, 0 fail)
+SKIP   snapshot/simplepbr @512x512   (0 pass, 0 fail)
+SKIP   snapshot/pax3d_simplepbr @512x512   (0 pass, 0 fail)
+PASS   snapshot/pax_pbr @512x512   (7 pass, 0 fail)
+PASS   snapshot/pax3d_render @512x512   (7 pass, 0 fail)
+PASS   snapshot/pax3d_render @512x512 @directional   (10 pass, 0 fail)
+========================================================================
+full report: C:\python\pax3d\tools\paxtest\output\last_run.json
+captures:    C:\python\pax3d\tools\paxtest\output

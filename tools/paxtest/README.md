@@ -432,9 +432,15 @@ distance-independent), occlusion == the depth test (halo behind a card
 composition through the inherited `u_emission_factor`, byte-identical
 clear, and (@directional) shadow-caster-mask exclusion.
 
-**`test_visibility_query.py`** (Session AF — flare occluder
-retirement) — `add_visibility_query()`: depth-tap visibility around a
-target's projected position. The wall card's x=0 edge plane contains
+**`test_visibility_query.py`** (Sessions AF/AJ — flare occluder
+retirement; loud failure) — `add_visibility_query()`: depth-tap
+visibility around a target's projected position. Session AJ adds the
+LOUD-FAILURE rows (the paxcraft Session-5 trap): a depth-stomping
+viewmodel flips `visibility_query_valid` False and every query fails
+CLOSED (0.0, `.valid` False) instead of confidently reading the
+cleared buffer as open sky; `on_depth_degrade='raise'` is fatal at
+registration; a live `enable_log_depth` flip degrades a 'range'
+viewmodel loudly. The wall card's x=0 edge plane contains
 the camera, so it covers exactly the left half-screen at every depth —
 open/blocked/half-covered are analytic by construction (1.0 / 0.0 /
 0.498 measured). Also: geometry behind the target does not occlude,
@@ -480,6 +486,37 @@ recorded not gated). Engine-level: `none` pipeline; the repro
 subprocesses open their own offscreen contexts. Root cause and
 forensics: `documents/CRASH_BIND_THREAD_DANGLE.md`.
 
+**`test_detail_maps.py`** (Sessions AI/AJ, ER-014 — 22–26 checks) —
+`set_detail_maps(model_np)`: per-geom USE_NORMAL_MAP/USE_OCCLUSION_MAP
+composition (the globally-off defines are unsafe to flip: tangentless
+geometry NaN-blacks). Authored GLB through the real loader: selection
+exactness (normal needs stage AND tangent column; occlusion needs an
+ORM stage, .r = AO; variant-carrying geoms skipped), tangentless-guard
+refusal, analytic occlusion rendering, recompile survival, reconfigure
+in place, THE fact-#23 valve composition contract (the override-2
+blanket trap measured; valve + variant + shadow tag-state rescue all
+bit-identical; @directional@logdepth = the depth-pass leak detector),
+byte-identical opt-out. Session AJ adds the APPEND-ONLY registration
+rows (paxcraft streaming chunks): registering model N stamps only its
+own geoms (counted via hook — the old path was O(total registered) per
+attach), no-valve removal restamps nothing, survivor renders
+bit-identically.
+
+**`test_snapshot.py`** (Session AJ — the paxcraft photo-mode ask) —
+`render_snapshot(pos, hpr, size, ..., shadow_center=)`: one-shot
+full-pipeline render from an arbitrary pose into a RAM-backed texture.
+Checks: size/RAM/PNG delivery, a hidden-from-the-player object renders
+from the snapshot pose, the player's window frame is byte-unchanged
+(rms 0.0 — the player chain sits out exactly one engine frame),
+same-pose parity vs the window capture at rms 0.0 (the full-pipeline
+proof), bloom halo appears through a rebuild-class set_enable_bloom
+flip (chain invalidation proven), SSAO flat-scene identity through the
+snapshot chain's own depth target, resize, and (@directional) the
+SHADOW CONTRACT both ways: a cluster outside the extent samples lit
+(the documented main-camera coupling), `shadow_center=` recentres for
+the one frame, and center/extent restore exactly. Repeat-shot latency
+measured as an INFO row (3–24 ms).
+
 **`test_ftl_blur.py`** — the FTL warp distortion pass (radial blur +
 chromatic aberration in tonemap); asserts zero-strength passthrough and
 effect behavior (added alongside the feature, post-Session-D).
@@ -505,11 +542,11 @@ the correct surface's favor and mimic a working depth buffer.
 adds an RMS-diff check against them on later runs. Analytic checks are the
 primary mechanism — goldens are a safety net for refactors (R1).
 
-## Results snapshot (post GVAD build window, 2026-07-24 — measured, gate logs on file)
+## Results snapshot (post Session AJ, 2026-07-27 — measured, gate logs on file)
 
 The standard gate is both engines × the ONE `game` baseline (Session AC
-redefinition). Totals: **Pax3D 82 PASS / 7 FAIL / 129 SKIP · stock
-1.10.16 80 PASS / 7 FAIL / 131 SKIP** — the FAIL sets are IDENTICAL on
+redefinition). Totals: **Pax3D 90 PASS / 7 FAIL / 139 SKIP · stock
+1.10.16 87 PASS / 7 FAIL / 142 SKIP** — the FAIL sets are IDENTICAL on
 both engines and every one is pre-existing/by-design: `lighting/none`
 (fixed-function control under gl 3 2), `bloom` + `rebuild` on the
 retired `pax3d_simplepbr`, `rebuild/pax_pbr` (F4, by design of the old
@@ -524,9 +561,12 @@ permanent heap-corruption guard: it FAILed on the pre-fix Session-X
 wheel, gate logs `gate_gvad_*`. Session AH added the 5 thread_bind
 jobs — Pax3D +1 PASS +4 SKIP, stock +5 SKIP (whole-test skip: no pin
 contract on 1.10, and the discard-shape churn row AVs there —
-upstream-inherited, recorded not gated): **totals now Pax3D 83/7/133 ·
-stock 80/7/136, FAIL sets unchanged**; bind_pinned FAILed rc=1 on the
-pre-fix GVAD wheel, gate logs `gate_bind_*`.)
+upstream-inherited, recorded not gated); bind_pinned FAILed rc=1 on
+the pre-fix GVAD wheel, gate logs `gate_bind_*`. Session AI added the
+7 detail_maps jobs — +4 PASS +3 SKIP each (routed pax_pbr runs it
+too), gate logs `gate_er014_*`. Session AJ added the 6 snapshot jobs —
++3 PASS +3 SKIP each: **totals now Pax3D 90/7/139 · stock 87/7/142,
+FAIL sets unchanged**, gate logs `gate_aj_*`.)
 
 Note: with the game's `use_pax3d_render` flag flipped (Session D), the
 `pax_pbr` adapter routes to pax3d_render — its column mirrors
@@ -571,8 +611,10 @@ and rows whose harness scenes need pax3d_render-only hooks (skip).
 | light_priority | skip | skip | skip | **PASS (+@directional: the sun-eviction guard)** |
 | effects | skip | skip | PASS | **PASS (13 checks: premult composite, unlit, self-reap, tool exactness; +@directional)** |
 | light_halo | skip | skip | skip | **PASS (10+1 checks: tonemapped size analytics, min_px clamp, depth-test occlusion, blink composition; +@directional mask exclusion)** |
-| visibility_query | skip | skip | skip | **PASS (7 checks: open/blocked/half exact, sky-dome valve, frame-invisible; +@logdepth)** |
+| visibility_query | skip | skip | skip | **PASS (13 checks: open/blocked/half exact, sky-dome valve, frame-invisible, Session-AJ loud-failure rows; +@logdepth)** |
 | spot_exponent | skip | skip | skip | **PASS (7 checks: cos^e analytics, exponent-0 no-op, default-50 trap, point immunity; +@directional)** |
+| detail_maps | skip | skip | PASS | **PASS (22–26 checks: selection/valve contract + Session-AJ append-only rows; +@directional +@directional@logdepth)** |
+| snapshot | skip | skip | PASS | **PASS (7+10 checks: pose freedom, player-view rms 0.0, full-pipeline parity rms 0.0, shadow contract; +@directional)** |
 
 `pax3d_simplepbr` (retired) keeps its historical bloom/rebuild failures.
 `scale` failing is the DOCUMENTED baseline until R4 lands — see its entry
