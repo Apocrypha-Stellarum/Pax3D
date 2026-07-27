@@ -86,7 +86,14 @@ CalVer `v2026.07`.
 6. **Release cadence** — attach future wheels to CalVer releases as build
    windows produce them; note the doubles wheel stays quarantined
    (stock-simplepbr crash, see CLAUDE.md environments table).
-7. **Old fork deletion** — user's call, anytime; archive is safe to keep.
+7. **Old fork deletion — DECIDED 2026-07-28: delete it** (user; motive:
+   one public surface, not two). Safety was proven first: the fork's
+   dev/main tips are ancestors of the new repo's master, so it holds zero
+   unique commits. GitHub cannot make forks private, so deletion was the
+   only alternative to keeping it public. Needs the user in the UI
+   (Settings → Danger Zone; API token lacks `delete_repo` by design).
+   Note: this does NOT remove pre-rename author emails from public view;
+   the same history lives in the new repo by accepted decision.
 8. Testbed HUD `glsl 120` stale label (game repo, one line).
 
 ## 5. Outstanding manual steps (user)
@@ -96,5 +103,7 @@ CalVer `v2026.07`.
 - github.com/settings/emails: add `actualhuman2025@proton.me` (links future
   commits to the account).
 - Optional: account avatar/logo for Apocrypha-Stellarum.
-- Optional: delete `Pax3D-fork-archive` (and the local `C:\Pax3D` ~58 GB
-  stale pre-transfer copy is still pending a decision, unrelated to GitHub).
+- Delete `Pax3D-fork-archive` (decided 2026-07-28, see queue item 7):
+  repo Settings → Danger Zone → Delete this repository.
+- Unrelated to GitHub: the local `C:\Pax3D` ~58 GB stale pre-transfer copy
+  is still pending a decision.
