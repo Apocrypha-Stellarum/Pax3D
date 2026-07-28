@@ -1933,11 +1933,18 @@ copies at the start of the next frame's draw, after the flip; offscreen
 buffers have no swap and return the requested frame. The offset is
 constant either way (measured 47/48 at exactly 1, never garbage), so
 `frame_number` names the frame the request was made on, not necessarily
-the frame the pixels came from. (2) A readback still in flight when the
-process exits SEGFAULTS it — one is enough. `stop()` therefore renders
-engine frames until the fences retire, and `cleanup()` stops every
-capture; see capture.py's stop() docstring for the C++ mechanism, which
-is queued for a build window.
+the frame the pixels came from. (2) On wheels before 2026-07-28 a
+readback still in flight when the process exited SEGFAULTED it — one
+was enough — because the GSG fence deque's CompletionTokens are
+documented "destroyed prematurely == complete(false)" and the
+screenshot fence callback ignored that flag, running GL against a dying
+GSG. Fixed in the Session AM build window (one branch in
+`glGraphicsStateGuardian_src.cxx`, `// PAX3D:` tagged; gated by
+`engine_survives_inflight_exit`, which drives the RAW API so the
+wrapper's drain cannot mask a regression). `stop()` still drains and
+`cleanup()` still stops every capture — that recovers the tail a
+recorder would lose to latency, and keeps callers safe on older
+wheels.
 
 Pixels are the framebuffer's, unchanged: BGRA, 8 bits, BOTTOM-UP
 (Panda's RAM-image convention — encoders pass `vflip`; `bgra` is what
@@ -1950,7 +1957,7 @@ since a capture reads the window, which survives chain rebuilds.
 Cost over a no-readback baseline, paced to 60 fps: sync
 `RTM_copy_ram` +3.92 ms p50 at 1600×900 and +13.29 ms p50 at 4K;
 async +0.19 ms and +0.56 ms. Delivered bytes are byte-identical to the
-sync path. Gate: test_capture (13 checks at 1600×900, the size the
+sync path. Gate: test_capture (14 checks at 1600×900, the size the
 filing measured; skips whole on stock; also green against a real
 window via --show). **Measure readback paced** —
 an unpaced loop outruns the transfer chain by 30× and turns latency

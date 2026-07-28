@@ -1403,16 +1403,9 @@ by running the test against a REAL window (`--show`):**
    Reproducible on both window types; `cancel()` does not help (the
    fence lives in the GSG, not the future) and neither does
    `remove_all_windows()`. Only retiring the fences does.
-   **Mitigated in Python**: `stop()` renders engine frames
-   (`GraphicsEngine.render_frame`, no app tasks) until nothing is in
-   flight, yielding between them because `done()` flips on the transfer
-   chain a moment after the fence retires. Gated by
-   `stop_drains_in_flight` plus the child exit code, which run.py
-   records — a 139/0xC0000005 there IS the regression signal. The C++
-   fix (honor the success flag; retire `_fences` before the GSG dies)
-   is queued for the next build window, MEDIUM: the Python mitigation
-   only covers captures the pipeline hands out, and upstream's own
-   `save_async_screenshot()` at app exit hits the same defect.
+   **FIXED ENGINE-SIDE the same day** — see §4.27. The Python drain in
+   `stop()` stays: it recovers the tail a recorder would lose to
+   latency, and keeps callers safe on older wheels.
 
 **Harness hardening the second finding forced.** run.py only consulted
 the child exit code when the `PAXTEST_JSON` payload was MISSING, so a
@@ -1438,6 +1431,56 @@ sets unchanged, zero ERRORs under the new exit-code cross-check; logs
 `gate_am_*`). Docs: arch doc §9 Session AM, CLAUDE.md
 voxel-lane row + build-window queue row retired, paxtest README row,
 reply inline in paxcraft ENGINE_NOTES.md.
+
+### 4.27 Session AM build window (2026-07-28) — the async-screenshot shutdown AV
+
+Found while gating §4.26 and fixed the same day on the user's
+go-ahead. **A framebuffer readback still in flight when the process
+exits access-violated it — ONE was enough**, reproducible on both a
+real window and an offscreen buffer, and present in every Pax3D wheel
+since the Window-1 catch-up merge brought the async screenshot API in.
+
+**Root cause.** The GL GSG keeps `pdeque<Fence> _fences`, each holding
+a `GLsync` and a `CompletionToken`. CompletionToken's documented
+contract (completionToken.I) is that a token destroyed before it
+completes calls its callback with `success=false` *so that cleanup can
+be done*. The screenshot fence callback ignored that flag entirely and
+ran its normal body: `map_read_buffer()` — a GL call — plus
+`release_client_buffer()` and `_async_chain` access, against a GSG
+already being destroyed and a context that may be gone. The sibling
+fence callback in `extract_buffer_data` branches on `success`
+correctly; the screenshot one was the outlier. Upstream's own
+`save_async_screenshot()` at app exit hits the same defect.
+
+**The fix** (`glGraphicsStateGuardian_src.cxx`, `// PAX3D:` tagged):
+on `success == false`, do no GL, touch no GSG state, cancel the future
+so awaiting callers see a result instead of hanging. One branch.
+42-second incremental build.
+
+**Verified by measurement, both directions.** New permanent repro
+`tools/paxtest/probe_async_shutdown.py` issues readbacks through the
+RAW `get_async_screenshot()` API and exits with them deliberately in
+flight; its exit code is the engine verdict. Pre-fix wheel: **139
+(0xC0000005) with 4 in flight**. Post-fix: **0 with 6 in flight**.
+Every other repro shape that AV'd now exits clean too
+(`probe_shutdown.py --mode pending`, `probe_mitigate.py --fix none`,
+the real-window probe). Confirmed on record during triage: `cancel()`
+does not help (the fence lives in the GSG, not in the future), and
+neither does `remove_all_windows()` — only retiring the fences does.
+
+**Gated so the Python mitigation cannot hide a regression.**
+`FrameCapture.stop()` drains, which would mask exactly this bug, so
+the new `engine_survives_inflight_exit` row drives the raw API through
+a subprocess instead — the test_thread_bind pattern. The drain stays
+on by default regardless: it recovers the tail frames a recorder would
+otherwise lose to latency, and it keeps callers safe on older wheels.
+
+Wheel live in **pax3d-env AND system Python** (both measured AV-ing
+beforehand), archived `wheels_session_am\`. Gate: Pax3D 94/7/146 ·
+stock 89/7/151 — unchanged totals, FAIL sets unchanged, zero ERRORs;
+test_capture is now 14 checks. Docs: CLAUDE.md C++ change list +
+build-window row retired + wheel/env rows, arch doc, paxtest README,
+session log.
 
 ---
 

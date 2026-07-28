@@ -571,17 +571,31 @@ Two rows exist because the offscreen harness alone was not enough —
 run it with `--show` against a real window and both appear.
 `frame_correspondence` asserts the request-to-content offset is
 CONSTANT, not zero: offscreen it is 0, on a double-buffered window it
-is 1 (the engine copies after the flip). And `stop_drains_in_flight`
-guards an engine defect — a readback still in flight at process exit
-segfaults it (one is enough; the GSG fence deque's CompletionTokens
-are documented "destroyed prematurely == complete(false)" and the
-screenshot callback ignores the flag, so it makes GL calls on a dying
-GSG). **The child exit code is part of this test**: a 139/0xC0000005
-from a run whose rows all pass IS the regression. **Skips whole on stock
+is 1 (the engine copies after the flip). And `stop_drains_in_flight` plus
+`engine_survives_inflight_exit` guard an engine defect that WAS real
+until the Session AM build window: a readback still in flight at
+process exit segfaulted it (one was enough; the GSG fence deque's
+CompletionTokens are documented "destroyed prematurely ==
+complete(false)" and the screenshot callback ignored the flag, so it
+made GL calls on a dying GSG). The engine row runs
+`probe_async_shutdown.py` as a subprocess against the RAW
+`get_async_screenshot()` API on purpose — `FrameCapture.stop()` drains,
+so testing through the wrapper would mask an engine regression.
+Measured 139 with 4 in flight on the pre-fix wheel, 0 with 6 in flight
+after. **The child exit code is part of this test too**: a
+139/0xC0000005 from a run whose rows all pass IS a regression. **Skips whole on stock
 1.10** — `get_async_screenshot` is an upstream 1.11-dev API the
 Window-1 catch-up merge brought in. Measure readback PACED: an unpaced
 loop outruns the transfer chain by 30× and turns latency and queue
 depth into artifacts.
+
+**`probe_async_shutdown.py`** (Session AM build window) — the repro
+behind test_capture's `engine_survives_inflight_exit` row. Issues async
+readbacks through the RAW `get_async_screenshot()` API and exits with
+them deliberately in flight; the exit code is the engine verdict (139 =
+the AV, 0 = fixed, 77 = no such API). Deliberately does NOT use
+`FrameCapture`, whose stop() drains. Also runnable by hand with
+`--requests N` and `--show`.
 
 **`test_ftl_blur.py`** — the FTL warp distortion pass (radial blur +
 chromatic aberration in tonemap); asserts zero-strength passthrough and
@@ -687,7 +701,7 @@ and rows whose harness scenes need pax3d_render-only hooks (skip).
 | detail_maps | skip | skip | PASS | **PASS (22–26 checks: selection/valve contract + Session-AJ append-only rows; +@directional +@directional@logdepth)** |
 | snapshot | skip | skip | PASS | **PASS (7+10 checks: pose freedom, player-view rms 0.0, full-pipeline parity rms 0.0, shadow contract; +@directional)** |
 | water | skip | skip | skip | **PASS (15 checks: planetside-pinned defaults, knee curve + readback, dry/rim byte-exact, Beer-Lambert melt analytics, haze vs independent ray-evaluation ≤0.002; +@directional)** |
-| capture | skip | skip | PASS | **PASS (13 checks @1600x900: BGRA/bottom-up format contract, constant request-to-content offset vs sync ground truth, byte identity vs RTM_copy_ram, ordering guarantee, in-flight cap, repeat-poll de-dup, shutdown drain guard, cost row)** |
+| capture | skip | skip | PASS | **PASS (14 checks @1600x900: BGRA/bottom-up format contract, constant request-to-content offset vs sync ground truth, byte identity vs RTM_copy_ram, ordering guarantee, in-flight cap, repeat-poll de-dup, shutdown drain guard, the raw-API engine shutdown row, cost row)** |
 
 `pax3d_simplepbr` (retired) keeps its historical bloom/rebuild failures.
 `scale` failing is the DOCUMENTED baseline until R4 lands — see its entry
