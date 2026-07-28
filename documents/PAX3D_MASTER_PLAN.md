@@ -1478,7 +1478,16 @@ otherwise lose to latency, and it keeps callers safe on older wheels.
 Wheel live in **pax3d-env AND system Python** (both measured AV-ing
 beforehand), archived `wheels_session_am\`. Gate: Pax3D 94/7/146 ·
 stock 89/7/151 — unchanged totals, FAIL sets unchanged, zero ERRORs;
-test_capture is now 14 checks. Docs: CLAUDE.md C++ change list +
+test_capture is now 14 checks. `gvad_churn` and `thread_bind` both green
+on the new wheel (the prior stability fixes carry), testbed selftest
+green. **One flake on record:** the first stock leg reported
+`orbital/pax3d_render` as ERROR "no result (exit 1)" — died before
+printing its verdict, banner only, no traceback. Not reproducible (three
+direct runs plus a full `--tests orbital` runner pass, then a clean
+89/7/151 re-run), and stock 1.10.16 is untouchable by this build, so it
+is logged as environmental, not as a regression. Worth knowing the shape
+if it recurs: exit 1 with no traceback right after window creation,
+plausibly context exhaustion from accumulated stale processes. Docs: CLAUDE.md C++ change list +
 build-window row retired + wheel/env rows, arch doc, paxtest README,
 session log.
 
