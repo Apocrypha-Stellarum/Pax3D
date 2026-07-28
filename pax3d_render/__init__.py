@@ -28,6 +28,8 @@ from .pipeline import (Pipeline, sh_from_cubemap, data_texture,
 from .rigid_clips import (RigidClip, RigidClipPlayer, load_rigid_clips,
                           get_model_clips)
 from .water import WaterParams, WaterSurface, water_sun
+from .capture import (CapturedFrame, FrameCapture,
+                      frame_capture_supported)
 
 # Drop-in alias matching simplepbr's / pax_pbr's API
 init = Pipeline
@@ -39,7 +41,8 @@ __all__ = ['init', 'Pipeline', 'configure_prc',
            'data_texture', 'load_data_texture',
            'RigidClip', 'RigidClipPlayer', 'load_rigid_clips',
            'get_model_clips',
-           'WaterParams', 'WaterSurface', 'water_sun']
+           'WaterParams', 'WaterSurface', 'water_sun',
+           'CapturedFrame', 'FrameCapture', 'frame_capture_supported']
 
 
 def configure_prc():

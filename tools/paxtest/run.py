@@ -26,13 +26,17 @@ ALL_TESTS = ['gamma', 'lighting', 'bloom', 'rebuild', 'shadows',
              'rigid_clips', 'screen', 'alpha_mask', 'viewmodel',
              'gl_clean', 'light_priority', 'effects', 'light_halo',
              'visibility_query', 'spot_exponent', 'gvad_churn',
-             'thread_bind', 'detail_maps', 'snapshot', 'water']
+             'thread_bind', 'detail_maps', 'snapshot', 'water', 'capture']
 ALL_PIPELINES = ['none', 'simplepbr', 'pax3d_simplepbr', 'pax_pbr',
                  'pax3d_render']
 
 # Bloom runs twice: a size that divides evenly through the 1/32 mip chain,
 # and a game-like size that does not (localizes truncation bugs).
 BLOOM_WIN_SIZES = ['512x512', '960x540']
+
+# Async readback is measured at the size the game filing used, so the
+# cost row is directly comparable to their +4.7 ms/frame sync floor.
+CAPTURE_WIN_SIZE = '1600x900'
 
 # Tests that are meaningless for a pipeline are skipped by the test itself
 # (exit 77); the runner just reports what happened.
@@ -61,6 +65,24 @@ def run_one(test, pipeline, extra_args, timeout=180):
         payload = {'test': test, 'pipeline': pipeline, 'status': 'ERROR',
                    'reason': f'no result (exit {proc.returncode})',
                    'output_tail': tail, 'checks': []}
+    else:
+        # A test can print its verdict and THEN die — a teardown crash
+        # after every row passed (Session AM: async readbacks left in
+        # flight AV the process at exit, and the first gate recorded
+        # that run as a clean PASS). The payload alone cannot see it,
+        # so cross-check the child's exit code against the status it
+        # claimed: PASS=0, FAIL=1, SKIP=77.
+        expected = {'PASS': 0, 'FAIL': 1, 'SKIP': 77}.get(payload.get('status'))
+        if expected is not None and proc.returncode != expected:
+            tail = '\n'.join((proc.stdout + '\n' + proc.stderr)
+                             .strip().splitlines()[-8:])
+            payload['reason'] = (
+                f'reported {payload["status"]} then exited '
+                f'{proc.returncode} (expected {expected}) — crash or '
+                f'abort AFTER the checks ran')
+            payload['output_tail'] = tail
+            payload['status'] = 'ERROR'
+
     for i, arg in enumerate(extra_args):
         if 'x' in arg and arg[0].isdigit():
             payload['win_size'] = arg
@@ -101,6 +123,12 @@ def main():
                 for size in BLOOM_WIN_SIZES:
                     jobs.append((test, pipeline,
                                  passthrough + ['--win-size', size]))
+            elif test == 'capture':
+                # Session AM: run at the size the F9-recorder filing
+                # measured (+4.7 ms/frame sync floor at 1600x900), so
+                # the cost row compares against their number directly.
+                jobs.append((test, pipeline,
+                             passthrough + ['--win-size', CAPTURE_WIN_SIZE]))
             else:
                 jobs.append((test, pipeline, list(passthrough)))
             if test == 'lighting' and pipeline == 'pax3d_render':

@@ -782,6 +782,11 @@ class Pipeline:
         # main chain's).
         self._snapshot = None
 
+        # Streaming readback taps handed out by begin_frame_capture
+        # (Session AM) — stopped on cleanup(). Not rebuild-class: a
+        # capture reads the window, which survives chain rebuilds.
+        self._frame_captures = []
+
         # FilterManager for tonemapping
         self._filtermgr = FilterManager(self.window, self.camera_node)
         if self._filtermgr.nextsort == -1000:
@@ -1250,6 +1255,55 @@ class Pipeline:
         if self._snapshot is not None:
             self._snapshot.release()
             self._snapshot = None
+
+    def begin_frame_capture(self, output=None, max_in_flight=3):
+        """Streaming asynchronous framebuffer readback for video capture
+        (2026-07-28, the voxel-lane F9-recorder ask; Session AM).
+
+        The streaming sibling of render_snapshot: instead of one shot
+        from an arbitrary pose, every frame of the player's own view,
+        read back off the render thread. Costs +0.19 ms/frame at
+        1600x900 against +3.92 ms for a synchronous RTM_copy_ram tap
+        (and +0.56 vs +13.29 ms at 4K), delivering byte-identical
+        pixels two frames later.
+
+        Returns a capture.FrameCapture. Call poll() once per rendered
+        frame; it yields CapturedFrame objects in capture order with
+        BGRA bottom-up pixels ready for an encoder:
+
+            cap = pipeline.begin_frame_capture()
+            ...                                  # per frame:
+            for frame in cap.poll():
+                encoder.write(frame.data)
+            ...
+            for frame in cap.drain(timeout_frames=4,
+                                   step=base.task_mgr.step):
+                encoder.write(frame.data)
+            cap.stop()
+
+        Args:
+            output: GraphicsOutput to read; None = the pipeline window
+                (the final tonemapped image, not the scene HDR buffer).
+            max_in_flight: readbacks allowed outstanding. Each holds a
+                full frame, so this is the memory bound; poll() counts
+                a drop when the cap is hit rather than growing without
+                limit. 3 covers the measured 2-frame latency.
+
+        Requires the Pax3D engine — stock Panda3D 1.10 has no
+        get_async_screenshot; capture.frame_capture_supported() is the
+        feature test."""
+        from .capture import FrameCapture
+        cap = FrameCapture(output if output is not None else self.window,
+                           max_in_flight=max_in_flight)
+        self._frame_captures.append(cap)
+        return cap
+
+    def release_frame_captures(self):
+        """Stop every capture begin_frame_capture() handed out.
+        Called by cleanup()."""
+        for cap in self._frame_captures:
+            cap.stop()
+        self._frame_captures = []
 
     def build_water_surface(self, parent_np, water_z, params=None,
                             **geometry):
@@ -5990,6 +6044,7 @@ class Pipeline:
         """Remove the pipeline task, sun light, aux cameras, FilterManager."""
         self.taskmgr.remove('pax3d_render_update')
         self.release_snapshot_resources()
+        self.release_frame_captures()
         self._destroy_sun_light()
         for reg in list(self._scene_cameras):
             self.unregister_scene_camera(reg)
