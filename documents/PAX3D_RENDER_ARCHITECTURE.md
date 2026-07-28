@@ -1888,6 +1888,74 @@ game-side. Gate: test_water (15 checks ×@game/@directional, both
 engines) — the analytic-haze rows match an independent Python
 ray-evaluation to ≤0.002.
 
+### Session AM — streaming frame capture: `begin_frame_capture()` (LANDED)
+
+Asynchronous framebuffer readback for video recording and replay — the
+streaming sibling of `render_snapshot` (one shot from an arbitrary
+pose) applied to every frame of the player's own view.
+`pipeline.begin_frame_capture(output=None, max_in_flight=3)` returns a
+`capture.FrameCapture`; `poll()` once per rendered frame yields
+`CapturedFrame`s in capture order.
+
+The engine mechanism is upstream's and predates the ask:
+`GraphicsOutput::get_async_screenshot()` binds a pixel-pack buffer
+from a size-keyed recycle pool (persistently mapped where
+`GL_ARB_buffer_storage` allows), `glReadPixels` into it, GL fence,
+then map + memcpy on the two-thread `gl_texture_transfer` chain. It is
+**Pax3D-only** — stock 1.10.16 has no such API;
+`capture.frame_capture_supported()` is the feature test and the module
+raises a named RuntimeError rather than failing obscurely.
+
+What this module adds is the contract a video encoder needs:
+
+- **Ordered delivery.** `_retire()` pops the HEAD only, so a finished
+  request behind an unfinished one is held. The transfer chain has two
+  workers and makes no completion-order guarantee (it completes in
+  order in practice — 0 inversions in 120 frames measured — but an
+  encoder that ingests out of order scrambles video intermittently, so
+  the queue enforces rather than trusts).
+- **Bounded in-flight.** Each outstanding readback holds a whole frame
+  (5.8 MB at 900p, 33 MB at 4K); `max_in_flight` caps it and counts
+  skipped frames in `dropped`. Default 3 covers the measured 2-frame
+  latency.
+- **Repeat-poll safety.** The engine caches ONE request per output and
+  clears it at draw time, so a second call before the next draw hands
+  back the same object (two polls in a frame, a `render_snapshot`
+  frame with the player chain deactivated, a minimized window).
+  Enqueued twice it would deliver one frame twice; identity is by
+  `.this` (fact #20) and the repeat is counted in `repeat_polls`.
+- **`drain(timeout_frames=, step=)`** for the in-flight tail at stop,
+  which latency would otherwise eat.
+
+**Two behaviours a game must know.** (1) On a real double-buffered
+window the delivered frame is ONE behind the request — the engine
+copies at the start of the next frame's draw, after the flip; offscreen
+buffers have no swap and return the requested frame. The offset is
+constant either way (measured 47/48 at exactly 1, never garbage), so
+`frame_number` names the frame the request was made on, not necessarily
+the frame the pixels came from. (2) A readback still in flight when the
+process exits SEGFAULTS it — one is enough. `stop()` therefore renders
+engine frames until the fences retire, and `cleanup()` stops every
+capture; see capture.py's stop() docstring for the C++ mechanism, which
+is queued for a build window.
+
+Pixels are the framebuffer's, unchanged: BGRA, 8 bits, BOTTOM-UP
+(Panda's RAM-image convention — encoders pass `vflip`; `bgra` is what
+x264 ingests unswizzled). The capture reads the WINDOW, i.e. the final
+tonemapped post-processed image, gate-checked equal to
+`get_screenshot()` — not the scene HDR buffer. Captures are stopped by
+`cleanup()` (`release_frame_captures()`); they are not rebuild-class,
+since a capture reads the window, which survives chain rebuilds.
+
+Cost over a no-readback baseline, paced to 60 fps: sync
+`RTM_copy_ram` +3.92 ms p50 at 1600×900 and +13.29 ms p50 at 4K;
+async +0.19 ms and +0.56 ms. Delivered bytes are byte-identical to the
+sync path. Gate: test_capture (13 checks at 1600×900, the size the
+filing measured; skips whole on stock; also green against a real
+window via --show). **Measure readback paced** —
+an unpaced loop outruns the transfer chain by 30× and turns latency
+and queue depth into artifacts.
+
 ## 10. Testing Contract
 
 - Every feature has (at least) one paxtest: gamma, lighting (×sun-modes),

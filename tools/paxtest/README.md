@@ -22,8 +22,18 @@ python tools/paxtest/run.py --baseline compat     # diagnostic: compat context
 
 Exit codes: 0 pass, 1 fail, 77 skip. Each test prints per-check lines and a
 machine-readable `PAXTEST_JSON:` line; the runner aggregates into
-`output/last_run.json`. Captures land in `output/*.png` — always look at the
-pictures when a check fails.
+`output/last_run.json`.
+
+The runner **cross-checks the child's exit code against the status it
+reported** (PASS=0, FAIL=1, SKIP=77) and downgrades a mismatch to
+ERROR. A test can print a clean verdict and then die in teardown — that
+is exactly what an engine-level shutdown crash looks like, and before
+Session AM the runner scored one as a clean PASS because the payload
+said so. If you see `reported PASS then exited 139`, every row really
+did pass and the process crashed on the way out.
+
+Captures land in `output/*.png` — always look at the pictures when a
+check fails.
 
 ## Pipelines under test
 
@@ -538,6 +548,41 @@ matched against an independent Python ray-evaluation (lens-extruded
 per-pixel geometry; sun-abeam, sun-lobe and live param-change rows,
 worst error ≤0.002 — water haze IS the pax_pbr atmosphere).
 
+**`test_capture.py`** (Session AM — the voxel-lane F9-recorder ask) —
+streaming asynchronous framebuffer readback
+(`pipeline.begin_frame_capture()`). Runs at 1600×900, the size the
+game filing measured, so the cost row compares to their +4.7 ms/frame
+number directly. Checks the format contract (BGRA, bottom-up,
+`w*h*4`), frame correspondence against a synchronous ground-truth
+screenshot of the SAME frame (the stamp colour passes through the
+tonemap, so the request index is not recoverable from pixels — ground
+truth is both simpler and a stronger claim), byte identity vs the
+`RTM_copy_ram` tap (0 of 5,760,000 bytes differ), post-processed-view
+identity (the capture is the window, not the scene HDR buffer),
+latency bound, the ordering guarantee (deterministic stubs: a finished
+request behind an unfinished one is held), the in-flight cap + drop
+accounting, repeat-poll de-duplication (the engine caches one request
+per output and clears it at draw time — polling twice in a frame must
+not enqueue it twice), drain, stop, **the shutdown drain guard**, and
+the cost row on min-frame-time (sync +2.19 ms, async inside baseline
+noise).
+
+Two rows exist because the offscreen harness alone was not enough —
+run it with `--show` against a real window and both appear.
+`frame_correspondence` asserts the request-to-content offset is
+CONSTANT, not zero: offscreen it is 0, on a double-buffered window it
+is 1 (the engine copies after the flip). And `stop_drains_in_flight`
+guards an engine defect — a readback still in flight at process exit
+segfaults it (one is enough; the GSG fence deque's CompletionTokens
+are documented "destroyed prematurely == complete(false)" and the
+screenshot callback ignores the flag, so it makes GL calls on a dying
+GSG). **The child exit code is part of this test**: a 139/0xC0000005
+from a run whose rows all pass IS the regression. **Skips whole on stock
+1.10** — `get_async_screenshot` is an upstream 1.11-dev API the
+Window-1 catch-up merge brought in. Measure readback PACED: an unpaced
+loop outruns the transfer chain by 30× and turns latency and queue
+depth into artifacts.
+
 **`test_ftl_blur.py`** — the FTL warp distortion pass (radial blur +
 chromatic aberration in tonemap); asserts zero-strength passthrough and
 effect behavior (added alongside the feature, post-Session-D).
@@ -587,8 +632,12 @@ the pre-fix GVAD wheel, gate logs `gate_bind_*`. Session AI added the
 7 detail_maps jobs — +4 PASS +3 SKIP each (routed pax_pbr runs it
 too), gate logs `gate_er014_*`. Session AJ added the 6 snapshot jobs —
 +3 PASS +3 SKIP each, gate logs `gate_aj_*`. Session AL added the 6
-water jobs — +2 PASS +4 SKIP each: **totals now Pax3D 92/7/143 ·
-stock 89/7/146, FAIL sets unchanged**, gate logs `gate_al_*`.)
+water jobs — +2 PASS +4 SKIP each (Pax3D 92/7/143 · stock 89/7/146).
+Session AM added the 5 capture jobs, one per pipeline — Pax3D +2 PASS
++3 SKIP (routed pax_pbr runs it too), stock +5 SKIP (whole-test skip:
+`get_async_screenshot` does not exist on 1.10): **totals now Pax3D
+94/7/146 · stock 89/7/151, FAIL sets unchanged and zero ERRORs under
+the new exit-code cross-check**, gate logs `gate_am_*`.)
 
 Note: with the game's `use_pax3d_render` flag flipped (Session D), the
 `pax_pbr` adapter routes to pax3d_render — its column mirrors
@@ -638,6 +687,7 @@ and rows whose harness scenes need pax3d_render-only hooks (skip).
 | detail_maps | skip | skip | PASS | **PASS (22–26 checks: selection/valve contract + Session-AJ append-only rows; +@directional +@directional@logdepth)** |
 | snapshot | skip | skip | PASS | **PASS (7+10 checks: pose freedom, player-view rms 0.0, full-pipeline parity rms 0.0, shadow contract; +@directional)** |
 | water | skip | skip | skip | **PASS (15 checks: planetside-pinned defaults, knee curve + readback, dry/rim byte-exact, Beer-Lambert melt analytics, haze vs independent ray-evaluation ≤0.002; +@directional)** |
+| capture | skip | skip | PASS | **PASS (13 checks @1600x900: BGRA/bottom-up format contract, constant request-to-content offset vs sync ground truth, byte identity vs RTM_copy_ram, ordering guarantee, in-flight cap, repeat-poll de-dup, shutdown drain guard, cost row)** |
 
 `pax3d_simplepbr` (retired) keeps its historical bloom/rebuild failures.
 `scale` failing is the DOCUMENTED baseline until R4 lands — see its entry

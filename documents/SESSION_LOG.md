@@ -1551,3 +1551,65 @@ C++/GSG class, LOW per their filing), not landed. Docs: master plan
 build-window queue row, paxtest README, ENGINE_NOTES.md inline reply
 (paxcraft `b2e5d55`), sfb2 USING_PAX3D_RENDER §3 quick-ref (game
 commit `8cff0c3`).
+
+**Session AM update (2026-07-28, the streaming-readback ask — the
+queued C++ build-window item was already in the engine):** the voxel
+game's F9-recorder ask (sync `RTM_copy_ram` +4.7 ms/frame @1600×900,
+4K projected out of reach) was queued in §4.24 as a New C++ (GSG) row.
+It never needed one. `GraphicsOutput::get_async_screenshot()` already
+does the whole PBO round-robin — size-keyed PBO recycle pool
+(persistently mapped under `GL_ARB_buffer_storage`), `glReadPixels`
+into it, GL fence, then map + memcpy on the two-thread
+`gl_texture_transfer` chain — and it is published to Python. It came
+in with the Window-1 catch-up merge; **stock 1.10.16 does not have
+it**, so this is a Pax3D-only capability. The ER-012 shape a second
+time: read the engine before building for it. The mechanism was there;
+the contract a recorder needs on top of it was the gap, and that is
+what landed — `pax3d_render/capture.py` +
+`pipeline.begin_frame_capture(max_in_flight=3)` → `FrameCapture.poll()`
+yielding `CapturedFrame` (zero-copy BGRA bottom-up `.data`,
+`.tobytes()`, `.frame_number`): ordered delivery (head-only retire —
+the 2-worker chain guarantees no completion order, and out-of-order
+ingest scrambles video intermittently), bounded in-flight with drop
+accounting (an unpaced requester reached 120 in flight ≈ 690 MB in two
+seconds), repeat-poll de-duplication (the engine caches ONE request per
+output and clears it at draw time, so polling twice before a draw
+returns the same object — identity by `.this`, fact #20), and
+`drain()`. Measured paced to 60 fps over a no-readback baseline: sync
++3.92 ms p50 / +9.91 ms p95 @1600×900 and +13.29 / +22.86 ms @4K, vs
+async +0.19 / +0.13 ms and +0.56 / +2.26 ms; 2-frame latency; pixels
+byte-identical to the sync tap (0 of 5,760,000). **Two findings came
+only from running the test against a REAL window (`--show`), which the
+offscreen gate cannot see:** (1) on a double-buffered window the
+delivered frame is ONE behind the request (the engine copies after the
+flip) — constant, 47/48 at exactly 1, never garbage, so the check gates
+a CONSTANT offset rather than zero and passes both ways; (2) **a
+readback still in flight at process exit segfaults it, one is enough**
+— the GSG fence deque holds `CompletionToken`s documented "destroyed
+prematurely == complete(false)" and the screenshot callback ignores its
+success flag, so it makes GL calls (`map_read_buffer`,
+`release_client_buffer`) on a dying GSG; `cancel()` and
+`remove_all_windows()` do not help, only retiring the fences does.
+Mitigated in Python (`stop()` renders engine frames until nothing is in
+flight, yielding between them because `done()` flips on the transfer
+chain after the fence retires); the C++ fix is QUEUED with the repro,
+not landed. That second finding also exposed a harness hole: run.py
+consulted the child exit code only when the JSON payload was MISSING,
+so the first Session-AM gate scored a segfaulting run as a clean PASS —
+run.py now cross-checks the exit code against the reported status
+(PASS=0, FAIL=1, SKIP=77) and downgrades a mismatch to ERROR, which was
+open for every test, not just this one. Method fact worth keeping:
+**measure readback PACED** — an unpaced loop renders ~2000 fps,
+outruns the transfer chain 30×, and reports 34-frame latency and 19/60
+delivery, all artifact (two probes and the first cut of the test all
+said that). Gate: NEW test_capture, 13 checks @1600×900 (the size their
+filing measured), green offscreen AND against a real window (exit 0
+both); full matrix `gate_am_*` — Pax3D 94/7/146 · stock 89/7/151 (from
+AL 92/7/143 · 89/7/146: five capture jobs, Pax3D +2 PASS +3 SKIP with
+routed pax_pbr running it too, stock +5 SKIP), FAIL sets unchanged and
+zero ERRORs under the new cross-check. Planetside gets replay/photo
+capture free (concordance). Docs: master plan §4.26, arch doc §9
+Session AM, CLAUDE.md voxel-lane row + the build-window row RETIRED +
+a new row for the shutdown-AV C++ fix, paxtest README (capture entry,
+pipeline table, exit-code cross-check), ENGINE_NOTES.md inline reply,
+sfb2 USING_PAX3D_RENDER quick-ref.

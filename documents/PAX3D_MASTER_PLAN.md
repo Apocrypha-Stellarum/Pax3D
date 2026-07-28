@@ -1305,6 +1305,140 @@ Gate: Pax3D 92/7/143 · stock 89/7/146 (from AK 90/7/139 · 87/7/142:
 row, paxtest README row, reply inline in paxcraft ENGINE_NOTES.md,
 sfb2 WATER.md + USING_PAX3D_RENDER quick-ref (game-side commit).
 
+### 4.26 Session AM (2026-07-28) — streaming async readback: the queued build-window item was already in the engine
+
+The voxel game's F9-recorder ask (§4.24, queued as "PBO round-robin
+framebuffer readback", classed New C++ (GSG) + Python API, LOW): their
+synchronous `RTM_copy_ram` tap costs **+4.7 ms/frame at 1600×900** and
+scales with area, putting 4K recording out of reach. Queued for the
+next build window.
+
+**It never needed one. The engine already owns the PBO round-robin.**
+`GraphicsOutput::get_async_screenshot()` — published, reachable from
+Python — binds a pixel-pack buffer from a size-keyed recycle pool
+(`bind_new_client_buffer`, persistently mapped where
+`GL_ARB_buffer_storage` allows), issues `glReadPixels` into it,
+inserts a GL fence, and on fence completion maps and memcpys on the
+two-thread `gl_texture_transfer` chain, ordered by frame number. It
+came in with the Window-1 catch-up merge (upstream 1.11-dev) and had
+never been connected to readback cost here. **Stock 1.10.16 does not
+have it** (measured) — this is a Pax3D-only capability, and the third
+time the catch-up merge has paid for itself.
+
+This is the ER-012 shape again: read the engine before building for
+it. The queue row is retired with zero C++.
+
+**The mechanism was there. The contract a recorder needs on top of it
+was the actual gap**, and that is
+what landed: `pax3d_render/capture.py` +
+`pipeline.begin_frame_capture(output=None, max_in_flight=3)` returning
+a `FrameCapture`. `poll()` once per rendered frame yields
+`CapturedFrame`s (`.data` zero-copy BGRA bottom-up view, `.tobytes()`,
+`.width/.height/.num_components/.nbytes/.frame_number`). Three things
+the raw API does not give a recorder:
+
+1. **Ordered delivery** — completions emit strictly in request order,
+   a finished frame held behind an unfinished predecessor. The chain
+   completes in order in practice (0 inversions in 120 frames,
+   measured) but has two workers and guarantees nothing; an encoder
+   ingesting out of order scrambles video intermittently.
+2. **Bounded in-flight** — each outstanding readback holds a whole
+   frame (5.8 MB at 900p, 33 MB at 4K). An unpaced requester reached
+   120 in flight (~690 MB) in two seconds. `max_in_flight` caps it and
+   COUNTS the skips (`dropped`) instead of swallowing them.
+3. **Repeat-poll safety** — the engine caches one request per output
+   and clears it at draw time, so a second `get_async_screenshot()`
+   before the next draw returns the SAME object (poll twice in a
+   frame, a `render_snapshot` frame with the player chain deactivated,
+   a minimized window). Enqueued twice it would deliver one frame
+   twice; identity is compared by `.this` per fact #20 and the repeat
+   is counted, not tracked. Plus `drain(timeout_frames=, step=)` for
+   the tail that would otherwise be lost to latency at stop.
+
+**Measured** (RTX 4060 laptop, offscreen, paced to 60 fps, cost over a
+no-readback baseline):
+
+| | 1600×900 | 3840×2160 |
+|---|---|---|
+| sync `copy_ram` | +3.92 ms p50 / +9.91 ms p95 | +13.29 ms p50 / +22.86 ms p95 |
+| async | +0.19 ms p50 / +0.13 ms p95 | +0.56 ms p50 / +2.26 ms p95 |
+| latency | 2 frames | 2–3 frames |
+
+Their filed number reproduces in shape and their 4K projection was
+right. Delivered pixels are byte-identical to the synchronous tap (0
+differing bytes of 5,760,000, gated).
+
+**Gate: NEW test_capture, 13 checks at 1600×900** — the size their
+filing measured, so the cost row compares to their number directly
+(`CAPTURE_WIN_SIZE` in run.py, the bloom-style size job). Rows: format
+contract, frame correspondence against a synchronous ground-truth
+screenshot of the SAME frame (the stamp colour passes through the
+tonemap, so the request index is not recoverable from pixels — ground
+truth beats index arithmetic and is a stronger claim), byte identity
+vs the sync tap, post-processed-view identity, latency bound, the
+ordering guarantee (deterministic stubs), the in-flight cap + drop
+accounting, repeat-poll de-duplication, drain, stop, the shutdown drain
+guard, and the cost row (min-frame-time, their metric). Skips whole on
+stock. Also runs clean against a real window (`--show`, 13/13, exit 0).
+
+**Two findings the offscreen gate alone would have missed, both caught
+by running the test against a REAL window (`--show`):**
+
+1. **The delivered frame is one behind on a double-buffered window.**
+   The engine calls `copy_async_screenshot()` at the start of the next
+   frame's draw, AFTER `begin_flip`/`end_flip` — so offscreen a request
+   made on frame i returns frame i, and on a real window it returns
+   frame i−1. Measured constant: 47 of 48 deliveries at offset exactly
+   1, never garbage, never wandering. Harmless for a recorder (it is
+   latency, not corruption) but it must be gated as a CONSTANT offset
+   rather than as zero, which is what the check now asserts — it passes
+   both ways and reports which it saw.
+2. **A readback still in flight at process exit segfaults it — one is
+   enough.** The GL GSG's `_fences` deque holds
+   `Fence{GLsync, CompletionToken}`; CompletionToken is documented as
+   "destroyed prematurely == complete(false)", and the screenshot fence
+   callback ignores its success flag, so premature destruction runs it
+   anyway and it makes GL calls (`map_read_buffer`,
+   `release_client_buffer`) against a GSG that is already going away.
+   Reproducible on both window types; `cancel()` does not help (the
+   fence lives in the GSG, not the future) and neither does
+   `remove_all_windows()`. Only retiring the fences does.
+   **Mitigated in Python**: `stop()` renders engine frames
+   (`GraphicsEngine.render_frame`, no app tasks) until nothing is in
+   flight, yielding between them because `done()` flips on the transfer
+   chain a moment after the fence retires. Gated by
+   `stop_drains_in_flight` plus the child exit code, which run.py
+   records — a 139/0xC0000005 there IS the regression signal. The C++
+   fix (honor the success flag; retire `_fences` before the GSG dies)
+   is queued for the next build window, MEDIUM: the Python mitigation
+   only covers captures the pipeline hands out, and upstream's own
+   `save_async_screenshot()` at app exit hits the same defect.
+
+**Harness hardening the second finding forced.** run.py only consulted
+the child exit code when the `PAXTEST_JSON` payload was MISSING, so a
+test that printed a clean verdict and then died in teardown scored as
+a clean PASS — which is precisely what the first Session-AM gate did
+with a segfaulting capture run. run.py now cross-checks the exit code
+against the reported status (PASS=0, FAIL=1, SKIP=77) and downgrades a
+mismatch to ERROR. That hole was open for every test, not just this
+one.
+
+**Method note worth keeping: measure readback PACED.** An unpaced
+harness loop renders at ~2000 fps, outruns the transfer chain by 30×,
+and reports 34-frame latency and 19/60 delivery — all artifact. Two
+probes and the first cut of the test said exactly that before pacing.
+The same trap is why the queue-depth reading looked like a leak.
+
+Serves planetside replay/photo capture identically (concordance).
+
+Gate: Pax3D 94/7/146 · stock 89/7/151 (from AL 92/7/143 · 89/7/146 —
+5 new test_capture jobs, one per pipeline: Pax3D +2 PASS +3 SKIP
+(pax_pbr routes to pax3d_render and runs it too), stock +5 SKIP; FAIL
+sets unchanged, zero ERRORs under the new exit-code cross-check; logs
+`gate_am_*`). Docs: arch doc §9 Session AM, CLAUDE.md
+voxel-lane row + build-window queue row retired, paxtest README row,
+reply inline in paxcraft ENGINE_NOTES.md.
+
 ---
 
 ## 5. Risks
