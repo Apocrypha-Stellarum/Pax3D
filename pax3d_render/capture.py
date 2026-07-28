@@ -23,17 +23,20 @@ recorder needs on top of it, which is what this module is:
     chain: an unpaced test loop reached 120 in flight (~690 MB) in two
     seconds. `max_in_flight` caps it and counts what it skipped, so a
     recorder can account for dropped frames instead of swallowing GB.
-  - A SHUTDOWN CRASH GUARD. A readback still in flight when the process
-    exits segfaults it — one is enough. The GSG's fence deque holds
-    CompletionTokens documented as "destroyed prematurely ==
-    complete(false)", and the screenshot fence callback ignores its
-    success flag, so premature destruction runs it anyway and it makes
-    GL calls against a GSG that is already going away. stop() renders
-    frames until the fences retire; the pipeline stops every capture on
-    cleanup(). Measured on both a real window and an offscreen buffer;
-    `cancel()` and `remove_all_windows()` do NOT help. The C++ fix
-    (honor the success flag / flush _fences before the GSG dies) is
-    queued for the next build window.
+  - An orderly shutdown. stop() retires what is still in flight and the
+    pipeline stops every capture on cleanup(). This began as a crash
+    guard: on wheels before 2026-07-28 a readback still in flight when
+    the process exited segfaulted it — one was enough — because the
+    GSG's fence deque holds CompletionTokens documented as "destroyed
+    prematurely == complete(false)" and the screenshot fence callback
+    ignored its success flag, running GL work against a GSG that was
+    already going away. That is FIXED in the engine now (Session AM
+    build window, `// PAX3D:` in glGraphicsStateGuardian_src.cxx;
+    gated by test_capture's engine_survives_inflight_exit, which uses
+    the raw API precisely so this wrapper cannot mask a regression).
+    The drain stays: it is correct hygiene, it delivers the tail
+    frames a recorder would otherwise lose to latency, and it keeps
+    this module safe on older wheels.
 
 Measured on this machine (RTX 4060 laptop, offscreen buffer, paced to
 60 fps, cost over a no-readback baseline):
@@ -46,13 +49,12 @@ Measured on this machine (RTX 4060 laptop, offscreen buffer, paced to
 
     latency           2 frames              2-3 frames
 
-In the gate (1600x900, min-frame-time, the filing's own metric) the
-async delta lands inside baseline noise: sync +2.19 ms, async -0.10 ms.
-
-which is what closes the filing's headline number (+4.7 ms/frame floor at
-900p on their box) and its projection (4K "out of reach"). Delivered
-bytes are byte-identical to the synchronous RTM_copy_ram path — 0
-differing bytes of 5,760,000 in-gate.
+That closes the filing's headline number (a +4.7 ms/frame floor at 900p
+on their box) and its projection that 4K put recording out of reach. In
+the gate (1600x900, min-frame-time, the filing's own metric) the async
+delta lands inside baseline noise: sync +2.19 ms, async -0.10 ms.
+Delivered bytes are byte-identical to the synchronous RTM_copy_ram
+path — 0 differing bytes of 5,760,000 in-gate.
 
 Pixel layout is the framebuffer's, unchanged by this module: BGRA, 4
 components, 8 bits each, BOTTOM-UP (Panda's RAM image convention — the
@@ -244,24 +246,28 @@ class FrameCapture(object):
     def stop(self, drain_frames=8):
         """Finish outstanding readbacks, then stop tracking.
 
-        DRAINING IS NOT OPTIONAL — it is a crash guard, not tidiness.
-        A readback still in flight when the process exits segfaults it:
-        the GSG's fence deque holds CompletionTokens whose contract is
-        "destroyed prematurely == complete(false)", and the screenshot
-        fence callback ignores its success flag, so on premature
-        destruction it makes GL calls (map_read_buffer,
-        release_client_buffer) against a GSG that is already going
-        away. ONE outstanding request is enough. Measured 2026-07-28
-        (Session AM) on both a real window and an offscreen buffer;
-        `cancel()` does not help (the fence lives in the GSG, not in
-        the future) and neither does remove_all_windows(). Rendering
-        frames until the fences retire is the only fix short of the
-        C++ one, which is queued for the next build window.
-
-        So stop() renders up to `drain_frames` engine frames
+        Renders up to `drain_frames` engine frames
         (GraphicsEngine.render_frame — no app tasks run) to retire what
         is outstanding. One frame is normally enough. Pass
         drain_frames=0 only if you have already drained by hand.
+
+        History worth keeping, because it dictates the default: on
+        wheels before 2026-07-28 leaving even ONE readback in flight at
+        process exit was an access violation. The GSG's fence deque
+        holds CompletionTokens whose contract is "destroyed prematurely
+        == complete(false)", and the screenshot fence callback ignored
+        that flag, so on premature destruction it made GL calls
+        (map_read_buffer, release_client_buffer) against a GSG already
+        being destroyed. Measured on both a real window and an
+        offscreen buffer; `cancel()` did not help (the fence lives in
+        the GSG, not in the future) and neither did
+        remove_all_windows() — only retiring the fences did. Fixed
+        engine-side in the Session AM build window and gated by
+        test_capture's engine_survives_inflight_exit, which drives the
+        raw API so this drain cannot mask a regression. The drain stays
+        on by default anyway: it recovers the tail frames a recorder
+        would lose to latency, and it keeps callers safe on older
+        wheels.
         """
         if drain_frames > 0:
             self._drain_engine(drain_frames)

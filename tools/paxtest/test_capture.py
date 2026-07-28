@@ -39,8 +39,13 @@ Rows:
                                the SAME object; enqueued twice it would
                                deliver one frame twice
  10. drain_flushes_tail     -- drain() recovers the in-flight tail
- 11. stop_releases          -- stop() empties the queue and poll() is inert
- 12. cost_beats_sync        -- THE ASK: min-frame-time delta over a
+ 11. stop_releases/stop_drains_in_flight -- stop() empties the queue AND
+                               retires what is still outstanding
+ 12. engine_survives_inflight_exit -- THE C++ FIX: a subprocess using the
+                               RAW get_async_screenshot() API exits with
+                               readbacks in flight and must not AV (the
+                               wrapper's drain would mask a regression)
+ 13. cost_beats_sync        -- THE ASK: min-frame-time delta over a
                                no-readback baseline, async vs sync
 
 Pax3D only: stock Panda3D 1.10.16 has no get_async_screenshot (the API
@@ -49,6 +54,7 @@ whole test skips there rather than adding a permanent red.
 """
 import argparse
 import os
+import subprocess
 import sys
 import time
 
@@ -405,11 +411,14 @@ def main():
                    'stop() empties the queue and poll() is inert')
 
     # --- 10b. stop() DRAINS — the shutdown crash guard ------------------
-    # A readback still in flight at process exit segfaults the process
-    # (GSG fence deque -> CompletionToken "destroyed prematurely ==
-    # complete(false)" -> the screenshot callback ignores the flag and
-    # calls GL on a dying GSG). ONE is enough. cancel() and
-    # remove_all_windows() do not help; only retiring the fences does.
+    # On pre-2026-07-28 wheels a readback still in flight at process
+    # exit segfaulted it (GSG fence deque -> CompletionToken "destroyed
+    # prematurely == complete(false)" -> the screenshot callback ignored
+    # the flag and called GL on a dying GSG). ONE was enough; cancel()
+    # and remove_all_windows() did not help. Fixed engine-side in the
+    # Session AM build window and gated below by
+    # engine_survives_inflight_exit; the drain stays because it also
+    # recovers the tail and keeps older wheels safe.
     drain_cap = pipeline.begin_frame_capture(max_in_flight=4)
     for _ in range(4):
         step()
@@ -428,8 +437,41 @@ def main():
                    f'C++ fix queued)')
     h.report.info('shutdown_exit_code',
                   'this process exits AFTER a capture has run — a nonzero '
-                  'exit here (139/0xC0000005) IS the regression signal for '
-                  'the drain guard; run.py records the child exit code')
+                  'exit here (139/0xC0000005) is a regression signal, and '
+                  'run.py now cross-checks the child exit code against the '
+                  'reported status')
+
+    # --- 10c. THE ENGINE FIX, gated independently of the wrapper -------
+    # FrameCapture.stop() drains, so it would MASK a regression of the
+    # C++ fix. This subprocess uses the RAW get_async_screenshot() API
+    # and exits with readbacks deliberately in flight: its exit code is
+    # the engine verdict. Measured 139 on the pre-fix wheel, 0 after
+    # (glGraphicsStateGuardian_src.cxx honors the CompletionToken
+    # abandonment flag instead of doing GL on a dying GSG).
+    probe_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              'probe_async_shutdown.py')
+    try:
+        proc = subprocess.run([sys.executable, probe_path],
+                              capture_output=True, text=True, timeout=120)
+        out = (proc.stdout or '') + (proc.stderr or '')
+        in_flight = 0
+        for line in out.splitlines():
+            if line.startswith('IN_FLIGHT'):
+                try:
+                    in_flight = int(line.split()[1])
+                except (IndexError, ValueError):
+                    pass
+        h.report.check('engine_survives_inflight_exit',
+                       proc.returncode == 0 and in_flight > 0,
+                       f'raw get_async_screenshot(), {in_flight} readback(s) '
+                       f'still in flight at process exit: child exited '
+                       f'{proc.returncode} (139/0xC0000005 = the AV this '
+                       f'gates; measured on the pre-fix wheel). Uses the raw '
+                       f'API on purpose — FrameCapture.stop() drains and '
+                       f'would hide an engine regression')
+    except subprocess.TimeoutExpired:
+        h.report.check('engine_survives_inflight_exit', False,
+                       'probe_async_shutdown hung past 120s')
 
     # --- 11. THE ASK: cost vs the synchronous tap ----------------------
     cap.stop()

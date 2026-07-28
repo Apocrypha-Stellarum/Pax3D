@@ -36,7 +36,13 @@ What the GAME owns (the provider contract):
    everywhere (horizon-annulus games), 'dry' = nothing outside the
    window (windowed coastal games — far-field land lives out there).
  - Per-frame drive: call update(x, y, camera_pos) every frame and
-   set_environment(...) whenever the day-night feed ticks.
+   set_environment(...) whenever the day-night feed ticks.  **ORDER
+   MATTERS: update() must run AFTER your day-night tick**, because it
+   reads pipeline.atmo_* itself — call it before and the sea hazes with
+   last frame's sky.  Game copies from before this promotion pushed
+   haze from their own env update and were order-insensitive, so an
+   adopter can inherit a wrong order silently (field report, voxel
+   game, 2026-07-28).
  - Underwater eye effects, swimming, audio: not this module.
 
 Typical use::
@@ -295,7 +301,16 @@ class WaterSurface:
         """Follow the player in XY, advance animation time, and refresh
         the aerial haze from the pipeline's live atmosphere state (all
         uniform-only, cheap).  camera_pos is the eye in the water's
-        parent frame (world space for a render-parented surface)."""
+        parent frame (world space for a render-parented surface).
+
+        CALL THIS *AFTER* YOUR DAY-NIGHT TICK.  update() READS
+        `pipeline.atmo_*` itself, so a frame task that updates the water
+        before the sky pushes new atmosphere params hazes the sea with
+        last frame's values.  Pre-promotion game copies pushed haze from
+        their own env update and were order-insensitive, so an existing
+        adopter can carry a wrong order in silently — reported from the
+        field by the voxel game 2026-07-28 (Session AM), who hit exactly
+        that on adoption and moved the call."""
         r = self.root
         r.set_pos(x, y, self.water_z)
         if time is None:

@@ -8706,6 +8706,24 @@ framebuffer_copy_to_ram(Texture *tex, int view, int z,
         pbo, view, external_format
       ] (bool success) {
 
+      // PAX3D: honor the abandonment flag.  A CompletionToken destroyed
+      // before it completes calls its callback with success=false so that
+      // cleanup can be done (completionToken.I) — which is exactly what
+      // happens when this GSG is destroyed with fences still outstanding,
+      // i.e. whenever a process exits while an async screenshot is in
+      // flight.  This body used to run regardless and issue GL work
+      // (map_read_buffer) plus GSG member access against a GSG that is
+      // already going away: ONE outstanding readback was enough to AV the
+      // process at exit, reproducibly, on both real windows and offscreen
+      // buffers.  On abandonment do no GL and touch no GSG state — just
+      // cancel the future so awaiting callers see a result instead of
+      // hanging.  (The sibling fence callback in extract_buffer_data
+      // already branches on success this way; this one did not.)
+      if (!success) {
+        request->cancel();
+        return;
+      }
+
       void *ptr = mapped_ptr;
       if (ptr == nullptr) {
         ptr = map_read_buffer(GL_PIXEL_PACK_BUFFER, pbo, size);
