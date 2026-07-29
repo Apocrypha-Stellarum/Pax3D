@@ -149,14 +149,14 @@ Pax3D exists because **Panda3D** was good enough to build a space
 simulation on. It descends from Panda3D 1.11.0-dev, and this repository
 preserves the full upstream commit history and the Panda3D backers list
 ([BACKERS.md](BACKERS.md)) as a matter of record and respect. We are
-grateful to Carnegie Mellon University, the Panda3D maintainers, Mitchell Stokes, and two
-decades of contributors.
+grateful to Carnegie Mellon University, the Panda3D maintainers, Mitchell
+Stokes, and two decades of contributors.
 
 Pax3D is an independent project. It is not affiliated with or endorsed by
-the Panda3D project or Carnegie Mellon University. If
-you want the general-purpose, multi-platform, community-driven engine,
-Panda3D lives at [panda3d/panda3d](https://github.com/panda3d/panda3d) and
-deserves your contributions.
+the Panda3D project or Carnegie Mellon University. If you want the
+general-purpose, multi-platform, community-driven engine, Panda3D lives at
+[panda3d/panda3d](https://github.com/panda3d/panda3d) and deserves your
+contributions.
 
 Pax3D is licensed under the Modified BSD License. See the [LICENSE](LICENSE)
 file for details. Third-party code carried in this repository is credited in
