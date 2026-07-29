@@ -2,10 +2,10 @@
 
 **Date:** 2026-07-17 (same-day continuation of Session D — see
 `handover_session_d_bloom_fix.md` for the bloom fix + shadow extent work)
-**Repo state:** pax3d `e16a24e1ae`, sfb2 `c3f25a3` committed.
+**Repo state:** pax3d `de1d11bf3b`, sfb2 `c3f25a3` committed.
 **In-flight (not mine, do not clobber):** uncommitted shadow debug modes
 10/11 in `pax3d_render/shaders/pax_pbr.frag` (another session's working
-tree); the FTL warp distortion pass landed at `3f1c9c90f9` with its own
+tree); the FTL warp distortion pass landed at `87030b6bf0` with its own
 paxtest (`ftl_blur`, green); the game repo has an active nested-space /
 FTL dev — coordinate before touching arena/coordinate systems.
 **Read first:** `../PAX3D_MASTER_PLAN.md` (Session D log + R4 section),
@@ -117,7 +117,7 @@ positioning layer:
   Pax3D is sovereign, no sync ever; upstream is a read-only reference
   for hand cherry-picks (see CLAUDE.md "Upstream Relationship —
   SEVERED").** *Same-day revision: user ratified ONE final catch-up
-  merge (Route A) before closing the door — performed as `eb685fd003`,
+  merge (Route A) before closing the door — performed as `25bffd98d2`,
   awaiting its build window (`BUILD_WINDOW_1_CATCHUP.md`). Still no
   syncs after.* Doubles-build spike: resume when CPU allows — now
   bundled into that same window as optional Build 2.

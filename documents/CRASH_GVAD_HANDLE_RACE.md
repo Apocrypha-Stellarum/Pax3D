@@ -2,7 +2,7 @@
 
 **Status: FIXED + VALIDATED (GVAD stability build window, 2026-07-24,
 user go-ahead). The §6 stability-wheel plan landed exactly as written —
-commit `d6044b1d8a`, wheel `wheels_gvad\`. Acceptance measured: every
+commit `1b3c76f0a6`, wheel `wheels_gvad\`. Acceptance measured: every
 crashing §3 row survives (full/no-prim/rows-only/arraydata-rows/
 handle-only/read-handle-only/request-resident + workers=1, 60 s each,
 0.1–4.1M builds; handle-only deep soak 120 s / 6.9M builds), full

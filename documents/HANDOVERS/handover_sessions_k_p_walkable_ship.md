@@ -9,11 +9,11 @@ Python/GLSL — no engine build touched, runs on stock 1.10.16
 identically. The paxtest suite grew **14 → 19 test files** and the
 full matrix is green on both engines after every commit below.
 
-Engine commits (none pushed): `8b4469d19c` glass, `8c9ae5923e`
-double-sided, `d231b5edff` ambient scale, `6d9db616c3` anim-pin flake
-fix, `82a3540d53` specular IBL + BRDF LUT, `00349d403f` +
-`0f744132c4` + `7a01b015b8` collision design + field triage,
-`9493e6ee14` local lights, `d32cd9aef9` authored lights + haze guide.
+Engine commits (none pushed): `c6cb35c3fe` glass, `75ab574468`
+double-sided, `7466cf93c4` ambient scale, `a8b0993f6a` anim-pin flake
+fix, `86e26c5989` specular IBL + BRDF LUT, `2d8a7b7845` +
+`caafe88388` + `fdc28288ea` collision design + field triage,
+`30187b4b79` local lights, `c272afb270` authored lights + haze guide.
 Game-repo (sfb2) doc commits: `a2ddbea`, `c223303`, `f709d43`
 (USING_PAX3D_RENDER quick-reference for everything below).
 
@@ -26,7 +26,7 @@ walkable-ship queue, all rendering rows struck), arch doc §3/§7/§9
 
 ## What shipped
 
-**Session K — glass + double-sided (`8b4469d19c`, `8c9ae5923e`):**
+**Session K — glass + double-sided (`c6cb35c3fe`, `75ab574468`):**
 - `set_glass(np)` — specular-preserving transparency: a per-node
   `GLASS`-defined compile of the same PBR shader (render-root compile
   textually unchanged = byte-identical by construction) +
@@ -45,7 +45,7 @@ walkable-ship queue, all rendering rows struck), arch doc §3/§7/§9
   cards) WOULD change look — games eyeball first.
 - Tests: `test_glass` (6), `test_doublesided` (6), both ×sun-modes.
 
-**Session L — ambient scale (`d231b5edff`):**
+**Session L — ambient scale (`7466cf93c4`):**
 - `set_ambient_scale(np, k)` / `clear_ambient_scale(np)` — inherited
   `u_ambient_scale` input (root default 1.0 = exact no-op) folded into
   the AO factor, which multiplies exactly the indirect terms (SH/IBL +
@@ -53,11 +53,11 @@ walkable-ship queue, all rendering rows struck), arch doc §3/§7/§9
   untouched — sun shafts and screens still work in a dark hull.
   Interior recipe: ~0.1–0.2 on the interior mesh group.
 - Test: `test_ambient_scale` (5; the sun-shaft case measured).
-- Also: `test_shadows_gltf` anim pick sorted (`6d9db616c3`) — the
+- Also: `test_shadows_gltf` anim pick sorted (`a8b0993f6a`) — the
   fact-#12 residue; the unsorted pick flaked one gate (pose wandered
   0.239/0.415 around the 0.373 threshold); 5/5 at exactly 0.254 since.
 
-**Session M — specular IBL first slice, R5.3 (`82a3540d53`):**
+**Session M — specular IBL first slice, R5.3 (`86e26c5989`):**
 - The REAL split-sum BRDF LUT now ships:
   `pax3d_render/textures/brdf_lut.txo` (128², `tools/gen_brdf_lut.py`
   via pip simplepbr's reference integrator). The old 1×1 WHITE
@@ -75,7 +75,7 @@ walkable-ship queue, all rendering rows struck), arch doc §3/§7/§9
   (hand-loaded per-mip colors) and the mirror ORIENTATION proof
   (cube sampling is GL-standard: −Y and +Z faces reflect correctly).
 
-**Session N — interior collision design (`00349d403f` + addenda):**
+**Session N — interior collision design (`2d8a7b7845` + addenda):**
 - `../WALKABLE_INTERIOR_COLLISION_DESIGN.md` — AGREED with the ship
   dev. Contract: ship provides a hidden low-poly collision subtree;
   walk mode queries it with a traverser inside ship bounds; ground =
@@ -97,7 +97,7 @@ walkable-ship queue, all rendering rows struck), arch doc §3/§7/§9
   `block_*` quads (2.3 ms/frame vs the 27k-poly shell, slivers,
   thin-wall escape — all measured, §8).
 
-**Session O — local lights measured (`9493e6ee14`):**
+**Session O — local lights measured (`30187b4b79`):**
 - No engine change: the p3d_LightSource point/spot loop was the LAST
   never-measured lighting path. `test_local_lights` (6→9): point
   analytics exact, quadratic attenuation exact, per-room `set_light`
@@ -107,7 +107,7 @@ walkable-ship queue, all rendering rows struck), arch doc §3/§7/§9
   local-light shadows (point shadows explicitly disabled); emissive
   strips glow but don't illuminate.
 
-**Session P — authored lights + haze root-cause (`d32cd9aef9`):**
+**Session P — authored lights + haze root-cause (`c272afb270`):**
 - `activate_model_lights(model, root=None, scale=1.0,
   include_directional=False)` / `deactivate_model_lights(model)` —
   closes "Blender lights don't work": panda3d-gltf converts

@@ -10,9 +10,9 @@ already confirmed game-side. No open engine asks from any lane.
 
 | Commit | What |
 |---|---|
-| `877d2dc112` | `register_viewmodel_camera`/`unregister_viewmodel_camera` + `test_viewmodel` (15 checks / 17 @directional) — the FPS lane's near-plane answer. Arch doc §6.1 |
-| `fd963b6a9a` | Offscreen GL_INVALID_OPERATION root-caused → fact #18; `probe_gl_errors.py`, `test_gl_clean` (defect-asserted), `PATCH_QUEUE_GL_OFFSCREEN.md` |
-| `795e87d7f2` | Session X docs: fact #18, arch §6.1, FPS-lane feedback response, gate totals |
+| `9853375d8e` | `register_viewmodel_camera`/`unregister_viewmodel_camera` + `test_viewmodel` (15 checks / 17 @directional) — the FPS lane's near-plane answer. Arch doc §6.1 |
+| `82e2bac4ac` | Offscreen GL_INVALID_OPERATION root-caused → fact #18; `probe_gl_errors.py`, `test_gl_clean` (defect-asserted), `PATCH_QUEUE_GL_OFFSCREEN.md` |
+| `108d49e756` | Session X docs: fact #18, arch §6.1, FPS-lane feedback response, gate totals |
 | (this session, part 2) | The two fact-#18 C++ one-liners BUILT + LANDED (mini window, 1-min incremental): `get_buffer_mask` single-buffered branch restored, `gl-max-errors -1` honored. `test_gl_clean` flipped to permanent zero-GL-errors form. Wheel live in pax3d-env, archived `wheels_session_x\` |
 
 **Gate (Session X canonical): @game 69/6/102 Pax3D · 67/6/104 stock;

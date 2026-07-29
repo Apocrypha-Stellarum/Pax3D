@@ -14,7 +14,7 @@ as an estimate. Measurement commands are named so they can be re-run.
 
 ## 1. Measured divergence from upstream
 
-Fork point: `3f5ea05d1c` (upstream master, 2026-07-14). Everything below is
+Fork point: `60236d74bd` (upstream master, 2026-07-14). Everything below is
 `git diff <merge-base>..master`.
 
 | Metric | Value |
@@ -141,9 +141,9 @@ programme.
 
 | Window | Commit | Files | Lines removed | Content |
 |---|---|---|---|---|
-| 2 | `d29183ce42` | 65 | 16,691 | DirectX 9 (`dxgsg9`, `pandadx9`, all references) |
-| 3 | `3912762dd9` | 132 | 18,546 | GLES, GLES2, EGL, WebGL, Android, iPhone and macOS display backends, plus DX9 flag machinery |
-| 4 | `c627e2d0bc` | 72 | 8,112 | Android/iPhone target glue, Android cross-compile, dist mobile deploy, DIRECTCAM |
+| 2 | `cd37d67b93` | 65 | 16,691 | DirectX 9 (`dxgsg9`, `pandadx9`, all references) |
+| 3 | `8366907b14` | 132 | 18,546 | GLES, GLES2, EGL, WebGL, Android, iPhone and macOS display backends, plus DX9 flag machinery |
+| 4 | `baf541388a` | 72 | 8,112 | Android/iPhone target glue, Android cross-compile, dist mobile deploy, DIRECTCAM |
 
 Ten subsystems were removed outright:
 
@@ -167,7 +167,7 @@ GPU-less insurance.
 
 ### 2.4 Build and C++ work
 
-- Upstream catch-up merge (`eb685fd003`): 1,387 files, C++17 migration plus 93 commits absorbed, conflict-resolved and build-validated
+- Upstream catch-up merge (`25bffd98d2`): 1,387 files, C++17 migration plus 93 commits absorbed, conflict-resolved and build-validated
 - Build system brought up on VS Build Tools 2026 / MSVC 14.5, including the makepanda `oscmd` fix and toolchain-detection workarounds
 - `STDFLOAT_DOUBLE` build variant brought up and verified to 0.000e+00 round-trip precision at Neptune-scale offsets. Upstream has never CI'd this configuration
 - One new C++ engine behaviour: a core-profile combine-mode warning in `glgsg` (34 lines), which caught a real silently-flattened texture state in a downstream game on its first day

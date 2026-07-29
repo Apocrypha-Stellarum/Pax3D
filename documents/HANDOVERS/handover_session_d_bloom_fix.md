@@ -1,7 +1,7 @@
 # Handover — Session D: Bloom Fixed (R3.1) + Shadow Extent Centering (R2.4)
 
 **Date:** 2026-07-17
-**Repo state:** pax3d `b7cbd60d8e`, sfb2 `5acf839` (all work committed;
+**Repo state:** pax3d `01835c255a`, sfb2 `5acf839` (all work committed;
 sfb2 `config/settings.json` intentionally left uncommitted — runtime-
 rewritten local state, new keys have code defaults).
 **Read first:** `../PAX3D_MASTER_PLAN.md` (Session D log entry),

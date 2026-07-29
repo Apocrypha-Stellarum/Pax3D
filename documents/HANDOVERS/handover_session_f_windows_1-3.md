@@ -8,10 +8,10 @@ what changed today and what to do next.
 
 | Commit | What |
 |---|---|
-| `8c15a5fa87` (prior) | Window-1 prep from the A computer |
-| `d29183ce42` | **Window 2:** DX9 excised — dxgsg9/, pandadx9/, winDetectDx9, displaySearchParameters, all refs. −16,691 lines |
-| `3912762dd9` | **Window 3:** GLES/GLES2/EGL/WebGL/Android/iPhone/macOS display backends + DX9 flag machinery excised. −18,546 lines. **`--no-dx9` and `--directx-sdk` no longer parse** |
-| `237e8e4ec5` | Doc-modernization inherited from the A computer, committed here |
+| `2273ef2482` (prior) | Window-1 prep from the A computer |
+| `cd37d67b93` | **Window 2:** DX9 excised — dxgsg9/, pandadx9/, winDetectDx9, displaySearchParameters, all refs. −16,691 lines |
+| `8366907b14` | **Window 3:** GLES/GLES2/EGL/WebGL/Android/iPhone/macOS display backends + DX9 flag machinery excised. −18,546 lines. **`--no-dx9` and `--directx-sdk` no longer parse** |
+| `8e7d2b0000` | Doc-modernization inherited from the A computer, committed here |
 | (this session) | Docs refreshed post-surgery + this handover + feedback response 2 |
 
 - **Window 1 (catch-up merge) is SIGNED OFF.** Float wheel + doubles wheel

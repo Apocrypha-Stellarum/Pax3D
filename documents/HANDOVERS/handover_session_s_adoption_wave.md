@@ -4,11 +4,11 @@
 things easy for the four downstream devs" then "proceed on the proposed
 queue"). Read `SESSION_LOG.md` (Session S entry) for the narrative.
 
-**State of the world:** engine commits `eaceab7c0c` (doc true-up),
-`af86281580` (pusher consult, probe 10/10), `aceed4ac71` (per-node
-atmosphere scale), `72c015aa7e` (per-subtree env binding), `c6fee5d1e3`
-(first close-out), `6658480d8f` (SSAO), `e074a6d10a` (bone palette +
-morph verdict), `11c0ad2cd6` (lens flare — **R5 COMPLETE**). sfb2 doc
+**State of the world:** engine commits `bfdef1bf0f` (doc true-up),
+`0880f1e15f` (pusher consult, probe 10/10), `8d4c8f92c8` (per-node
+atmosphere scale), `66dd755b88` (per-subtree env binding), `883d0dd856`
+(first close-out), `e6892d84cd` (SSAO), `ed3959561d` (bone palette +
+morph verdict), `dc66715096` (lens flare — **R5 COMPLETE**). sfb2 doc
 commits `b7923b2`, `6563b80`. None pushed. No C++ this session — the
 Session-R wheel stays current.
 

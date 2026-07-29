@@ -8,7 +8,7 @@ section) before starting.
 
 Engine is CLEAN and RESTORED — no build needed, everything is
 Python/GLSL. The debug instruments + probe from this session are
-committed (`9944e0b8d7`). No C++ was touched all session.
+committed (`bc1f6353b1`). No C++ was touched all session.
 
 ---
 
@@ -162,7 +162,7 @@ them; audit `set_shadow_extent` near/far placement along the light axis
 ---
 
 ## Operational notes
-- **Debug modes now committed** (`9944e0b8d7`), behavior-neutral at
+- **Debug modes now committed** (`bc1f6353b1`), behavior-neutral at
   `u_debug_lighting=0`. In-app: `OW_DEBUG_LIGHTING=11|12|13|14|15|16`.
   Modes: 11 = shadow term, 12 = interp-vs-recomputed coord (was 0.000),
   13 = recomputed-path term, 14 = 3-bucket GPU depth probe (R=−0.5m,

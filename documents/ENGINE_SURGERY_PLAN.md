@@ -78,14 +78,14 @@ We target Windows + OpenGL. These serve platforms we will never ship:
 ```
 Window 1  DONE     Catch-up merge + doubles wheel — built, FULL gauntlet
                    green, merge signed off (see BUILD_WINDOW_1_CATCHUP.md)
-Window 2  DONE     DX9 removal — commit d29183ce42, 65 files,
+Window 2  DONE     DX9 removal — commit cd37d67b93, 65 files,
                    −16,691 lines, own build + full gate green
 Window 3  DONE     Mobile/GLES/WebGL/macOS backend removal + DX9 flag
-                   machinery drop — commit 3912762dd9, 132 files,
+                   machinery drop — commit 8366907b14, 132 files,
                    −18,546 lines, own build + full gate green.
                    x11/glx HOLD confirmed kept; tinydisplay kept
                    (its macOS tinyCocoa* flavor removed with the theme)
-Window 4  DONE     Mobile-TARGET extraction — commit c627e2d0bc
+Window 4  DONE     Mobile-TARGET extraction — commit baf541388a
                    (2026-07-19), 72 files, −8,112 lines: panda/src/android
                    + panda/src/iphone, express Android asset mount, prc
                    androidLogStream, deploy-stub android glue, dist
@@ -93,7 +93,7 @@ Window 4  DONE     Mobile-TARGET extraction — commit c627e2d0bc
                    installers/FreezeTool, makepanda Android cross-compile
                    machinery (SdkLocateAndroid, SetTarget mapping,
                    CompileJava/CompileDalvik), DIRECTCAM (gated sources +
-                   plumbing). Two fixup commits (84d9fa3f33, 16321d8894)
+                   plumbing). Two fixup commits (c6a5f502f3, ecf01ea976)
                    restored Cxx-cache globals over-cut beside the Java
                    block — LESSON: when excising a block between two
                    anchors, audit ALL top-level names removed vs still

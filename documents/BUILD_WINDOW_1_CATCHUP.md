@@ -15,7 +15,7 @@
 > after `git restore` succeeded.
 > This document is now HISTORICAL — procedure kept for reference.
 
-**Date opened:** 2026-07-17 · **Merge commit:** `eb685fd003`
+**Date opened:** 2026-07-17 · **Merge commit:** `25bffd98d2`
 **What this window builds:** the one-time Route A catch-up merge of
 upstream `panda3d/panda3d` master (93 commits: C++17 migration,
 robustness/bugfix cluster, test suite) into our tree. After this window

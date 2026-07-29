@@ -55,7 +55,7 @@ GLSL-emitting shader-pipeline rewrite lives in the branch that never
 reached master; our fork severed before it).
 
 **Your ask (one-line warning) is accepted — and has since LANDED**
-(Session R mini-window, 2026-07-18, commit `857b715086`): when a
+(Session R mini-window, 2026-07-18, commit `e21bfc6ea7`): when a
 default-shader path draws a state whose TextureAttrib carries an
 M_combine stage / rgb_scale ≠ 1 / more than one stage, glgsg warns once
 per TextureAttrib. It shipped in the Session-R wheel and fired on a real
@@ -153,7 +153,7 @@ environment: ambient AND reflections.
 
 **Headline:** P2 diagnosed to the exact shader (expected upstream
 behavior; the requested warning has since LANDED in the Session-R wheel,
-`857b715086`; your explicit-shader plan is right), the
+`e21bfc6ea7`; your explicit-shader plan is right), the
 orientation question is closed and gate-pinned on both halves, your
 adoption lessons are in the guide, the west-sun P0 fix is one
 `set_shadow_normal_bias(0.25)` away from your sunsets, and the specular

@@ -949,7 +949,7 @@ the first measurement once the P0 is fixed.
 trees, NPCs, test boxes — nothing), even though the shadow map itself is
 correct. Regression window on this machine: working screenshot at 03:36
 (`screenshots/rebalanced_16.png`), broken by 04:29. Engine pins at
-`master`, `02eb9c37`, `5ce5ef2911`, and `2499ecc~1` all reproduce, so it
+`master`, `a43cfba7`, `dbbf63ba13`, and `474cd57~1` all reproduce, so it
 predates Session E part 2 — but 03:36 worked, so *something* in that window
 (engine or a runtime ingredient we can't reconstruct — openworld has no VCS)
 flipped it. Either way it reproduces mechanically today:

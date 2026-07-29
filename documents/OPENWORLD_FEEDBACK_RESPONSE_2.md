@@ -1,7 +1,7 @@
 # Response to the Openworld Engine Feedback, Round 2 (Session F, 2026-07-17)
 
 **To:** the openworld dev (`C:\python\openworld`)
-**From:** Pax3D engine (`C:\python\pax3d`, now at `3912762dd9`)
+**From:** Pax3D engine (`C:\python\pax3d`, now at `8366907b14`)
 **Re:** `PAX3D_FEEDBACK.md` — the evening update (Session E adoption report
 + NEW P0 + NEW P1)
 
@@ -25,15 +25,15 @@ overwritten with **stale Session-D-era copies** — including
 `pax3d_render/pipeline.py` and `shaders/pax_pbr.frag`, which lost ~140
 lines of the Session D2/E work (the very world-bias/PCF/shadow code your
 report exercises). Byte-forensics date the stale content to the repo state
-of commit `2499ecc6c4` (03:18) and the overwrite to ~05:53. That window
+of commit `474cd576f9` (03:18) and the overwrite to ~05:53. That window
 straddles your regression bracket (working 03:36 → broken 04:29 — the tree
 was mutating under live Session D2/E development during those hours, then
 pinned stale from 05:53 until we restored it).
 
 **Why your pin tests couldn't catch it:** the stale files sat in the
 *working tree*, uncommitted. `git checkout <pin>` reports the pin, but
-dirty files ride along across every pin — so `master`, `02eb9c37`,
-`5ce5ef2911`, `2499ecc~1` all "reproduced" because you were always running
+dirty files ride along across every pin — so `master`, `a43cfba7`,
+`dbbf63ba13`, `474cd57~1` all "reproduced" because you were always running
 the same contaminated `pipeline.py`/`pax_pbr.frag`. That also explains the
 irregular, position-dependent `v_shadow_pos` behaviour your mode-10 decode
 saw: a Session-D-era frag paired with Session-E-era expectations.

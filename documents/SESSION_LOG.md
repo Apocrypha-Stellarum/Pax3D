@@ -130,12 +130,12 @@ default bias ⇒ ~20 IEU effective offset — set a world-unit bias
 **Session E addendum — policy day (2026-07-17, cont.):** Three
 user decisions, same day: (1) **Upstream SEVERED** — Pax3D is sovereign;
 no sync cadence, no compatibility goal; upstream is a read-only
-reference for hand cherry-picks (`f6726136`; docs reconciled
-`c11e778b`). (2) **Language Canon ratified** — "prototype in
+reference for hand cherry-picks (`8a8d9106`; docs reconciled
+`055832b5`). (2) **Language Canon ratified** — "prototype in
 Python/GLSL; promote to C++ on evidence"; KEEP THE SUPERPOWER;
-build-window queue established in CLAUDE.md (`1fbaae9d`). (3) **Route A
+build-window queue established in CLAUDE.md (`35079929`). (3) **Route A
 final catch-up merge** — one-time import of upstream master before the
-door closed: `eb685fd003`, conflict-free (our C++ tree had zero
+door closed: `25bffd98d2`, conflict-free (our C++ tree had zero
 changes), 93 commits (C++17 migration + robustness fixes), divergence
 point now July 2026, adjacent to the vulkan/shaderpipeline branch.
 Build Window 1 opened: B-computer builds the float wheel (required) +
@@ -159,14 +159,14 @@ sfb2 boot, openworld selftest; doubles spike verified (round-trip
 PASS; finding: stock simplepbr crashes on doubles → wheel quarantined
 in `pax3d-double-env`). The merge is SIGNED OFF; severed-upstream policy
 fully in force. **Windows 2+3 (R6 surgery):** DX9 excised
-(`d29183ce42`, −16,691 lines) then all dead platform display backends +
-the DX9 flag machinery (`3912762dd9`, −18,546 lines); each with its own
+(`cd37d67b93`, −16,691 lines) then all dead platform display backends +
+the DX9 flag machinery (`8366907b14`, −18,546 lines); each with its own
 build and full gate; none/simplepbr canaries never moved. `--no-dx9` no
 longer exists. **Incident worth remembering:** the first Window-1 build
 failed because ~35 repo files had been silently overwritten with stale
 Session-D-era content (xfile C++ reverted to pre-merge string_view-less
 signatures; pipeline.py/pax_pbr.frag missing ~140 lines of Session D2/E
-work). Forensics: content matched the repo state of commit `2499ecc6c4`
+work). Forensics: content matched the repo state of commit `474cd576f9`
 (03:18); the write happened 05:53–05:54 on the A machine, pre-transfer;
 the D:\ backup carries the identical dirty state; openworld's vendored
 copy and its launcher were ruled out. Fixed by `git restore` of 15 files
@@ -586,7 +586,7 @@ Testbed --tonemap/--srgb A/B: THE SESSION A ACES PREDICTION VERIFIED —
 wash-out gone with linear inputs, overall brightness drops (content
 authored raw) -> default stays off pending game retune. (3) **C++
 mini-window (user-authorized in-session):** the queued core-profile
-combine-mode warning landed (857b715086) — once-per-TextureAttrib glgsg
+combine-mode warning landed (e21bfc6ea7) — once-per-TextureAttrib glgsg
 warning when the default shader flattens combine/scale/multi-stage
 states, both default-shader paths. 1m22s incremental build; gate
 identical both engines (48/6/63 with the two new tests); probe verdicts
@@ -740,13 +740,13 @@ includes), and R2.3 scope — R2.3 DROPPED from the window on surgery
 ground rule 2 plus a real design conflict found during scoping (queue
 row annotated). Pre-window: the character dev's re-export landed
 mid-planning, so test_morph_gltf was promoted to a GATE ROW first
-(`eb23617239`, new totals 55/6/73) — clip drives sliders at the
-authored frames 10/38/68 on both engines. Surgery: `c627e2d0bc`, 72
+(`89310c50b9`, new totals 55/6/73) — clip drives sliders at the
+authored frames 10/38/68 on both engines. Surgery: `baf541388a`, 72
 files, −8,112 lines (android/iphone dirs, express Android mount, prc
 androidLogStream, deploy-stub glue, dist _android/_proto + android
 branches in commands/installers/FreezeTool, makepanda Android
 cross-compile + CompileJava/CompileDalvik, DIRECTCAM incl. gated
-DirectShow sources). Two fixups (`84d9fa3f33`, `16321d8894`): the
+DirectShow sources). Two fixups (`c6a5f502f3`, `ecf01ea976`): the
 Java-block excision swallowed adjacent Cxx-cache globals — first build
 died at dependency scan, second at the FINAL cache save; the removed-
 name audit (all top-level names removed vs still referenced, run on
@@ -1208,7 +1208,7 @@ machine load — the bench trap on record): 8 faces × 5 sliders
 24 clones copy+register in 0.25–0.49 s. Gate totals unchanged.
 
 **Session AC (2026-07-23): R1 CLOSED — sign-offs, one graphics
-reality, GLSL-120 deletion** (master plan §4.15; commit `e67c989adb`).
+reality, GLSL-120 deletion** (master plan §4.15; commit `4b4471947c`).
 The program's oldest open phase closed in three user-gated steps.
 (1) "directional signed off" closed R2 (watch item: planetside shadow
 stripes at certain angles, not reproducible in the testbed — capture
@@ -1384,8 +1384,8 @@ IMPLEMENTED + GATED (same day as filing). Engine work uncommitted.
 **Session AG (2026-07-24): the GVAD stability build window — the
 handle-race fix lands** (master plan §4.20; fact #21). User go-ahead
 on the queued P0 (2026-07-23 "report only" hold lifted). Housekeeping
-first: the AD/AE/AF backlog committed (`18a70ea964`) so the wheel maps
-to a clean commit. The fix (`d6044b1d8a`), three sites exactly per
+first: the AD/AE/AF backlog committed (`ff97d3de76`) so the wheel maps
+to a clean commit. The fix (`1b3c76f0a6`), three sites exactly per
 CRASH_GVAD_HANDLE_RACE.md §6: makepanda.py keeps `USE_DELETED_CHAIN=
 '1'` alongside mimalloc (our wheels were the first EVER to run the
 Geom churn on a general-purpose allocator); both cycler stage guards

@@ -1,7 +1,7 @@
 # Response to the Openworld Engine Feedback (Session E, 2026-07-17)
 
 **To:** the openworld dev (`C:\python\openworld`)
-**From:** Pax3D engine (`C:\python\pax3d`, commits `a6e044d8..7479032f`)
+**From:** Pax3D engine (`C:\python\pax3d`, commits `b5eef1b0..efffd68a`)
 **Re:** `PAX3D_FEEDBACK.md` — every item answered below, most with code
 landed today. Your feedback was excellent: precise, mechanized,
 reproducible. It found one engine trap, three missing APIs, real test
@@ -109,7 +109,7 @@ recur silently.
 
 ## P2 Debug modes 10/11 — COMMITTED
 
-Permanent, with attribution (`a6e044d8`). Documented in the
+Permanent, with attribution (`b5eef1b0`). Documented in the
 architecture doc's shadow section.
 
 ## P2 Blessed no-cast API — LANDED

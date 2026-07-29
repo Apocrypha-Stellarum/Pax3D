@@ -6,9 +6,9 @@ same-day question resolutions; then ship exterior/status lights off
 the user's gold-standard screencaps). Read `SESSION_LOG.md` (Session V
 entries, three parts) for the narrative.
 
-**State of the world:** engine commits `18d4228aea` (ER-004+ER-005
-code + gates), `cafa3bfe33` (docs true-up), `faee71ffb6` (ship-lane
-634 resolutions — ffmpeg question CLOSED), `0b3e0483ed` (blinker +
+**State of the world:** engine commits `a547a54365` (ER-004+ER-005
+code + gates), `3bf7d928e6` (docs true-up), `9c6e86ffd9` (ship-lane
+634 resolutions — ffmpeg question CLOSED), `3b7952e66e` (blinker +
 light-budget measurement). None pushed. **No C++, no build — the
 Window-4 wheel stays current.** sfb2 ER-004/ER-005 files carry the
 engine responses/resolutions/lights-addendum but are **deliberately

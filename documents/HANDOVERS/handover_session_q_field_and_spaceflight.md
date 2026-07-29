@@ -8,9 +8,9 @@ priority order; Phase 5 is standing watches. Read `SESSION_LOG.md`
 happened; the K–P handover (now historical) for the walkable-ship
 program background.
 
-**State of the world:** engine commits `726aa2a93f` (probe),
-`239b4a717c` (sh face-table pin), `b6325a727b` (GGX prefilter tool),
-`206fd2b636` (docs/Response 5); sfb2 doc commit `97be3a2` (west-sun P0
+**State of the world:** engine commits `c27ee423e0` (probe),
+`f914fc01a8` (sh face-table pin), `4e7d69fd74` (GGX prefilter tool),
+`934c954109` (docs/Response 5); sfb2 doc commit `97be3a2` (west-sun P0
 pointer). None pushed. Full 19-test matrix green on both engines after
 every commit: 43 PASS / 6 documented FAILs / 57 SKIP, identical stock
 vs Pax3D. The R5 planetside half AND the whole skybox → ambient +

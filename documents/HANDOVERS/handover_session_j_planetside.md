@@ -5,7 +5,7 @@ openworld Mars colony map proved the planetside use-case. Spaceflight
 remains the first priority, so the whole package is opt-in: every feature
 defaults OFF and off is **byte-identical** (the tests assert rms exactly
 0.0 on opt-out). Python/GLSL only — no engine build was touched, the
-features run on stock 1.10.16 too. Committed as `fc6cb9b44a` (not
+features run on stock 1.10.16 too. Committed as `980e96b286` (not
 pushed).
 
 Durable records: master plan §1 R5 row + §4.4, arch doc §5.7 / §9

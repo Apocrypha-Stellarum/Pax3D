@@ -1,7 +1,7 @@
 # Handover — Session C: Real DirectionalLight Sun + Shadows (Phase R2)
 
 **Date:** 2026-07-16/17
-**Repo state:** pax3d `5b59c42e7d`, sfb2 `29a6884` (all work committed)
+**Repo state:** pax3d `e61f11bb87`, sfb2 `29a6884` (all work committed)
 **Read first:** `../PAX3D_MASTER_PLAN.md` (plan + session log),
 `../PAX3D_RENDER_ARCHITECTURE.md` (how the pipeline works),
 `CLAUDE.md` (working method — harness-first, one pipeline, phase gates).

@@ -5,7 +5,7 @@ This guide is for AI developers building Pax3D. It documents every pitfall we hi
 > **Policy note (2026-07-17):** builds run only in **user-scheduled build
 > windows** (see CLAUDE.md "Language Canon"). Windows 1–3 all completed
 > 2026-07-17 on the current primary machine (20 cores, ~8-minute builds).
-> Post-catch-up-merge (`eb685fd003`) facts: the tree compiles as **C++17**,
+> Post-catch-up-merge (`25bffd98d2`) facts: the tree compiles as **C++17**,
 > and makepanda **pip-installs `panda3d-interrogate==0.11.2` from PyPI at
 > build time** — the build machine needs internet, or pre-seed
 > `built_x64/tmp/interrogate` with `pip install -t <that dir>
@@ -260,9 +260,9 @@ C:\python\pax3d-env\Scripts\python.exe tools\paxtest\run.py
 | File | Change | Why |
 |------|--------|-----|
 | `makepanda/makepandacore.py` | `oscmd()` respects `ignoreError` for binary-not-found | `mt.exe` not in PATH caused hard crash on optional step |
-| `makepanda/*` (Window 2, `d29183ce42`) | DX9 build rules, SDK locator, `HAVE_DX9`/`HAVE_CGDX9`, installer refs removed | R6 surgery: DX9 deleted from the tree |
-| `makepanda/*` (Window 3, `3912762dd9`) | GLES/GLES2/EGL/COCOA packages, build sections, config.in display lines, DX9 flag machinery removed | R6 surgery: dead platform backends deleted; `--no-dx9`/`--directx-sdk` no longer parse |
-| `makepanda/*` (Window 4, `c627e2d0bc`+fixups) | Android cross-compile machinery (SdkLocateAndroid, SetTarget android mapping, CompileJava/CompileDalvik, ANDROID_* globals, flag blocks), DIRECTCAM package + SdkAutoDisableDirectX, MakeInstallerAndroid, makewheel android handling removed; `--target` option help dropped | R6 surgery: mobile-target extraction; `--target android` no longer exists. Trap discovered: excising a block between two anchors can swallow ADJACENT globals (CxxDependencyCache, DCACHE_VERSION) — audit removed top-level names vs remaining references before building |
+| `makepanda/*` (Window 2, `cd37d67b93`) | DX9 build rules, SDK locator, `HAVE_DX9`/`HAVE_CGDX9`, installer refs removed | R6 surgery: DX9 deleted from the tree |
+| `makepanda/*` (Window 3, `8366907b14`) | GLES/GLES2/EGL/COCOA packages, build sections, config.in display lines, DX9 flag machinery removed | R6 surgery: dead platform backends deleted; `--no-dx9`/`--directx-sdk` no longer parse |
+| `makepanda/*` (Window 4, `baf541388a`+fixups) | Android cross-compile machinery (SdkLocateAndroid, SetTarget android mapping, CompileJava/CompileDalvik, ANDROID_* globals, flag blocks), DIRECTCAM package + SdkAutoDisableDirectX, MakeInstallerAndroid, makewheel android handling removed; `--target` option help dropped | R6 surgery: mobile-target extraction; `--target android` no longer exists. Trap discovered: excising a block between two anchors can swallow ADJACENT globals (CxxDependencyCache, DCACHE_VERSION) — audit removed top-level names vs remaining references before building |
 
 ---
 

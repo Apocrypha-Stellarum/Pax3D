@@ -6,10 +6,10 @@ experiment -> C++ mini-window). Read `SESSION_LOG.md` (Session R entries)
 for what happened; `OPENWORLD_FEEDBACK_RESPONSE_5.md` for the last field
 exchange.
 
-**State of the world:** engine commits `5b9bb48e87` (R5.5 core),
-`ebeac63228` (R5.5 docs), `9146b00aa6` (equirect tool), `3a610685f1`
-(skybox sample + look guide), `f1bb86f03a` (sRGB experiment),
-`857b715086` (C++ combine warning). sfb2 commits `2dff312`, `907c501`,
+**State of the world:** engine commits `05cde87ba5` (R5.5 core),
+`bb6cfd01fe` (R5.5 docs), `6439779a86` (equirect tool), `cdc55d1a68`
+(skybox sample + look guide), `eaebcd7ef0` (sRGB experiment),
+`e21bfc6ea7` (C++ combine warning). sfb2 commits `2dff312`, `907c501`,
 `b442c96` (testbed + docs). None pushed. **The installed engine is now
 the Session-R wheel** (Window-3 + combine warning; archived
 `wheels_session_r\`). Full 21-test matrix green on both engines after
