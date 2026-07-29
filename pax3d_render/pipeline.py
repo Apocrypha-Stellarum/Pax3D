@@ -6,6 +6,9 @@ The unified first-party renderer for Pax3D — the merge of:
     TAA), and
   - pax3d_simplepbr (this repo's earlier fork — now retired).
 
+Both descend from panda3d-simplepbr by Mitchell Stokes, used under the
+BSD 3-Clause License. See THIRD_PARTY_NOTICES.md at the repository root.
+
 Behavior is intentionally byte-identical to the game's pax_pbr as of
 July 2026, plus the following R1 additions:
 

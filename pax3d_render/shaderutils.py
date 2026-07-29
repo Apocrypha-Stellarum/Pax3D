@@ -3,6 +3,10 @@
 Loads GLSL shaders from the package's shaders/ directory, injects #define
 directives, and compiles into Panda3D Shader objects.
 
+Derived from panda3d-simplepbr 0.13.1 (_shaderutils.py), Copyright (c)
+2019, Mitchell Stokes, used under the BSD 3-Clause License. See
+THIRD_PARTY_NOTICES.md at the repository root.
+
 Shader sources are native GLSL 330 (R1.4, 2026-07-23: the GLSL-120 dual
 path was removed after the game moved to `gl-version 3 2` everywhere;
 sources were baked from the transformed 330 output, gate-verified).

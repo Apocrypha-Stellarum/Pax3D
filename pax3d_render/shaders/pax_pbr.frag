@@ -1,5 +1,10 @@
 // Pax PBR Fragment Shader
-// Forked from simplepbr 0.13.1 (KhronosGroup glTF-Sample-Viewer based)
+//
+// Derived from panda3d-simplepbr 0.13.1 (simplepbr.frag), Copyright (c)
+// 2019, Mitchell Stokes, used under the BSD 3-Clause License. simplepbr's
+// PBR shader is in turn heavily inspired by the Khronos glTF Sample Viewer.
+// See THIRD_PARTY_NOTICES.md at the repository root for the full text and
+// the list of modifications.
 //
 // Key changes from simplepbr:
 // 1. Sun directional light uses custom u_sun_dir_world / u_sun_color uniforms

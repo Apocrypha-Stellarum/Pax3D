@@ -6,8 +6,8 @@ Pax3D
 ![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64%20%C2%B7%20OpenGL%20core-informational)
 ![Verified by paxtest](https://img.shields.io/badge/every%20claim-measured-success)
 
-**A modern, verified 3D engine for Python, with a first-party
-physically-based rendering stack built in.**
+**A modern, verified 3D engine for Python, with a physically-based
+rendering stack built in.**
 
 Pax3D is a sovereign game engine for Python and C++ programs. It began in
 February 2026 as a fork of Panda3D 1.11.0-dev and went fully standalone in
@@ -17,10 +17,13 @@ under the Modified BSD License.
 
 What makes it different:
 
-- **A real renderer built in.** `pax3d_render/` is a first-party
-  Python/GLSL physically-based pipeline: sun, shadows, HDR bloom,
-  atmospheres, terrain, instancing, IBL. There is nothing to assemble from
-  add-ons.
+- **A renderer in the box.** `pax3d_render/` is the engine's Python/GLSL
+  physically-based pipeline. Sun, shadows, HDR bloom, SSAO, lens flare and
+  four tonemap operators ship configured. Above that sit the systems this
+  engine exists for: atmospheric scattering from ground level and from
+  orbit, terrain splatting with stochastic hex tiling and height-aware
+  blending, a wet-sand waterline, GPU morph targets at crowd scale,
+  instanced shadows, and photo-mode snapshots.
 - **Every rendering claim is measured.** The `tools/paxtest/` harness runs
   over a hundred offscreen render jobs on every change and checks the
   output against computed expected values. The same suite runs against
@@ -149,11 +152,19 @@ preserves the full upstream commit history and the Panda3D backers list
 grateful to Carnegie Mellon University, the Panda3D maintainers, and two
 decades of contributors.
 
+The rendering pipeline began with **panda3d-simplepbr** by Mitchell Stokes.
+Its physically-based and shadow shaders still carry that code, and the
+project owes it a great deal. simplepbr gave this work a correct, readable
+PBR foundation to build on, and it remains an excellent choice for anyone
+who wants physically-based rendering on stock Panda3D. It lives at
+[Moguri/panda3d-simplepbr](https://github.com/Moguri/panda3d-simplepbr).
+
 Pax3D is an independent project. It is not affiliated with or endorsed by
-the Panda3D project or Carnegie Mellon University. If you want the
-general-purpose, multi-platform, community-driven engine, Panda3D lives at
-[panda3d/panda3d](https://github.com/panda3d/panda3d) and deserves your
-contributions.
+the Panda3D project, panda3d-simplepbr, or Carnegie Mellon University. If
+you want the general-purpose, multi-platform, community-driven engine,
+Panda3D lives at [panda3d/panda3d](https://github.com/panda3d/panda3d) and
+deserves your contributions.
 
 Pax3D is licensed under the Modified BSD License. See the [LICENSE](LICENSE)
-file for details.
+file for details. Third-party code carried in this repository is credited in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

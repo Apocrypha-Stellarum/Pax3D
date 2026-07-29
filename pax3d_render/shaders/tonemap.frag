@@ -1,3 +1,10 @@
+// Tonemap and post-composite stage.
+//
+// Largely first-party. The SDR LUT sampling block and the Hejl-Dawson
+// operator are derived from panda3d-simplepbr 0.13.1 (tonemap.frag),
+// Copyright (c) 2019, Mitchell Stokes, used under the BSD 3-Clause
+// License. See THIRD_PARTY_NOTICES.md at the repository root.
+
 #version 330
 
     #define texture3D texture
